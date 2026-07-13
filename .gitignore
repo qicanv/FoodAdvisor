@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+
+# Node
+node_modules/
+dist/
+
+
+# Java
+target/
+
+
+# PyCharm
+.idea/
+
+
+# Environment
+.env
+
+
+# Database
+*.sql.backup
+
+
+# Logs
+*.log
