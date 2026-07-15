@@ -34,7 +34,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { getRestaurants } from '../api/restaurant'
+import { getRestaurants } from '../../api/restaurant'
 
 const restaurants = ref([])
 const loading = ref(false)

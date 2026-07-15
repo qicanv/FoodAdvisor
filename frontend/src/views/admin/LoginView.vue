@@ -4,15 +4,11 @@
       <div class="container">
         <div class="header-content">
           <div class="logo-section">
-            <img src="../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
+            <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
             <span class="brand-name">食尚参谋</span>
           </div>
           <div class="nav-links">
             <a href="/" class="nav-link">返回首页</a>
-            <div v-if="isLoggedIn" class="user-info">
-              <span class="user-name">{{ userInfo.username }}</span>
-              <button class="logout-btn" @click="handleLogout">退出</button>
-            </div>
           </div>
         </div>
       </div>
@@ -94,7 +90,7 @@
                 </svg>
               </div>
               <h3>用户管理</h3>
-              <p>管理平台用户和商家账号</p>
+              <p>管理平台用户信息和权限配置</p>
             </div>
             
             <div class="feature-item">
@@ -104,17 +100,18 @@
                 </svg>
               </div>
               <h3>数据监控</h3>
-              <p>监控AI调用日志和系统运行状态</p>
+              <p>监控系统运行状态和数据统计</p>
             </div>
             
             <div class="feature-item">
               <div class="feature-icon admin-icon">
                 <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2">
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                  <path d="M9 12l2 2 4-4"></path>
                 </svg>
               </div>
               <h3>系统配置</h3>
-              <p>配置系统参数和处理数据导入任务</p>
+              <p>配置AI模型服务和业务参数</p>
             </div>
           </div>
         </div>
@@ -124,10 +121,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-const isLoggedIn = ref(false)
-const userInfo = ref({ username: '' })
+const router = useRouter()
 const activeTab = ref('login')
 
 const loginForm = ref({
@@ -143,34 +140,18 @@ const registerForm = ref({
   confirmPassword: ''
 })
 
-onMounted(() => {
-  const token = localStorage.getItem('token')
-  const user = localStorage.getItem('user')
-  if (token && user) {
-    isLoggedIn.value = true
-    userInfo.value = JSON.parse(user)
-  }
-})
-
 const handleLogin = () => {
-  isLoggedIn.value = true
-  userInfo.value = { username: loginForm.value.username }
   localStorage.setItem('token', 'dummy-token')
-  localStorage.setItem('user', JSON.stringify(userInfo.value))
+  localStorage.setItem('user', JSON.stringify({ username: loginForm.value.username }))
+  localStorage.setItem('userRole', 'admin')
+  router.push('/admin/home')
 }
 
 const handleRegister = () => {
-  isLoggedIn.value = true
-  userInfo.value = { username: registerForm.value.username }
   localStorage.setItem('token', 'dummy-token')
-  localStorage.setItem('user', JSON.stringify(userInfo.value))
-}
-
-const handleLogout = () => {
-  isLoggedIn.value = false
-  userInfo.value = { username: '' }
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
+  localStorage.setItem('user', JSON.stringify({ username: registerForm.value.username }))
+  localStorage.setItem('userRole', 'admin')
+  router.push('/admin/home')
 }
 </script>
 
@@ -225,31 +206,6 @@ const handleLogout = () => {
 
 .nav-link:hover {
   color: #1890ff;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.user-name {
-  font-size: 14px;
-  color: #333333;
-}
-
-.logout-btn {
-  padding: 6px 16px;
-  background: #f5f5f5;
-  color: #666666;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.logout-btn:hover {
-  background: #e8e8e8;
 }
 
 .admin-main {
@@ -465,14 +421,6 @@ const handleLogout = () => {
   
   .auth-title {
     font-size: 24px;
-  }
-  
-  .features-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .features-section {
-    margin-top: 32px;
   }
 }
 

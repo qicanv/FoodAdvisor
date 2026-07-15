@@ -3,7 +3,7 @@
     <header class="header">
       <div class="container header-container">
         <div class="logo-section">
-          <img src="../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
+          <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
           <div class="logo-text">
             <h1 class="brand-name">食尚参谋</h1>
             <span class="brand-slogan">AI美食推荐助手</span>
@@ -95,7 +95,7 @@
         
         <div class="hero-image">
           <div class="ai-character">
-            <img src="../assets/images/greedy-cat.png" alt="食尚参谋大人" class="ai-img" />
+            <img src="../../assets/images/greedy-cat.png" alt="食尚参谋大人" class="ai-img" />
             <div class="ai-bubble">
               <span>我是食尚参谋大人，很高兴为您服务~</span>
               <div class="bubble-arrow"></div>
@@ -198,7 +198,7 @@
       <div class="footer-container">
         <div class="footer-content">
           <div class="footer-brand">
-            <img src="../assets/images/greedy-cat.png" alt="食尚参谋" class="footer-logo" />
+            <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="footer-logo" />
             <h4>食尚参谋</h4>
             <p>AI美食推荐助手，让每一顿饭都充满惊喜</p>
           </div>
@@ -602,6 +602,8 @@ const enterPortal = (portal) => {
   border-radius: 50%;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   z-index: 10;
+  object-fit: cover;
+  border: 4px solid rgba(255, 255, 255, 0.6);
 }
 
 .ai-bubble {
