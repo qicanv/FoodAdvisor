@@ -32,8 +32,8 @@ public class Merchant {
     /** ACTIVE / DISABLED / ARCHIVED */
     private String platformStatus;
 
-    /** OPEN / CLOSED / TEMPORARILY_CLOSED */
-    private String businessStatus;
+    /** OPERATING / SUSPENDED / CLOSED_PERMANENTLY */
+    private String operationStatus;
 
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;

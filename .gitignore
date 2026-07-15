@@ -110,3 +110,6 @@ Desktop.ini
 *.tmp
 *.temp
 *.swp
+
+# Local uploaded files
+backend/uploads/
