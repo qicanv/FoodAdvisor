@@ -168,22 +168,32 @@ CREATE TABLE IF NOT EXISTS dishes (
 );
 
 -- ============================================
--- 5.6 评论表 reviews
+-- 5.6 评论表 reviews（V0.3 更新）
 -- ============================================
 CREATE TABLE IF NOT EXISTS reviews (
     id BIGSERIAL PRIMARY KEY,
     merchant_id BIGINT NOT NULL,
     user_id BIGINT,
     import_task_id BIGINT,
+    review_type VARCHAR(20) NOT NULL DEFAULT 'ORIGINAL',
+    parent_review_id BIGINT,
+    rating SMALLINT,
+    taste_rating SMALLINT,
+    environment_rating SMALLINT,
+    service_rating SMALLINT,
+    average_spend NUMERIC(10, 2),
+    consumption_date DATE,
+    content TEXT NOT NULL,
+    source VARCHAR(30) NOT NULL DEFAULT 'SYSTEM',
     external_id VARCHAR(200),
     source_user_key VARCHAR(200),
-    rating NUMERIC(3, 2),
-    content TEXT NOT NULL,
-    source VARCHAR(50) NOT NULL DEFAULT 'SYSTEM',
-    review_time TIMESTAMPTZ,
-    status VARCHAR(20) NOT NULL DEFAULT 'PUBLISHED',
-    moderation_status VARCHAR(20) NOT NULL DEFAULT 'APPROVED',
+    idempotency_key VARCHAR(100),
+    current_version INTEGER NOT NULL DEFAULT 1,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    moderation_status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     risk_level VARCHAR(20),
+    published_at TIMESTAMPTZ,
+    edited_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMPTZ,
@@ -196,11 +206,43 @@ CREATE TABLE IF NOT EXISTS reviews (
         FOREIGN KEY (user_id) REFERENCES users(id)
         ON DELETE SET NULL,
 
+    CONSTRAINT fk_reviews_parent
+        FOREIGN KEY (parent_review_id) REFERENCES reviews(id)
+        ON DELETE SET NULL,
+
+    CONSTRAINT ck_reviews_review_type
+        CHECK (review_type IN ('ORIGINAL', 'FOLLOW_UP')),
+
+    CONSTRAINT ck_reviews_parent_type
+        CHECK (
+            (review_type = 'ORIGINAL' AND parent_review_id IS NULL)
+            OR
+            (review_type = 'FOLLOW_UP' AND parent_review_id IS NOT NULL)
+        ),
+
     CONSTRAINT ck_reviews_rating
-        CHECK (rating IS NULL OR rating BETWEEN 0 AND 5),
+        CHECK (rating IS NULL OR rating BETWEEN 1 AND 5),
+
+    CONSTRAINT ck_reviews_taste_rating
+        CHECK (taste_rating IS NULL OR taste_rating BETWEEN 1 AND 5),
+
+    CONSTRAINT ck_reviews_environment_rating
+        CHECK (environment_rating IS NULL OR environment_rating BETWEEN 1 AND 5),
+
+    CONSTRAINT ck_reviews_service_rating
+        CHECK (service_rating IS NULL OR service_rating BETWEEN 1 AND 5),
+
+    CONSTRAINT ck_reviews_average_spend
+        CHECK (average_spend IS NULL OR average_spend >= 0),
+
+    CONSTRAINT ck_reviews_content_length
+        CHECK (char_length(btrim(content)) BETWEEN 10 AND 2000),
+
+    CONSTRAINT ck_reviews_current_version
+        CHECK (current_version >= 1),
 
     CONSTRAINT ck_reviews_status
-        CHECK (status IN ('DRAFT', 'PUBLISHED', 'HIDDEN', 'DELETED')),
+        CHECK (status IN ('PENDING', 'PUBLISHED', 'HIDDEN', 'DELETED')),
 
     CONSTRAINT ck_reviews_moderation_status
         CHECK (moderation_status IN ('PENDING', 'APPROVED', 'REJECTED')),
@@ -209,12 +251,34 @@ CREATE TABLE IF NOT EXISTS reviews (
         CHECK (risk_level IS NULL OR risk_level IN ('LOW', 'MEDIUM', 'HIGH'))
 );
 
+-- 唯一索引：每用户每商家只有一条有效原评价
+CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_user_merchant_original
+ON reviews(user_id, merchant_id)
+WHERE user_id IS NOT NULL
+  AND review_type = 'ORIGINAL'
+  AND status <> 'DELETED';
+
+-- 唯一索引：每条原评价最多一条有效追评
+CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_parent_follow_up
+ON reviews(parent_review_id)
+WHERE parent_review_id IS NOT NULL
+  AND review_type = 'FOLLOW_UP'
+  AND status <> 'DELETED';
+
+-- 唯一索引：幂等键
+CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_user_idempotency
+ON reviews(user_id, idempotency_key)
+WHERE user_id IS NOT NULL
+  AND idempotency_key IS NOT NULL;
+
 -- ============================================
--- 5.7 评论分析表 review_analysis
+-- 5.7 评论分析表 review_analysis（V0.3 更新 — 支持版本化分析）
 -- ============================================
 CREATE TABLE IF NOT EXISTS review_analysis (
     id BIGSERIAL PRIMARY KEY,
     review_id BIGINT NOT NULL,
+    review_version INTEGER NOT NULL DEFAULT 1,
+    analysis_version INTEGER NOT NULL DEFAULT 1,
     sentiment VARCHAR(20) NOT NULL,
     confidence NUMERIC(5, 4),
     low_confidence BOOLEAN NOT NULL DEFAULT FALSE,
@@ -223,12 +287,16 @@ CREATE TABLE IF NOT EXISTS review_analysis (
     negative_reason VARCHAR(100),
     model_name VARCHAR(100),
     model_version VARCHAR(100),
+    business_trace_id VARCHAR(100),
     status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
     error_message TEXT,
-    analyzed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT uk_review_analysis_review UNIQUE (review_id),
+    CONSTRAINT uk_review_analysis_version
+        UNIQUE (review_id, review_version, analysis_version),
 
     CONSTRAINT fk_review_analysis_review
         FOREIGN KEY (review_id) REFERENCES reviews(id)
@@ -241,7 +309,10 @@ CREATE TABLE IF NOT EXISTS review_analysis (
         CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1),
 
     CONSTRAINT ck_review_analysis_status
-        CHECK (status IN ('PENDING', 'SUCCESS', 'FAILED'))
+        CHECK (status IN ('PENDING', 'SUCCESS', 'FAILED')),
+
+    CONSTRAINT ck_review_analysis_complete
+        CHECK (status <> 'SUCCESS' OR sentiment IS NOT NULL)
 );
 
 -- ============================================
@@ -263,11 +334,12 @@ CREATE TABLE IF NOT EXISTS review_tags (
 );
 
 -- ============================================
--- 5.9 评论标签关联表 review_tag_relations
+-- 5.9 评论标签关联表 review_tag_relations（V0.3 更新）
 -- ============================================
 CREATE TABLE IF NOT EXISTS review_tag_relations (
     id BIGSERIAL PRIMARY KEY,
     review_id BIGINT NOT NULL,
+    review_version INTEGER NOT NULL DEFAULT 1,
     tag_id BIGINT NOT NULL,
     sentiment VARCHAR(20) NOT NULL,
     confidence NUMERIC(5, 4),
@@ -285,7 +357,7 @@ CREATE TABLE IF NOT EXISTS review_tag_relations (
         ON DELETE RESTRICT,
 
     CONSTRAINT uk_review_tag_relation
-        UNIQUE (review_id, tag_id),
+        UNIQUE (review_id, review_version, tag_id),
 
     CONSTRAINT ck_review_tag_sentiment
         CHECK (sentiment IN ('POSITIVE', 'NEUTRAL', 'NEGATIVE')),
@@ -719,4 +791,192 @@ CREATE TABLE IF NOT EXISTS ai_call_logs (
 
     CONSTRAINT ck_ai_call_cost
         CHECK (estimated_cost IS NULL OR estimated_cost >= 0)
+);
+
+-- ============================================
+-- 5.23 评价版本历史表 review_versions（V0.3 新增）
+-- ============================================
+CREATE TABLE IF NOT EXISTS review_versions (
+    id BIGSERIAL PRIMARY KEY,
+    review_id BIGINT NOT NULL,
+    version INTEGER NOT NULL,
+    rating SMALLINT,
+    taste_rating SMALLINT,
+    environment_rating SMALLINT,
+    service_rating SMALLINT,
+    average_spend NUMERIC(10, 2),
+    consumption_date DATE,
+    content TEXT,
+    image_snapshot JSONB,
+    status_snapshot VARCHAR(20),
+    moderation_status_snapshot VARCHAR(20),
+    changed_by BIGINT,
+    change_type VARCHAR(20) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_review_versions_review
+        FOREIGN KEY (review_id) REFERENCES reviews(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT ck_review_versions_version
+        CHECK (version >= 1),
+
+    CONSTRAINT ck_review_versions_change_type
+        CHECK (change_type IN ('CREATE', 'EDIT', 'FOLLOW_UP', 'MODERATE', 'RESTORE')),
+
+    CONSTRAINT uk_review_versions
+        UNIQUE (review_id, version)
+);
+
+-- ============================================
+-- 5.24 差评归因类别表 review_issue_categories（V0.3 新增）
+-- ============================================
+CREATE TABLE IF NOT EXISTS review_issue_categories (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uk_issue_categories_code UNIQUE (code),
+
+    CONSTRAINT ck_issue_categories_status
+        CHECK (status IN ('ACTIVE', 'DISABLED'))
+);
+
+-- 内置归因类别种子数据
+INSERT INTO review_issue_categories (code, name, description) VALUES
+    ('HYGIENE', '卫生问题', '环境卫生、餐具清洁、食材新鲜度等'),
+    ('SERVICE_ATTITUDE', '服务态度', '服务员态度冷漠、不耐烦、态度恶劣等'),
+    ('SERVING_SPEED', '上菜速度', '上菜慢、催菜无果、出餐效率低等'),
+    ('TASTE', '菜品口味', '菜品味道差、不符合预期、口味过重/过淡等'),
+    ('PRICE', '价格问题', '价格偏高、性价比低、隐性消费等'),
+    ('PORTION', '分量问题', '份量太少、与描述不符等'),
+    ('QUEUE', '排队时间', '排队过久、预约形同虚设等'),
+    ('ENVIRONMENT', '环境问题', '环境嘈杂、装修老旧、座位拥挤等'),
+    ('OTHER', '其他问题', '无法归入上述类别的其他问题')
+ON CONFLICT (code) DO NOTHING;
+
+-- ============================================
+-- 5.25 差评归因关联表 review_issue_relations（V0.3 新增）
+-- ============================================
+CREATE TABLE IF NOT EXISTS review_issue_relations (
+    id BIGSERIAL PRIMARY KEY,
+    review_id BIGINT NOT NULL,
+    review_version INTEGER NOT NULL DEFAULT 1,
+    issue_category_id BIGINT NOT NULL,
+    confidence NUMERIC(5, 4),
+    evidence_text TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_issue_relations_review
+        FOREIGN KEY (review_id) REFERENCES reviews(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_issue_relations_category
+        FOREIGN KEY (issue_category_id) REFERENCES review_issue_categories(id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT uk_issue_relations
+        UNIQUE (review_id, review_version, issue_category_id),
+
+    CONSTRAINT ck_issue_relations_confidence
+        CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1)
+);
+
+-- ============================================
+-- 5.26 商家亮点表 merchant_highlights（V0.3 新增）
+-- ============================================
+CREATE TABLE IF NOT EXISTS merchant_highlights (
+    id BIGSERIAL PRIMARY KEY,
+    merchant_id BIGINT NOT NULL,
+    highlight_type VARCHAR(50) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    mention_count INTEGER NOT NULL DEFAULT 1,
+    positive_ratio NUMERIC(5, 4),
+    version INTEGER NOT NULL DEFAULT 1,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_highlights_merchant
+        FOREIGN KEY (merchant_id) REFERENCES merchants(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT ck_highlights_mention_count
+        CHECK (mention_count >= 1),
+
+    CONSTRAINT ck_highlights_positive_ratio
+        CHECK (positive_ratio IS NULL OR positive_ratio BETWEEN 0 AND 1),
+
+    CONSTRAINT ck_highlights_status
+        CHECK (status IN ('ACTIVE', 'OUTDATED', 'DISABLED'))
+);
+
+-- ============================================
+-- 5.27 商家亮点依据表 merchant_highlight_evidences（V0.3 新增）
+-- ============================================
+CREATE TABLE IF NOT EXISTS merchant_highlight_evidences (
+    id BIGSERIAL PRIMARY KEY,
+    highlight_id BIGINT NOT NULL,
+    review_id BIGINT NOT NULL,
+    review_version INTEGER NOT NULL DEFAULT 1,
+    evidence_excerpt TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_highlight_evidences_highlight
+        FOREIGN KEY (highlight_id) REFERENCES merchant_highlights(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_highlight_evidences_review
+        FOREIGN KEY (review_id) REFERENCES reviews(id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT uk_highlight_evidences
+        UNIQUE (highlight_id, review_id)
+);
+
+-- ============================================
+-- 5.28 商家口碑统计表 merchant_reputation_statistics（V0.3 新增）
+-- ============================================
+CREATE TABLE IF NOT EXISTS merchant_reputation_statistics (
+    id BIGSERIAL PRIMARY KEY,
+    merchant_id BIGINT NOT NULL,
+    period_type VARCHAR(10) NOT NULL,
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    average_rating NUMERIC(5, 2),
+    positive_count INTEGER NOT NULL DEFAULT 0,
+    neutral_count INTEGER NOT NULL DEFAULT 0,
+    negative_count INTEGER NOT NULL DEFAULT 0,
+    total_review_count INTEGER NOT NULL DEFAULT 0,
+    positive_ratio NUMERIC(5, 4),
+    negative_ratio NUMERIC(5, 4),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_reputation_stats_merchant
+        FOREIGN KEY (merchant_id) REFERENCES merchants(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT ck_reputation_period_type
+        CHECK (period_type IN ('DAY', 'WEEK', 'MONTH')),
+
+    CONSTRAINT ck_reputation_counts
+        CHECK (
+            positive_count >= 0
+            AND neutral_count >= 0
+            AND negative_count >= 0
+            AND total_review_count >= 0
+        ),
+
+    CONSTRAINT ck_reputation_ratios
+        CHECK (
+            (positive_ratio IS NULL OR positive_ratio BETWEEN 0 AND 1)
+            AND (negative_ratio IS NULL OR negative_ratio BETWEEN 0 AND 1)
+        ),
+
+    CONSTRAINT uk_reputation_stats
+        UNIQUE (merchant_id, period_type, period_start, period_end)
 );

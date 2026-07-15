@@ -6,11 +6,13 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 评论-标签关联表（多对多）
+ * 差评归因关联表（V0.3 新增）
+ *
+ * 一条差评可关联多个问题类别
  */
 @Data
-@TableName("review_tag_relations")
-public class ReviewTagRelation {
+@TableName("review_issue_relations")
+public class ReviewIssueRelation {
 
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -20,18 +22,14 @@ public class ReviewTagRelation {
     /** 评价版本号 */
     private Integer reviewVersion;
 
-    private Long tagId;
+    private Long issueCategoryId;
 
-    /** POSITIVE / NEUTRAL / NEGATIVE */
-    private String sentiment;
-
+    /** 归因置信度 0-1 */
     private BigDecimal confidence;
+
+    /** 原文依据片段 */
     private String evidenceText;
-    private String modelName;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
-
-    @TableField(fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updatedAt;
 }

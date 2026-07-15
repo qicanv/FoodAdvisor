@@ -1,5 +1,5 @@
 -- ============================================
--- FoodAdvisor 索引创建脚本 V0.2
+-- FoodAdvisor 索引创建脚本 V0.3
 -- 复合索引 + 部分唯一索引
 -- ============================================
 
@@ -48,9 +48,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_dishes_merchant_name_active
     ON dishes(merchant_id, name)
     WHERE status <> 'ARCHIVED';
 
--- === reviews ===
-CREATE INDEX IF NOT EXISTS idx_reviews_merchant_time
-    ON reviews(merchant_id, review_time DESC);
+-- === reviews (V0.3 更新) ===
+CREATE INDEX IF NOT EXISTS idx_reviews_merchant_created
+    ON reviews(merchant_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_reviews_user
     ON reviews(user_id);
@@ -61,16 +61,41 @@ CREATE INDEX IF NOT EXISTS idx_reviews_rating
 CREATE INDEX IF NOT EXISTS idx_reviews_status
     ON reviews(status, moderation_status);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_source_external_id
-    ON reviews(source, external_id)
-    WHERE external_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_reviews_review_type
+    ON reviews(review_type, status);
 
--- === review_analysis ===
+-- === review_analysis (V0.3 更新) ===
+CREATE INDEX IF NOT EXISTS idx_review_analysis_review_version
+    ON review_analysis(review_id, review_version DESC, analysis_version DESC);
+
 CREATE INDEX IF NOT EXISTS idx_review_analysis_sentiment
     ON review_analysis(sentiment);
 
-CREATE INDEX IF NOT EXISTS idx_review_analysis_analyzed_at
-    ON review_analysis(analyzed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_review_analysis_created_at
+    ON review_analysis(created_at DESC);
+
+-- === review_versions (V0.3 新增) ===
+CREATE INDEX IF NOT EXISTS idx_review_versions_review
+    ON review_versions(review_id, version DESC);
+
+-- === review_issue_relations (V0.3 新增) ===
+CREATE INDEX IF NOT EXISTS idx_issue_relations_review
+    ON review_issue_relations(review_id, review_version);
+
+CREATE INDEX IF NOT EXISTS idx_issue_relations_category
+    ON review_issue_relations(issue_category_id);
+
+-- === merchant_highlights (V0.3 新增) ===
+CREATE INDEX IF NOT EXISTS idx_highlights_merchant_status
+    ON merchant_highlights(merchant_id, status, mention_count DESC);
+
+-- === merchant_highlight_evidences (V0.3 新增) ===
+CREATE INDEX IF NOT EXISTS idx_highlight_evidences_highlight
+    ON merchant_highlight_evidences(highlight_id);
+
+-- === merchant_reputation_statistics (V0.3 新增) ===
+CREATE INDEX IF NOT EXISTS idx_reputation_stats_merchant_period
+    ON merchant_reputation_statistics(merchant_id, period_type, period_start DESC);
 
 -- === review_tag_relations ===
 CREATE INDEX IF NOT EXISTS idx_review_tag_relations_tag_sentiment

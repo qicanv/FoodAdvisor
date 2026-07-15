@@ -10,6 +10,11 @@ public class ReviewAnalysisResultVO {
 
     private Long reviewId;
     private Long merchantId;
+
+    /** V0.3 新增：版本追踪 */
+    private Integer reviewVersion;
+    private Integer analysisVersion;
+
     private String sentiment;
     private BigDecimal confidence;
     private Boolean lowConfidence;
@@ -22,9 +27,16 @@ public class ReviewAnalysisResultVO {
     /** 标签列表 */
     private List<TagResultVO> tags;
 
+    /** V0.3 新增：差评归因列表 */
+    private List<IssueCategoryVO> issueCategories;
+
     private String negativeReason;
     private String modelName;
     private String modelVersion;
+
+    /** V0.3 新增：AI 追踪ID */
+    private String businessTraceId;
+
     private LocalDateTime analyzedAt;
 
     @Data
@@ -40,6 +52,14 @@ public class ReviewAnalysisResultVO {
         private String tagName;
         private String category;
         private String sentiment;
+        private BigDecimal confidence;
+        private String evidenceText;
+    }
+
+    @Data
+    public static class IssueCategoryVO {
+        private String category;
+        private String categoryName;
         private BigDecimal confidence;
         private String evidenceText;
     }

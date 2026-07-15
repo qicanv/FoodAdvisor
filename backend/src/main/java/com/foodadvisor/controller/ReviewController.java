@@ -43,7 +43,7 @@ public class ReviewController {
     }
 
     /**
-     * 触发单条评价的 AI 分析（调用 FastAPI）
+     * 触发单条评价的 AI 分析（调用 FastAPI）（V0.3 更新）
      */
     @PostMapping("/{reviewId}/analyze")
     public ApiResponse<ReviewAnalysisResultVO> analyze(@PathVariable Long reviewId) {
@@ -52,44 +52,86 @@ public class ReviewController {
             return ApiResponse.notFound("评价不存在");
         }
 
+        int reviewVersion = review.getCurrentVersion() != null ? review.getCurrentVersion() : 1;
+
         // 调用 FastAPI 分析
         JsonNode result = aiClientService.analyzeReview(
-                review.getId(), review.getMerchantId(), review.getContent());
+                review.getId(), review.getMerchantId(), review.getContent(), reviewVersion);
 
         // 保存分析结果到数据库
         ReviewAnalysis analysis = new ReviewAnalysis();
         analysis.setReviewId(review.getId());
+        analysis.setReviewVersion(reviewVersion);
+        analysis.setAnalysisVersion(result.has("analysisVersion") ? result.get("analysisVersion").asInt() : 1);
         analysis.setSentiment(result.get("sentiment").asText());
         analysis.setConfidence(new BigDecimal(result.get("confidence").asText()));
+        analysis.setLowConfidence(result.has("lowConfidence") ? result.get("lowConfidence").asBoolean() : false);
         analysis.setKeywords(result.get("keywords").toString());
         analysis.setAspects(result.get("aspects").toString());
         if (result.has("negativeReason") && !result.get("negativeReason").isNull()) {
             analysis.setNegativeReason(result.get("negativeReason").asText());
         }
         analysis.setModelName(result.has("modelName") ? result.get("modelName").asText() : null);
+        analysis.setModelVersion(result.has("modelVersion") && !result.get("modelVersion").isNull()
+                ? result.get("modelVersion").asText() : null);
+        analysis.setBusinessTraceId(result.has("businessTraceId")
+                ? result.get("businessTraceId").asText() : null);
+        analysis.setStatus(result.has("status") ? result.get("status").asText() : "SUCCESS");
+        if (result.has("errorMessage") && !result.get("errorMessage").isNull()) {
+            analysis.setErrorMessage(result.get("errorMessage").asText());
+        }
         reviewService.saveAnalysis(analysis);
 
-        // 构建返回结果
+        // 构建返回 VO
+        ReviewAnalysisResultVO vo = buildResultVO(review, result);
+        return ApiResponse.success(vo);
+    }
+
+    /**
+     * 构建分析结果 VO（V0.3）
+     */
+    private ReviewAnalysisResultVO buildResultVO(Review review, JsonNode result) {
         ReviewAnalysisResultVO vo = new ReviewAnalysisResultVO();
         vo.setReviewId(review.getId());
         vo.setMerchantId(review.getMerchantId());
-        vo.setSentiment(analysis.getSentiment());
-        vo.setConfidence(analysis.getConfidence());
+        vo.setReviewVersion(result.has("reviewVersion") ? result.get("reviewVersion").asInt() : 1);
+        vo.setAnalysisVersion(result.has("analysisVersion") ? result.get("analysisVersion").asInt() : 1);
+        vo.setSentiment(result.get("sentiment").asText());
+        vo.setConfidence(new BigDecimal(result.get("confidence").asText()));
+        vo.setLowConfidence(result.has("lowConfidence") ? result.get("lowConfidence").asBoolean() : false);
+        vo.setBusinessTraceId(result.has("businessTraceId") && !result.get("businessTraceId").isNull()
+                ? result.get("businessTraceId").asText() : null);
 
         // 解析 JSON 字段
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            vo.setKeywords(mapper.readValue(analysis.getKeywords(),
+            vo.setKeywords(mapper.readValue(result.get("keywords").toString(),
                     new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}));
-            vo.setAspects(mapper.readValue(analysis.getAspects(),
+            vo.setAspects(mapper.readValue(result.get("aspects").toString(),
                     new com.fasterxml.jackson.core.type.TypeReference<List<ReviewAnalysisResultVO.AspectVO>>() {}));
+            if (result.has("tags") && !result.get("tags").isNull()) {
+                vo.setTags(mapper.readValue(result.get("tags").toString(),
+                        new com.fasterxml.jackson.core.type.TypeReference<List<ReviewAnalysisResultVO.TagResultVO>>() {}));
+            }
+            if (result.has("issueCategories") && !result.get("issueCategories").isNull()) {
+                vo.setIssueCategories(mapper.readValue(result.get("issueCategories").toString(),
+                        new com.fasterxml.jackson.core.type.TypeReference<List<ReviewAnalysisResultVO.IssueCategoryVO>>() {}));
+            }
         } catch (Exception ignored) {
             vo.setKeywords(new ArrayList<>());
             vo.setAspects(new ArrayList<>());
+            vo.setTags(new ArrayList<>());
+            vo.setIssueCategories(new ArrayList<>());
         }
-        vo.setNegativeReason(analysis.getNegativeReason());
 
-        return ApiResponse.success(vo);
+        if (result.has("negativeReason") && !result.get("negativeReason").isNull()) {
+            vo.setNegativeReason(result.get("negativeReason").asText());
+        }
+        vo.setModelName(result.has("modelName") ? result.get("modelName").asText() : null);
+        vo.setModelVersion(result.has("modelVersion") && !result.get("modelVersion").isNull()
+                ? result.get("modelVersion").asText() : null);
+
+        return vo;
     }
 
     /**

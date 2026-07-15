@@ -3,6 +3,7 @@ package com.foodadvisor.entity;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
@@ -15,14 +16,50 @@ public class Review {
     private Long merchantId;
     private Long userId;
     private Long importTaskId;
-    private String externalId;
-    private String sourceUserKey;
-    private BigDecimal rating;
-    private String content;
-    private String source;           // SYSTEM / USER
-    private LocalDateTime reviewTime;
 
-    /** DRAFT / PUBLISHED / HIDDEN / DELETED */
+    /** ORIGINAL / FOLLOW_UP */
+    private String reviewType;
+
+    /** 追评关联原评价ID */
+    private Long parentReviewId;
+
+    /** 综合评分 1-5 */
+    private Integer rating;
+
+    /** 口味评分 1-5 */
+    private Integer tasteRating;
+
+    /** 环境评分 1-5 */
+    private Integer environmentRating;
+
+    /** 服务评分 1-5 */
+    private Integer serviceRating;
+
+    /** 人均消费 */
+    private BigDecimal averageSpend;
+
+    /** 消费日期 */
+    private LocalDate consumptionDate;
+
+    /** 评价正文 10-2000字 */
+    private String content;
+
+    /** SYSTEM / IMPORT */
+    private String source;
+
+    /** 外部导入编号 */
+    private String externalId;
+
+    /** 外部用户标识 */
+    private String sourceUserKey;
+
+    /** 幂等键 */
+    private String idempotencyKey;
+
+    /** 当前版本号 >= 1 */
+    private Integer currentVersion;
+
+    /** PENDING / PUBLISHED / HIDDEN / DELETED */
     private String status;
 
     /** PENDING / APPROVED / REJECTED */
@@ -30,6 +67,9 @@ public class Review {
 
     /** LOW / MEDIUM / HIGH */
     private String riskLevel;
+
+    private LocalDateTime publishedAt;
+    private LocalDateTime editedAt;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
