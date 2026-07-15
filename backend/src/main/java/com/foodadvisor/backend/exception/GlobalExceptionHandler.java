@@ -41,6 +41,19 @@ public class GlobalExceptionHandler {
                 .body(response);
     }
 
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ApiResponse<Void>>
+    handleApiException(ApiException exception) {
+        ApiResponse<Void> response = ApiResponse.failure(
+                exception.getCode(),
+                exception.getMessage()
+        );
+
+        return ResponseEntity
+                .status(exception.getStatus())
+                .body(response);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>>
     handleUnknownException(Exception exception) {
