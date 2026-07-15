@@ -2,7 +2,7 @@ package com.foodadvisor.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.foodadvisor.dto.ApiResponse;
+import com.foodadvisor.backend.common.ApiResponse;
 import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.dto.ReviewAnalysisResultVO;
 import com.foodadvisor.entity.Review;
