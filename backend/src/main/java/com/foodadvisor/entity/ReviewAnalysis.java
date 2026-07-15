@@ -2,11 +2,12 @@ package com.foodadvisor.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
+import org.apache.ibatis.type.JdbcType;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Data
-@TableName("review_analysis")
+@TableName(value = "review_analysis", autoResultMap = true)
 public class ReviewAnalysis {
 
     @TableId(type = IdType.AUTO)
@@ -27,9 +28,11 @@ public class ReviewAnalysis {
     private Boolean lowConfidence;
 
     /** JSONB — 关键词数组 */
+    @TableField(jdbcType = JdbcType.OTHER)
     private String keywords;
 
     /** JSONB — 方面级情感数组 */
+    @TableField(jdbcType = JdbcType.OTHER)
     private String aspects;
 
     private String negativeReason;
@@ -44,12 +47,12 @@ public class ReviewAnalysis {
 
     private String errorMessage;
 
-    private LocalDateTime startedAt;
-    private LocalDateTime completedAt;
+    private OffsetDateTime startedAt;
+    private OffsetDateTime completedAt;
 
     @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 }

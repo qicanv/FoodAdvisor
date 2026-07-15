@@ -23,4 +23,20 @@ public record ApiResponse<T>(
                 null
         );
     }
+
+    public static <T> ApiResponse<T> notFound(String message) {
+        return new ApiResponse<>(
+                "NOT_FOUND",
+                message,
+                null
+        );
+    }
+
+    public static <T> ApiResponse<T> success(String message, T data) {
+        return new ApiResponse<>(
+                "SUCCESS",
+                message,
+                data
+        );
+    }
 }
