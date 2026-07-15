@@ -3,20 +3,20 @@ spring:
     name: foodadvisor-backend
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/foodadvisor
-    username: postgres
-    password: password
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:foodadvisor}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
       database: 0
       timeout: 3000ms
 
 server:
-  port: 8080
+  port: ${BACKEND_PORT:8080}
 
 management:
   endpoints:
@@ -28,7 +28,24 @@ management:
       show-details: always
 
 mybatis-plus:
+  type-aliases-package: com.foodadvisor.entity
+  mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     banner: false
+    db-config:
+      id-type: auto
+
+# AI 服务地址（FastAPI）
+ai-service:
+  base-url: http://localhost:${AI_SERVICE_PORT:8000}
+  connect-timeout: 5000
+  read-timeout: 60000
+
+# 日志
+logging:
+  level:
+    com.foodadvisor: DEBUG
+    org.springframework.web: INFO
