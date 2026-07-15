@@ -24,6 +24,11 @@ public class MerchantDetailVO {
     private List<String> environmentTags;
     private String platformStatus;
     private String businessStatus;
+    private BigDecimal averageRating;
+    private BigDecimal averageTasteRating;
+    private BigDecimal averageEnvironmentRating;
+    private BigDecimal averageServiceRating;
+    private Long ratingCount;
 
     /** 营业时间结构化数组 */
     private List<BusinessHourVO> businessHours;

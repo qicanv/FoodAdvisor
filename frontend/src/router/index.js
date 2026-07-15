@@ -1,11 +1,22 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/home/HomeView.vue'
+import RestaurantView from '../views/RestaurantView.vue'
 
 const routes = [
   {
     path: '/',
     name: 'home',
     component: HomeView,
+  },
+  {
+    path: '/restaurants',
+    name: 'restaurants',
+    component: RestaurantView,
+  },
+  {
+    path: '/merchants/:id',
+    name: 'merchant-detail',
+    component: () => import('../views/MerchantDetailView.vue'),
   },
   {
     path: '/diner',
@@ -68,27 +79,29 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   const userRole = localStorage.getItem('userRole')
-  
+
   if (to.meta.requiresAuth) {
     if (!token) {
       const role = to.meta.role
       next({ path: `/${role}` })
       return
     }
-    
+
     if (userRole && userRole !== to.meta.role) {
       next({ path: `/${userRole}/home` })
       return
     }
-    
+
     next()
-  } else {
-    if (token && userRole && to.path === `/${userRole}`) {
-      next({ path: `/${userRole}/home` })
-      return
-    }
-    next()
+    return
   }
+
+  if (token && userRole && to.path === `/${userRole}`) {
+    next({ path: `/${userRole}/home` })
+    return
+  }
+
+  next()
 })
 
 export default router
