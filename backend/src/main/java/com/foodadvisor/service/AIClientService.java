@@ -21,7 +21,7 @@ public class AIClientService {
     @Value("${ai-service.base-url}")
     private String aiServiceBaseUrl;
 
-    @Value("${ai-service.internal-token:change_me}")
+    @Value("${ai-service.internal-token:}")
     private String internalToken;
 
     public AIClientService(ObjectMapper objectMapper) {
@@ -76,6 +76,7 @@ public class AIClientService {
 
     private JsonNode post(String url, Map<String, Object> body) {
         try {
+            requireInternalToken();
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("X-Internal-Token", internalToken);
@@ -86,6 +87,14 @@ public class AIClientService {
             return objectMapper.readTree(response.getBody());
         } catch (Exception e) {
             throw new RuntimeException("AI service call failed: " + e.getMessage(), e);
+        }
+    }
+
+    private void requireInternalToken() {
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException(
+                    "INTERNAL_API_TOKEN is required for AI service calls"
+            );
         }
     }
 }

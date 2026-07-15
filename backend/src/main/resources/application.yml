@@ -5,7 +5,7 @@ spring:
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:foodadvisor}
     username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:password}
+    password: ${POSTGRES_PASSWORD:}
     driver-class-name: org.postgresql.Driver
 
   data:
@@ -36,7 +36,6 @@ mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     banner: false
     db-config:
@@ -45,12 +44,12 @@ mybatis-plus:
 # AI 服务地址（FastAPI）
 ai-service:
   base-url: http://localhost:${AI_SERVICE_PORT:8000}
-  internal-token: ${INTERNAL_API_TOKEN:change_me}
+  internal-token: ${INTERNAL_API_TOKEN:}
   connect-timeout: 5000
   read-timeout: 60000
 
 # 日志
 logging:
   level:
-    com.foodadvisor: DEBUG
+    com.foodadvisor: INFO
     org.springframework.web: INFO

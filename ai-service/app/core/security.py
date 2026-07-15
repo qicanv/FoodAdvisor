@@ -9,6 +9,12 @@ def verify_internal_token(
         alias="X-Internal-Token",
     ),
 ) -> None:
+    if not settings.internal_api_token:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal API token is not configured",
+        )
+
     if x_internal_token != settings.internal_api_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
