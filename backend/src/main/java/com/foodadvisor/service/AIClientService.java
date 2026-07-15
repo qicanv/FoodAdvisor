@@ -21,24 +21,35 @@ public class AIClientService {
     @Value("${ai-service.base-url}")
     private String aiServiceBaseUrl;
 
+    @Value("${ai-service.internal-token:change_me}")
+    private String internalToken;
+
     public AIClientService(ObjectMapper objectMapper) {
         this.restTemplate = new RestTemplate();
         this.objectMapper = objectMapper;
     }
 
     /**
-     * 调用评论分析接口
+     * 调用评论分析接口（V0.3 — 支持 reviewVersion）
      */
-    public JsonNode analyzeReview(Long reviewId, Long merchantId, String content) {
+    public JsonNode analyzeReview(Long reviewId, Long merchantId, String content, Integer reviewVersion) {
         String url = aiServiceBaseUrl + "/internal/reviews/analyze";
 
         Map<String, Object> request = Map.of(
                 "reviewId", reviewId,
                 "merchantId", merchantId,
+                "reviewVersion", reviewVersion != null ? reviewVersion : 1,
                 "content", content
         );
 
         return post(url, request);
+    }
+
+    /**
+     * 调用评论分析接口（兼容旧调用）
+     */
+    public JsonNode analyzeReview(Long reviewId, Long merchantId, String content) {
+        return analyzeReview(reviewId, merchantId, content, 1);
     }
 
     /**
@@ -67,6 +78,7 @@ public class AIClientService {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("X-Internal-Token", internalToken);
             HttpEntity<String> entity = new HttpEntity<>(
                     objectMapper.writeValueAsString(body), headers);
 

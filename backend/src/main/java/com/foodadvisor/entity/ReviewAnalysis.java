@@ -14,6 +14,12 @@ public class ReviewAnalysis {
 
     private Long reviewId;
 
+    /** 评价版本号 */
+    private Integer reviewVersion;
+
+    /** 分析版本号（同版本评价可多次分析） */
+    private Integer analysisVersion;
+
     /** POSITIVE / NEUTRAL / NEGATIVE / MIXED */
     private String sentiment;
 
@@ -30,13 +36,19 @@ public class ReviewAnalysis {
     private String modelName;
     private String modelVersion;
 
+    /** AI 调用追踪ID */
+    private String businessTraceId;
+
     /** PENDING / SUCCESS / FAILED */
     private String status;
 
     private String errorMessage;
 
+    private LocalDateTime startedAt;
+    private LocalDateTime completedAt;
+
     @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime analyzedAt;
+    private LocalDateTime createdAt;
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
