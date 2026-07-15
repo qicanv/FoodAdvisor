@@ -19,6 +19,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'diner' },
   },
   {
+    path: '/diner/profile',
+    name: 'diner-profile',
+    component: () => import('../views/diner/ProfileView.vue'),
+    meta: { requiresAuth: true, role: 'diner' },
+  },
+  {
     path: '/merchant',
     name: 'merchant-login',
     component: () => import('../views/merchant/MerchantView.vue'),
