@@ -1,17 +1,55 @@
 <template>
-  <div>
-    <h1>Vue挂载成功！</h1>
-    <!-- 路由页面渲染位置 -->
-    <router-view />
-  </div>
+  <el-container class="app-container">
+    <el-header class="app-header">
+      <div class="brand">FoodAdvisor</div>
+
+      <el-menu
+        mode="horizontal"
+        :default-active="$route.path"
+        router
+      >
+        <el-menu-item index="/">首页</el-menu-item>
+        <el-menu-item index="/restaurants">餐厅列表</el-menu-item>
+      </el-menu>
+    </el-header>
+
+    <el-main>
+      <router-view />
+    </el-main>
+  </el-container>
 </template>
 
-<script setup lang="ts">
-</script>
-
 <style>
-*{
+html,
+body,
+#app {
+  min-height: 100%;
   margin: 0;
-  padding: 20px;
+}
+
+body {
+  background: #f5f7fa;
+  font-family:
+    Arial,
+    "Microsoft YaHei",
+    sans-serif;
+}
+
+.app-container {
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.brand {
+  margin-right: 40px;
+  font-size: 20px;
+  font-weight: 700;
 }
 </style>

@@ -1,29 +1,90 @@
+# =========================
 # Python
+# =========================
+
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+
 .venv/
+venv/
+
+.pytest_cache/
+.coverage
+htmlcov/
 
 
-# Node
+# =========================
+# Environment
+# =========================
+
+.env
+.env.*
+!.env.example
+
+
+# =========================
+# Node / Vue
+# =========================
+
 node_modules/
 dist/
+.vite/
 
 
-# Java
+# =========================
+# Java / Spring Boot
+# =========================
+
 target/
+*.class
+
+.mvn/wrapper/maven-wrapper.jar
 
 
-# PyCharm
+# =========================
+# IDE
+# =========================
+
 .idea/
+.vscode/
+
+*.iml
 
 
-# Environment
-.env
+# =========================
+# Docker / Database
+# =========================
 
+postgres-data/
+opensearch-data/
+redis-data/
 
-# Database
 *.sql.backup
 
 
+# =========================
 # Logs
+# =========================
+
 *.log
+logs/
+
+
+# =========================
+# OS files
+# =========================
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+
+# =========================
+# Temporary files
+# =========================
+
+*.tmp
+*.temp
+*.swp
