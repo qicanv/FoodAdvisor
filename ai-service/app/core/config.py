@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None
     llm_model: str | None = None
 
+    sentiment_low_confidence_threshold: float = 0.6
+
     request_timeout_seconds: int = 30
 
     model_config = SettingsConfigDict(
