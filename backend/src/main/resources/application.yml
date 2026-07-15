@@ -3,7 +3,7 @@ spring:
     name: foodadvisor-backend
 
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:foodadvisor}
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5433}/${POSTGRES_DB:foodadvisor}?stringtype=unspecified
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:}
     driver-class-name: org.postgresql.Driver
@@ -11,7 +11,7 @@ spring:
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      port: ${REDIS_PORT:6380}
       database: 0
       timeout: 3000ms
 
@@ -20,7 +20,7 @@ server:
 
 foodadvisor:
   crypto:
-    model-key-secret: ${MODEL_KEY_SECRET:}
+    model-key-secret: ${MODEL_KEY_SECRET:dev-secret-key-for-development-only}
 
 management:
   endpoints:
@@ -34,6 +34,7 @@ management:
 mybatis-plus:
   type-aliases-package: com.foodadvisor.entity
   mapper-locations: classpath*:/mapper/**/*.xml
+  type-handlers-package: com.baomidou.mybatisplus.extension.handlers
   configuration:
     map-underscore-to-camel-case: true
   global-config:
