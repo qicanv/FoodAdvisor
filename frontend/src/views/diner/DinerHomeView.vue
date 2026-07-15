@@ -8,7 +8,10 @@
         </div>
         <div class="nav-links">
           <div class="user-info">
-            <span class="user-name">{{ userInfo.username }}</span>
+            <button class="profile-btn" @click="goToProfile">
+              <span class="profile-icon">👤</span>
+              <span class="user-name">{{ userInfo.username }}</span>
+            </button>
             <button class="logout-btn" @click="handleLogout">退出登录</button>
           </div>
         </div>
@@ -239,22 +242,22 @@ const scenes = [
 ]
 
 const allRestaurants = [
-  { id: 1, name: 'Rose Garden 玫瑰园', category: '西餐', rating: 4.9, avgPrice: 268, distance: '1.2公里', tags: ['浪漫', '环境优雅', '适合约会'], emoji: '🌹', color: 'linear-gradient(135deg, #ffccd5 0%, #ffe5ec 100%)', recommendReason: '环境浪漫，灯光柔和，适合情侣约会，主厨推荐的法式牛排非常美味' },
-  { id: 2, name: '海底捞火锅', category: '火锅', rating: 4.8, avgPrice: 128, distance: '2.5公里', tags: ['服务好', '分量足', '适合聚会'], emoji: '🍲', color: 'linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%)', recommendReason: '服务周到，食材新鲜，包间宽敞，非常适合朋友聚会' },
-  { id: 3, name: '外婆家', category: '江浙菜', rating: 4.6, avgPrice: 78, distance: '3.1公里', tags: ['家庭聚餐', '口味清淡', '性价比高'], emoji: '🏠', color: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)', recommendReason: '菜品口味清淡适合老人小孩，环境温馨，价格实惠' },
-  { id: 4, name: '真功夫', category: '快餐', rating: 4.2, avgPrice: 32, distance: '500米', tags: ['便捷', '单人餐', '健康'], emoji: '🍱', color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', recommendReason: '出餐快，座位舒适，适合独自用餐，营养均衡' },
-  { id: 5, name: '星巴克', category: '咖啡', rating: 4.7, avgPrice: 45, distance: '800米', tags: ['下午茶', '环境舒适', '咖啡'], emoji: '☕', color: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)', recommendReason: '环境优雅舒适，咖啡和甜点都很精致，适合下午茶时光' },
-  { id: 6, name: '烧烤夜市', category: '烧烤', rating: 4.5, avgPrice: 68, distance: '1.8公里', tags: ['夜宵', '烧烤', '营业到凌晨'], emoji: '🍢', color: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)', recommendReason: '营业到凌晨3点，烤串味道正宗，是夜宵的绝佳选择' },
-  { id: 7, name: '生日派对餐厅', category: '西餐', rating: 4.8, avgPrice: 198, distance: '4.2公里', tags: ['生日聚会', '蛋糕服务', '派对布置'], emoji: '🎂', color: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)', recommendReason: '提供生日蛋糕和派对布置服务，包间宽敞，氛围热烈' },
-  { id: 8, name: '川湘汇', category: '川菜', rating: 4.5, avgPrice: 98, distance: '2.1公里', tags: ['朋友聚会', '辣味', '量大'], emoji: '🌶️', color: 'linear-gradient(135deg, #ff6b6b 0%, #ffa502 100%)', recommendReason: '川菜正宗，分量足，价格实惠，适合朋友聚会' },
-  { id: 9, name: '粤港茶餐厅', category: '粤菜', rating: 4.6, avgPrice: 68, distance: '1.5公里', tags: ['家庭聚餐', '早茶', '点心'], emoji: '🍵', color: 'linear-gradient(135deg, #7bed9f 0%, #70a1ff 100%)', recommendReason: '粤式点心种类丰富，口味正宗，适合家庭聚餐' },
-  { id: 10, name: '深夜食堂', category: '日料', rating: 4.7, avgPrice: 88, distance: '900米', tags: ['夜宵', '日料', '安静'], emoji: '🍣', color: 'linear-gradient(135deg, #dfe6e9 0%, #b2bec3 100%)', recommendReason: '日式居酒屋风格，安静舒适，营业到凌晨2点' },
-  { id: 11, name: '私人会所', category: '高端', rating: 4.9, avgPrice: 588, distance: '5.5公里', tags: ['约会', '私密', '高端'], emoji: '💎', color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', recommendReason: '私人会所环境私密，服务一对一，非常适合重要约会' },
-  { id: 12, name: '甜品屋', category: '甜品', rating: 4.6, avgPrice: 52, distance: '600米', tags: ['下午茶', '甜品', '拍照'], emoji: '🍰', color: 'linear-gradient(135deg, #ffdde1 0%, #ee9ca7 100%)', recommendReason: '甜品精致美观，适合拍照发朋友圈，下午茶首选' },
-  { id: 13, name: '永和豆浆', category: '早餐', rating: 4.3, avgPrice: 20, distance: '600米', tags: ['早餐', '中式', '快捷'], emoji: '🥛', color: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)', recommendReason: '经典中式早餐，豆浆油条一应俱全，营养丰富，出餐快捷' },
-  { id: 14, name: '肯德基', category: '快餐', rating: 4.4, avgPrice: 35, distance: '800米', tags: ['早餐', '西式', '便捷'], emoji: '🍗', color: 'linear-gradient(135deg, #ffc53d 0%, #ffa940 100%)', recommendReason: '西式早餐选择丰富，帕尼尼、薯饼、咖啡应有尽有，适合上班族' },
-  { id: 15, name: '早茶坊', category: '粤菜', rating: 4.5, avgPrice: 58, distance: '1.2公里', tags: ['早餐', '广式早茶', '点心'], emoji: '🍤', color: 'linear-gradient(135deg, #73d13d 0%, #95de64 100%)', recommendReason: '广式早茶，点心精致多样，虾饺、烧卖、肠粉一应俱全' },
-  { id: 16, name: '星巴克早餐', category: '咖啡', rating: 4.6, avgPrice: 42, distance: '800米', tags: ['早餐', '西式', '咖啡'], emoji: '🥐', color: 'linear-gradient(135deg, #ffd666 0%, #ffc53d 100%)', recommendReason: '西式早餐配咖啡，牛角包、三明治新鲜美味，开启活力一天' }
+  { id: 1, name: 'Rose Garden 玫瑰园', category: '西餐', rating: 4.9, avgPrice: 268, distance: '1.2公里', tags: ['浪漫', '环境优雅', '适合约会'], emoji: '🌹', color: 'linear-gradient(135deg, #ffccd5 0%, #ffe5ec 100%)', recommendReason: '环境浪漫，灯光柔和，适合情侣约会，主厨推荐的法式牛排非常美味', envScore: 95, privacyLevel: 90, openHours: '11:00-22:00', capacity: 50 },
+  { id: 2, name: '海底捞火锅', category: '火锅', rating: 4.8, avgPrice: 128, distance: '2.5公里', tags: ['服务好', '分量足', '适合聚会'], emoji: '🍲', color: 'linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%)', recommendReason: '服务周到，食材新鲜，包间宽敞，非常适合朋友聚会', envScore: 80, privacyLevel: 70, openHours: '10:00-02:00', capacity: 200 },
+  { id: 3, name: '外婆家', category: '江浙菜', rating: 4.6, avgPrice: 78, distance: '3.1公里', tags: ['家庭聚餐', '口味清淡', '性价比高'], emoji: '🏠', color: 'linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)', recommendReason: '菜品口味清淡适合老人小孩，环境温馨，价格实惠', envScore: 75, privacyLevel: 60, openHours: '10:30-21:30', capacity: 150 },
+  { id: 4, name: '真功夫', category: '快餐', rating: 4.2, avgPrice: 32, distance: '500米', tags: ['便捷', '单人餐', '健康'], emoji: '🍱', color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', recommendReason: '出餐快，座位舒适，适合独自用餐，营养均衡', envScore: 60, privacyLevel: 40, openHours: '07:00-22:00', capacity: 30 },
+  { id: 5, name: '星巴克', category: '咖啡', rating: 4.7, avgPrice: 45, distance: '800米', tags: ['下午茶', '环境舒适', '咖啡'], emoji: '☕', color: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)', recommendReason: '环境优雅舒适，咖啡和甜点都很精致，适合下午茶时光', envScore: 85, privacyLevel: 50, openHours: '07:00-22:00', capacity: 40 },
+  { id: 6, name: '烧烤夜市', category: '烧烤', rating: 4.5, avgPrice: 68, distance: '1.8公里', tags: ['夜宵', '烧烤', '营业到凌晨'], emoji: '🍢', color: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)', recommendReason: '营业到凌晨3点，烤串味道正宗，是夜宵的绝佳选择', envScore: 55, privacyLevel: 30, openHours: '17:00-03:00', capacity: 80 },
+  { id: 7, name: '生日派对餐厅', category: '西餐', rating: 4.8, avgPrice: 198, distance: '4.2公里', tags: ['生日聚会', '蛋糕服务', '派对布置'], emoji: '🎂', color: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)', recommendReason: '提供生日蛋糕和派对布置服务，包间宽敞，氛围热烈', envScore: 90, privacyLevel: 80, openHours: '11:00-22:30', capacity: 120 },
+  { id: 8, name: '川湘汇', category: '川菜', rating: 4.5, avgPrice: 98, distance: '2.1公里', tags: ['朋友聚会', '辣味', '量大'], emoji: '🌶️', color: 'linear-gradient(135deg, #ff6b6b 0%, #ffa502 100%)', recommendReason: '川菜正宗，分量足，价格实惠，适合朋友聚会', envScore: 65, privacyLevel: 45, openHours: '11:00-21:00', capacity: 100 },
+  { id: 9, name: '粤港茶餐厅', category: '粤菜', rating: 4.6, avgPrice: 68, distance: '1.5公里', tags: ['家庭聚餐', '早茶', '点心'], emoji: '🍵', color: 'linear-gradient(135deg, #7bed9f 0%, #70a1ff 100%)', recommendReason: '粤式点心种类丰富，口味正宗，适合家庭聚餐', envScore: 70, privacyLevel: 55, openHours: '07:00-21:00', capacity: 80 },
+  { id: 10, name: '深夜食堂', category: '日料', rating: 4.7, avgPrice: 88, distance: '900米', tags: ['夜宵', '日料', '安静'], emoji: '🍣', color: 'linear-gradient(135deg, #dfe6e9 0%, #b2bec3 100%)', recommendReason: '日式居酒屋风格，安静舒适，营业到凌晨2点', envScore: 75, privacyLevel: 65, openHours: '17:00-02:00', capacity: 25 },
+  { id: 11, name: '私人会所', category: '高端', rating: 4.9, avgPrice: 588, distance: '5.5公里', tags: ['约会', '私密', '高端'], emoji: '💎', color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', recommendReason: '私人会所环境私密，服务一对一，非常适合重要约会', envScore: 98, privacyLevel: 98, openHours: '11:00-23:00', capacity: 30 },
+  { id: 12, name: '甜品屋', category: '甜品', rating: 4.6, avgPrice: 52, distance: '600米', tags: ['下午茶', '甜品', '拍照'], emoji: '🍰', color: 'linear-gradient(135deg, #ffdde1 0%, #ee9ca7 100%)', recommendReason: '甜品精致美观，适合拍照发朋友圈，下午茶首选', envScore: 82, privacyLevel: 55, openHours: '10:00-21:00', capacity: 20 },
+  { id: 13, name: '永和豆浆', category: '早餐', rating: 4.3, avgPrice: 20, distance: '600米', tags: ['早餐', '中式', '快捷'], emoji: '🥛', color: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)', recommendReason: '经典中式早餐，豆浆油条一应俱全，营养丰富，出餐快捷', envScore: 55, privacyLevel: 35, openHours: '06:00-20:00', capacity: 25 },
+  { id: 14, name: '肯德基', category: '快餐', rating: 4.4, avgPrice: 35, distance: '800米', tags: ['早餐', '西式', '便捷'], emoji: '🍗', color: 'linear-gradient(135deg, #ffc53d 0%, #ffa940 100%)', recommendReason: '西式早餐选择丰富，帕尼尼、薯饼、咖啡应有尽有，适合上班族', envScore: 60, privacyLevel: 30, openHours: '06:00-23:00', capacity: 50 },
+  { id: 15, name: '早茶坊', category: '粤菜', rating: 4.5, avgPrice: 58, distance: '1.2公里', tags: ['早餐', '广式早茶', '点心'], emoji: '🍤', color: 'linear-gradient(135deg, #73d13d 0%, #95de64 100%)', recommendReason: '广式早茶，点心精致多样，虾饺、烧卖、肠粉一应俱全', envScore: 70, privacyLevel: 50, openHours: '06:30-15:00', capacity: 60 },
+  { id: 16, name: '星巴克早餐', category: '咖啡', rating: 4.6, avgPrice: 42, distance: '800米', tags: ['早餐', '西式', '咖啡'], emoji: '🥐', color: 'linear-gradient(135deg, #ffd666 0%, #ffc53d 100%)', recommendReason: '西式早餐配咖啡，牛角包、三明治新鲜美味，开启活力一天', envScore: 80, privacyLevel: 45, openHours: '07:00-22:00', capacity: 35 }
 ]
 
 onMounted(() => {
@@ -279,30 +282,93 @@ const resetFilters = () => {
 
 const getSceneScore = (restaurant, scene) => {
   let score = 0
-  const sceneTags = {
-    date: ['浪漫', '环境优雅', '适合约会', '私密', '高端'],
-    friends: ['适合聚会', '分量足', '辣味', '量大'],
-    family: ['家庭聚餐', '口味清淡', '广式早茶', '点心'],
-    alone: ['单人餐', '安静', '便捷'],
-    afternoon: ['下午茶', '甜品', '咖啡', '环境舒适'],
-    supper: ['夜宵', '营业到凌晨'],
-    birthday: ['生日聚会', '蛋糕服务', '派对布置'],
-    breakfast: ['早餐', '中式', '西式', '快捷', '广式早茶', '点心']
+  const distance = parseFloat(restaurant.distance) || 0
+  
+  const getOpenHoursScore = (sceneId) => {
+    const openHours = restaurant.openHours || '00:00-23:59'
+    const [start, end] = openHours.split('-')
+    const [startH, startM] = start.split(':').map(Number)
+    const [endH, endM] = end.split(':').map(Number)
+    const startMinutes = startH * 60 + startM
+    const endMinutes = endH * 60 + endM
+    
+    const isOpenLate = endMinutes >= 180 || (endMinutes < 60 && endH === 0)
+    const isOpenEarly = startMinutes <= 420
+    
+    switch(sceneId) {
+      case 'supper':
+        return isOpenLate ? 100 : (endMinutes >= 120 ? 60 : (endMinutes >= 90 ? 30 : 0))
+      case 'breakfast':
+        return isOpenEarly ? 100 : (startMinutes <= 480 ? 60 : (startMinutes <= 540 ? 30 : 0))
+      case 'afternoon':
+        return (startMinutes <= 600 && endMinutes >= 1020) ? 100 : 50
+      default:
+        return 50
+    }
   }
   
-  const rules = sceneTags[scene.id] || []
+  const getAffordabilityScore = () => {
+    if (restaurant.avgPrice < 50) return 100
+    if (restaurant.avgPrice < 100) return 80
+    if (restaurant.avgPrice < 200) return 50
+    return 20
+  }
   
-  rules.forEach(tag => {
-    if (restaurant.tags.some(t => t.includes(tag))) {
-      score += 20
+  const getConvenienceScore = () => {
+    const distScore = distance <= 0.5 ? 100 : (distance <= 1 ? 80 : (distance <= 2 ? 60 : (distance <= 3 ? 40 : 20)))
+    const priceScore = restaurant.avgPrice < 50 ? 100 : (restaurant.avgPrice < 100 ? 70 : 40)
+    return (distScore * 0.6 + priceScore * 0.4)
+  }
+  
+  const tagMatchScore = () => {
+    const sceneTags = {
+      date: ['浪漫', '环境优雅', '适合约会', '私密', '高端'],
+      friends: ['适合聚会', '分量足', '辣味', '量大'],
+      family: ['家庭聚餐', '口味清淡', '广式早茶', '点心'],
+      alone: ['单人餐', '安静', '便捷'],
+      afternoon: ['下午茶', '甜品', '咖啡', '环境舒适'],
+      supper: ['夜宵', '烧烤', '营业到凌晨'],
+      birthday: ['生日聚会', '蛋糕服务', '派对布置'],
+      breakfast: ['早餐', '中式', '西式', '快捷', '广式早茶', '点心']
     }
+    const tags = sceneTags[scene.id] || []
+    let matchScore = 0
+    tags.forEach(tag => {
+      if (restaurant.tags.some(t => t.includes(tag))) {
+        matchScore += 100 / tags.length
+      }
+    })
+    return matchScore
+  }
+  
+  const scores = {
+    envScore: restaurant.envScore || 50,
+    privacyLevel: restaurant.privacyLevel || 50,
+    capacityScore: restaurant.capacity ? (restaurant.capacity >= 100 ? 100 : (restaurant.capacity >= 50 ? 70 : (restaurant.capacity >= 20 ? 40 : 20))) : 50,
+    ratingScore: restaurant.rating * 20,
+    distanceScore: Math.max(0, (10 - distance) * 10),
+    openHoursScore: getOpenHoursScore(scene.id),
+    affordabilityScore: getAffordabilityScore(),
+    convenienceScore: getConvenienceScore(),
+    tagScore: tagMatchScore()
+  }
+  
+  const weightModels = {
+    date: { envScore: 0.30, privacyLevel: 0.25, ratingScore: 0.20, tagScore: 0.15, distanceScore: 0.10 },
+    friends: { capacityScore: 0.25, affordabilityScore: 0.25, ratingScore: 0.20, tagScore: 0.15, distanceScore: 0.15 },
+    family: { envScore: 0.25, affordabilityScore: 0.20, ratingScore: 0.20, capacityScore: 0.15, tagScore: 0.15, distanceScore: 0.05 },
+    alone: { convenienceScore: 0.35, distanceScore: 0.25, affordabilityScore: 0.20, envScore: 0.15, ratingScore: 0.05 },
+    afternoon: { envScore: 0.30, tagScore: 0.25, ratingScore: 0.20, distanceScore: 0.15, privacyLevel: 0.10 },
+    supper: { openHoursScore: 0.40, distanceScore: 0.30, ratingScore: 0.20, tagScore: 0.10 },
+    birthday: { capacityScore: 0.25, privacyLevel: 0.20, envScore: 0.20, tagScore: 0.20, ratingScore: 0.15 },
+    breakfast: { openHoursScore: 0.35, convenienceScore: 0.30, affordabilityScore: 0.20, distanceScore: 0.10, ratingScore: 0.05 }
+  }
+  
+  const weights = weightModels[scene.id] || weightModels.friends
+  
+  Object.keys(weights).forEach(key => {
+    score += scores[key] * weights[key]
   })
-  
-  const ratingBonus = restaurant.rating * 10
-  score += ratingBonus
-  
-  const distance = parseFloat(restaurant.distance)
-  score += Math.max(0, (10 - distance) * 2)
   
   return score
 }
@@ -361,6 +427,10 @@ const handleLogout = () => {
   localStorage.removeItem('userRole')
   router.push('/diner')
 }
+
+const goToProfile = () => {
+  router.push('/diner/profile')
+}
 </script>
 
 <style scoped>
@@ -417,6 +487,29 @@ const handleLogout = () => {
 .user-name {
   font-size: 14px;
   color: #333333;
+}
+
+.profile-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #ff6700;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-right: 12px;
+}
+
+.profile-btn:hover {
+  background: #e55a00;
+}
+
+.profile-icon {
+  font-size: 16px;
 }
 
 .logout-btn {
