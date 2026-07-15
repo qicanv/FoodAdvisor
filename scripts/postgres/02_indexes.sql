@@ -21,7 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_merchants_region
     ON merchants(region_code);
 
 CREATE INDEX IF NOT EXISTS idx_merchants_status_category_rating
-    ON merchants(platform_status, business_status, category, rating DESC);
+    ON merchants(platform_status, operation_status, category, rating DESC);
 
 CREATE INDEX IF NOT EXISTS idx_merchants_average_price
     ON merchants(average_price);
