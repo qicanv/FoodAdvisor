@@ -2,13 +2,17 @@
 import httpx
 import asyncio
 import json
+import os
 
 AI_SERVICE_URL = "http://localhost:8000"
-INTERNAL_TOKEN = "change_me"  # 与 .env 中 internal_api_token 一致
+INTERNAL_TOKEN = os.getenv("INTERNAL_API_TOKEN")
 
 
 async def test_review():
     """测试正面评价和负面评价"""
+    if not INTERNAL_TOKEN:
+        raise RuntimeError("INTERNAL_API_TOKEN is required")
+
     headers = {"X-Internal-Token": INTERNAL_TOKEN}
 
     # trust_env=False 跳过系统代理，timeout=60 给 LLM 调用留够时间

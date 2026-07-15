@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_debug: bool = True
 
-    internal_api_token: str = "change_me"
+    internal_api_token: str | None = None
 
     opensearch_host: str = "localhost"
     opensearch_port: int = 9200
