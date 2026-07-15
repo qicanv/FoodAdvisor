@@ -3,7 +3,7 @@ package com.foodadvisor.entity;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Data
 @TableName("recommendation_evidences")
@@ -26,5 +26,5 @@ public class RecommendationEvidence {
     private BigDecimal relevanceScore;
 
     @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }

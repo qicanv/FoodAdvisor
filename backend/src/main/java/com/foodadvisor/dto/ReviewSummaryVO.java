@@ -1,7 +1,7 @@
 package com.foodadvisor.dto;
 
 import lombok.Data;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 @Data
@@ -22,7 +22,7 @@ public class ReviewSummaryVO {
     private List<String> recommendedDishes;
 
     private Integer reviewCount;
-    private LocalDateTime generatedAt;
+    private OffsetDateTime generatedAt;
 
     @Data
     public static class SummaryItemVO {

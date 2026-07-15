@@ -2,7 +2,7 @@ package com.foodadvisor.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Data
 @TableName("import_task_items")
@@ -26,5 +26,5 @@ public class ImportTaskItem {
     private String errorMessage;
 
     @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }

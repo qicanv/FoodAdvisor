@@ -9,6 +9,7 @@ import com.foodadvisor.entity.ReviewTagRelation;
 import com.foodadvisor.mapper.ReviewAnalysisMapper;
 import com.foodadvisor.mapper.ReviewMapper;
 import com.foodadvisor.mapper.ReviewTagRelationMapper;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,11 +23,14 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
     private final ReviewAnalysisMapper analysisMapper;
     private final ReviewTagRelationMapper tagRelationMapper;
+    private final JdbcTemplate jdbcTemplate;
 
     public ReviewService(ReviewAnalysisMapper analysisMapper,
-                         ReviewTagRelationMapper tagRelationMapper) {
+                         ReviewTagRelationMapper tagRelationMapper,
+                         JdbcTemplate jdbcTemplate) {
         this.analysisMapper = analysisMapper;
         this.tagRelationMapper = tagRelationMapper;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
@@ -37,7 +41,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         LambdaQueryWrapper<Review> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Review::getMerchantId, merchantId)
                .eq(Review::getStatus, "PUBLISHED")
-               .orderByDesc(Review::getReviewTime);
+               .orderByDesc(Review::getCreatedAt);
         return this.page(page, wrapper);
     }
 
@@ -60,18 +64,39 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     }
 
     /**
-     * 保存或更新分析结果
+     * 保存或更新分析结果（使用原生 SQL 处理 JSONB）
      */
     @Transactional
     public void saveAnalysis(ReviewAnalysis analysis) {
         LambdaQueryWrapper<ReviewAnalysis> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ReviewAnalysis::getReviewId, analysis.getReviewId());
         ReviewAnalysis existing = analysisMapper.selectOne(wrapper);
+
         if (existing != null) {
-            analysis.setId(existing.getId());
-            analysisMapper.updateById(analysis);
+            jdbcTemplate.update(
+                "UPDATE review_analysis SET review_version=?, analysis_version=?, sentiment=?, "
+                + "confidence=?, low_confidence=?, keywords=?::jsonb, aspects=?::jsonb, "
+                + "negative_reason=?, model_name=?, model_version=?, business_trace_id=?, "
+                + "status=?, error_message=?, updated_at=CURRENT_TIMESTAMP "
+                + "WHERE review_id=?",
+                analysis.getReviewVersion(), analysis.getAnalysisVersion(), analysis.getSentiment(),
+                analysis.getConfidence(), analysis.getLowConfidence(), analysis.getKeywords(), analysis.getAspects(),
+                analysis.getNegativeReason(), analysis.getModelName(), analysis.getModelVersion(),
+                analysis.getBusinessTraceId(), analysis.getStatus(), analysis.getErrorMessage(),
+                analysis.getReviewId()
+            );
         } else {
-            analysisMapper.insert(analysis);
+            jdbcTemplate.update(
+                "INSERT INTO review_analysis (review_id, review_version, analysis_version, sentiment, "
+                + "confidence, low_confidence, keywords, aspects, negative_reason, model_name, "
+                + "model_version, business_trace_id, status, error_message, created_at, updated_at) "
+                + "VALUES (?,?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                analysis.getReviewId(), analysis.getReviewVersion(), analysis.getAnalysisVersion(),
+                analysis.getSentiment(), analysis.getConfidence(), analysis.getLowConfidence(),
+                analysis.getKeywords(), analysis.getAspects(), analysis.getNegativeReason(),
+                analysis.getModelName(), analysis.getModelVersion(), analysis.getBusinessTraceId(),
+                analysis.getStatus(), analysis.getErrorMessage()
+            );
         }
     }
 

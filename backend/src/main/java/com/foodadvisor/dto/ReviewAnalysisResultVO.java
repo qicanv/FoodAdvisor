@@ -2,7 +2,7 @@ package com.foodadvisor.dto;
 
 import lombok.Data;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 @Data
@@ -37,7 +37,7 @@ public class ReviewAnalysisResultVO {
     /** V0.3 新增：AI 追踪ID */
     private String businessTraceId;
 
-    private LocalDateTime analyzedAt;
+    private OffsetDateTime analyzedAt;
 
     @Data
     public static class AspectVO {
