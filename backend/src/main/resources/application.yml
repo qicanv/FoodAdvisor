@@ -18,6 +18,10 @@ spring:
 server:
   port: ${BACKEND_PORT:8080}
 
+foodadvisor:
+  crypto:
+    model-key-secret: ${MODEL_KEY_SECRET:}
+
 management:
   endpoints:
     web:
