@@ -2,7 +2,7 @@ package com.foodadvisor.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Data
 @TableName("chat_session_states")
@@ -31,5 +31,5 @@ public class ChatSessionState {
     private Integer version;
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 }

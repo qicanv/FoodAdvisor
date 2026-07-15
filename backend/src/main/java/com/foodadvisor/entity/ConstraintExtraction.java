@@ -2,7 +2,7 @@ package com.foodadvisor.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Data
 @TableName("constraint_extractions")
@@ -30,5 +30,5 @@ public class ConstraintExtraction {
     private String modelVersion;
 
     @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }

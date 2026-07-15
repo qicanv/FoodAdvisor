@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Data
 @TableName("reviews")
@@ -68,14 +68,14 @@ public class Review {
     /** LOW / MEDIUM / HIGH */
     private String riskLevel;
 
-    private LocalDateTime publishedAt;
-    private LocalDateTime editedAt;
+    private OffsetDateTime publishedAt;
+    private OffsetDateTime editedAt;
 
     @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updatedAt;
+    private OffsetDateTime updatedAt;
 
-    private LocalDateTime deletedAt;
+    private OffsetDateTime deletedAt;
 }
