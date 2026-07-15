@@ -1,10 +1,10 @@
 <template>
-  <div class="diner-view">
-    <header class="diner-header">
+  <div class="merchant-view">
+    <header class="merchant-header">
       <div class="container">
         <div class="header-content">
           <div class="logo-section">
-            <img src="../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
+            <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
             <span class="brand-name">食尚参谋</span>
           </div>
           <div class="nav-links">
@@ -18,18 +18,20 @@
       </div>
     </header>
     
-    <main class="diner-main">
+    <main class="merchant-main">
       <div class="auth-section">
         <div class="auth-container">
           <div class="auth-content">
             <div class="auth-icon">
               <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="#ffffff" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
+                <path d="M3 7v6h6"></path>
+                <path d="M21 17a2 2 0 0 0-2-2H7l-4 4v-6a2 2 0 0 0-2-2"></path>
+                <path d="M21 7a2 2 0 0 0-2-2H9"></path>
+                <path d="M3 17h18"></path>
               </svg>
             </div>
-            <h1 class="auth-title">食客端</h1>
-            <p class="auth-subtitle">智能推荐餐厅，获取个性化美食建议</p>
+            <h1 class="auth-title">商户端</h1>
+            <p class="auth-subtitle">管理店铺信息，查看经营分析</p>
             
             <div class="auth-tabs">
               <button 
@@ -87,35 +89,34 @@
         <div class="features-section">
           <div class="features-grid">
             <div class="feature-item">
-              <div class="feature-icon diner-icon">
+              <div class="feature-icon merchant-icon">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+              </div>
+              <h3>店铺管理</h3>
+              <p>管理店铺基本信息、菜单和营业时间</p>
+            </div>
+            
+            <div class="feature-item">
+              <div class="feature-icon merchant-icon">
                 <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2">
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                 </svg>
               </div>
-              <h3>探店对话</h3>
-              <p>与AI助手对话，获取个性化餐厅推荐</p>
+              <h3>评价分析</h3>
+              <p>查看用户评价摘要和AI分析报告</p>
             </div>
             
             <div class="feature-item">
-              <div class="feature-icon diner-icon">
+              <div class="feature-icon merchant-icon">
                 <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-              </div>
-              <h3>餐厅搜索</h3>
-              <p>搜索附近餐厅，查看详细信息</p>
-            </div>
-            
-            <div class="feature-item">
-              <div class="feature-icon diner-icon">
-                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                   <path d="M9 12l2 2 4-4"></path>
+                  <circle cx="12" cy="12" r="10"></circle>
                 </svg>
               </div>
-              <h3>评价查看</h3>
-              <p>查看真实用户评价，做出明智选择</p>
+              <h3>经营建议</h3>
+              <p>获取AI生成的改进建议和运营策略</p>
             </div>
           </div>
         </div>
@@ -126,7 +127,9 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const isLoggedIn = ref(false)
 const userInfo = ref({ username: '' })
 const activeTab = ref('login')
@@ -158,6 +161,8 @@ const handleLogin = () => {
   userInfo.value = { username: loginForm.value.username }
   localStorage.setItem('token', 'dummy-token')
   localStorage.setItem('user', JSON.stringify(userInfo.value))
+  localStorage.setItem('userRole', 'merchant')
+  router.push('/merchant/home')
 }
 
 const handleRegister = () => {
@@ -165,6 +170,8 @@ const handleRegister = () => {
   userInfo.value = { username: registerForm.value.username }
   localStorage.setItem('token', 'dummy-token')
   localStorage.setItem('user', JSON.stringify(userInfo.value))
+  localStorage.setItem('userRole', 'merchant')
+  router.push('/merchant/home')
 }
 
 const handleLogout = () => {
@@ -172,16 +179,18 @@ const handleLogout = () => {
   userInfo.value = { username: '' }
   localStorage.removeItem('token')
   localStorage.removeItem('user')
+  localStorage.removeItem('userRole')
+  router.push('/merchant')
 }
 </script>
 
 <style scoped>
-.diner-view {
+.merchant-view {
   min-height: 100vh;
   background: #fafafa;
 }
 
-.diner-header {
+.merchant-header {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
@@ -209,7 +218,7 @@ const handleLogout = () => {
 .brand-name {
   font-size: 20px;
   font-weight: 700;
-  color: #ff6700;
+  color: #52c41a;
 }
 
 .nav-links {
@@ -225,7 +234,7 @@ const handleLogout = () => {
 }
 
 .nav-link:hover {
-  color: #ff6700;
+  color: #52c41a;
 }
 
 .user-info {
@@ -253,13 +262,13 @@ const handleLogout = () => {
   background: #e8e8e8;
 }
 
-.diner-main {
+.merchant-main {
   padding-top: 0;
 }
 
 .auth-section {
   min-height: calc(100vh - 60px);
-  background: linear-gradient(135deg, #ff6700 0%, #ff7a00 40%, #ff9500 70%, #ffcc00 100%);
+  background: linear-gradient(135deg, #52c41a 0%, #73d13d 40%, #95de64 70%, #b7eb8f 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -300,7 +309,7 @@ const handleLogout = () => {
   width: 80px;
   height: 80px;
   margin: 0 auto 24px;
-  background: linear-gradient(135deg, #ff6700 0%, #ff9500 100%);
+  background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
   border-radius: 20px;
   display: flex;
   align-items: center;
@@ -342,7 +351,7 @@ const handleLogout = () => {
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, #ff6700 0%, #ff9500 100%);
+  background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
   color: #ffffff;
 }
 
@@ -375,8 +384,8 @@ const handleLogout = () => {
 
 .form-input:focus {
   outline: none;
-  border-color: #ff6700;
-  box-shadow: 0 0 0 3px rgba(255, 103, 0, 0.1);
+  border-color: #52c41a;
+  box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.1);
 }
 
 .checkbox-label {
@@ -400,14 +409,14 @@ const handleLogout = () => {
   font-weight: 600;
   cursor: pointer;
   margin-top: 12px;
-  background: linear-gradient(135deg, #ff6700 0%, #ff9500 100%);
+  background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
   color: #ffffff;
   transition: all 0.2s;
 }
 
 .submit-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 103, 0, 0.3);
+  box-shadow: 0 6px 20px rgba(82, 196, 26, 0.3);
 }
 
 .features-section {
@@ -443,7 +452,7 @@ const handleLogout = () => {
   margin-right: auto;
 }
 
-.diner-icon {
+.merchant-icon {
   background: rgba(255, 255, 255, 0.3);
 }
 

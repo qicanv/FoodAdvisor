@@ -1,5 +1,18 @@
 <template>
   <main class="model-config-page">
+    <nav class="admin-nav">
+      <div class="nav-container">
+        <div class="logo-section">
+          <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
+          <span class="brand-name">食尚参谋 - 管理端</span>
+        </div>
+        <div class="nav-links">
+          <a href="/admin/home" class="nav-link">餐厅管理</a>
+          <a href="/admin/model-configs" class="nav-link active">模型配置</a>
+          <button class="logout-btn" @click="handleLogout">退出登录</button>
+        </div>
+      </div>
+    </nav>
     <section class="toolbar">
       <div>
         <h1>模型配置</h1>
@@ -153,6 +166,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   bindScene,
   createModelConfig,
@@ -160,7 +174,16 @@ import {
   getSceneBindings,
   testModelConfig,
   updateModelConfig,
-} from '../api/modelConfig'
+} from '../../api/modelConfig'
+
+const router = useRouter()
+
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  localStorage.removeItem('userRole')
+  router.push('/admin')
+}
 
 const scenes = [
   { label: '探店推荐', value: 'STORE_RECOMMENDATION' },
@@ -342,8 +365,87 @@ onMounted(loadData)
 <style scoped>
 .model-config-page {
   max-width: 1320px;
-  margin: 32px auto;
-  padding: 0 20px 40px;
+  margin: 0 auto;
+  padding: 90px 20px 40px;
+}
+
+.admin-nav {
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  padding: 16px 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+}
+
+.nav-container {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+
+.brand-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1890ff;
+}
+
+.nav-links {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+
+.nav-link {
+  font-size: 15px;
+  color: #666666;
+  text-decoration: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.nav-link:hover {
+  color: #1890ff;
+  background: rgba(24, 144, 255, 0.1);
+}
+
+.nav-link.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+}
+
+.logout-btn {
+  padding: 8px 16px;
+  background: #f5f5f5;
+  color: #666666;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.logout-btn:hover {
+  background: #e8e8e8;
+  color: #333333;
 }
 
 .toolbar {
