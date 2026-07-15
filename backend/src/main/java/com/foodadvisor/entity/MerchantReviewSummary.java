@@ -2,7 +2,7 @@ package com.foodadvisor.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Data
 @TableName("merchant_review_summaries")
@@ -34,8 +34,8 @@ public class MerchantReviewSummary {
     private String recentChanges;
 
     private Integer reviewCount;
-    private LocalDateTime sourceStartTime;
-    private LocalDateTime sourceEndTime;
+    private OffsetDateTime sourceStartTime;
+    private OffsetDateTime sourceEndTime;
 
     /** SUCCESS / INSUFFICIENT_DATA / FAILED */
     private String status;
@@ -45,5 +45,5 @@ public class MerchantReviewSummary {
     private String errorMessage;
 
     @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime generatedAt;
+    private OffsetDateTime generatedAt;
 }

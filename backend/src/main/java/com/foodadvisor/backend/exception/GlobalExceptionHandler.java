@@ -57,9 +57,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>>
     handleUnknownException(Exception exception) {
+        exception.printStackTrace(); // 打印完整错误到控制台
+
         ApiResponse<Void> response = ApiResponse.failure(
                 "INTERNAL_ERROR",
-                "Internal server error"
+                exception.getMessage() != null ? exception.getMessage() : "Internal server error"
         );
 
         return ResponseEntity

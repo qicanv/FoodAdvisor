@@ -3,7 +3,7 @@ package com.foodadvisor.entity;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 差评归因关联表（V0.3 新增）
@@ -31,5 +31,5 @@ public class ReviewIssueRelation {
     private String evidenceText;
 
     @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }
