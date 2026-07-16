@@ -520,11 +520,14 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
     /**
      * 批量保存标签关联。
+     * 先删除同一 review_id + tag_id 的旧记录，再插入新记录。
+     * 手动设置时间字段，因为 MyBatis-Plus 的 auto-fill 在某些调用链下不生效。
      */
     @Transactional
     public void saveTagRelations(
             List<ReviewTagRelation> relations
     ) {
+        OffsetDateTime now = OffsetDateTime.now();
         for (ReviewTagRelation relation : relations) {
             LambdaQueryWrapper<ReviewTagRelation> wrapper =
                     new LambdaQueryWrapper<>();
@@ -539,6 +542,11 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     );
 
             tagRelationMapper.delete(wrapper);
+
+            // 手动设置创建和更新时间
+            relation.setCreatedAt(now);
+            relation.setUpdatedAt(now);
+
             tagRelationMapper.insert(relation);
         }
     }
