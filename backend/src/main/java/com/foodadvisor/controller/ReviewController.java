@@ -24,8 +24,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.math.BigDecimal;
-import java.util.ArrayList;
 
 /**
  * 评价接口 — 评论查询 & AI 分析
@@ -58,11 +56,11 @@ public class ReviewController {
     public ApiResponse<PageResult<Review>> list(
             @RequestParam Long merchantId,
             @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize
+            @RequestParam(defaultValue = "10") int pageSize,
             @RequestParam(required = false) String tagCode,
             @RequestParam(required = false) String sentiment
             ) {
-        Page<Review> page = reviewService.listByMerchant(merchantId, pageNum, pageSize);
+        Page<Review> page = reviewService.listByMerchant(merchantId, pageNum, pageSize, tagCode, sentiment);
         return ApiResponse.success(PageResult.from(page));
     }
 
