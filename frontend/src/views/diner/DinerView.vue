@@ -135,6 +135,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import request from '../../api/request'
 
 const router = useRouter()
 const isLoggedIn = ref(false)
@@ -258,10 +259,21 @@ const handleLogin = async () => {
   loginErrors.value.general = ''
   
   try {
-    if (loginForm.value.username === 'demo' && loginForm.value.password === '123456') {
-      const user = { id: 3, username: 'demo', nickname: '测试用户', email: 'demo@foodadvisor.com', role: 'USER' }
-      localStorage.setItem('token', 'demo-token-123')
-      localStorage.setItem('user', JSON.stringify(user))
+    const response = await request.post('/api/auth/login', {
+      username: loginForm.value.username,
+      password: loginForm.value.password
+    })
+    
+    if (response.success && response.data) {
+      const { token, userId, username, nickname, email, role } = response.data
+      localStorage.setItem('token', token)
+      localStorage.setItem('user', JSON.stringify({
+        id: userId,
+        username,
+        nickname,
+        email,
+        role
+      }))
       localStorage.setItem('userRole', 'diner')
       
       if (loginForm.value.remember) {
@@ -272,7 +284,7 @@ const handleLogin = async () => {
       
       loginAttempts.value = 0
       isLoggedIn.value = true
-      userInfo.value = user
+      userInfo.value = { username }
       router.push('/diner/home')
     } else {
       loginAttempts.value++
@@ -285,8 +297,10 @@ const handleLogin = async () => {
           isLocked.value = false
           loginAttempts.value = 0
         }, 60000)
+      } else if (response.message) {
+        loginErrors.value.general = response.message
       } else {
-        loginErrors.value.general = '用户名或密码错误'
+        loginErrors.value.general = '登录失败，请检查用户名或密码'
       }
     }
   } catch (error) {
@@ -303,27 +317,33 @@ const handleRegister = async () => {
   registerErrors.value.general = ''
   
   try {
-    const existingUsers = ['admin', 'merchant', 'demo']
-    if (existingUsers.includes(registerForm.value.username)) {
-      registerErrors.value.general = '用户名已存在，请选择其他用户名'
-      return
+    const response = await request.post('/api/auth/register', {
+      username: registerForm.value.username,
+      password: registerForm.value.password,
+      confirmPassword: registerForm.value.confirmPassword,
+      email: registerForm.value.email,
+      nickname: registerForm.value.nickname || registerForm.value.username,
+      role: 'USER'
+    })
+    
+    if (response.success && response.data) {
+      const { token, userId, username, nickname, email, role } = response.data
+      localStorage.setItem('token', token)
+      localStorage.setItem('user', JSON.stringify({
+        id: userId,
+        username,
+        nickname,
+        email,
+        role
+      }))
+      localStorage.setItem('userRole', 'diner')
+      
+      isLoggedIn.value = true
+      userInfo.value = { username }
+      router.push('/diner/home')
+    } else {
+      registerErrors.value.general = response.message || '注册失败'
     }
-    
-    const user = { 
-      id: Date.now(), 
-      username: registerForm.value.username, 
-      nickname: registerForm.value.username, 
-      email: registerForm.value.email, 
-      role: 'USER' 
-    }
-    
-    localStorage.setItem('token', 'new-user-token-' + Date.now())
-    localStorage.setItem('user', JSON.stringify(user))
-    localStorage.setItem('userRole', 'diner')
-    
-    isLoggedIn.value = true
-    userInfo.value = user
-    router.push('/diner/home')
   } catch (error) {
     registerErrors.value.general = '网络错误，请稍后重试'
   } finally {
