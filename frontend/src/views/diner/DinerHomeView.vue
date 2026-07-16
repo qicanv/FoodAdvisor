@@ -111,7 +111,16 @@
         </div>
       </section>
 
-      <section v-if="selectedScene && restaurants.length > 0" class="results-section">
+      <section v-if="loading" class="loading-section">
+        <div class="container">
+          <div class="loading-card">
+            <div class="loading-spinner"></div>
+            <p>正在获取餐厅数据...</p>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="selectedScene && !loading && restaurants.length > 0" class="results-section">
         <div class="container">
           <h2 class="section-title">
             推荐餐厅
@@ -145,7 +154,7 @@
         </div>
       </section>
 
-      <section v-if="!selectedScene" class="tips-section">
+      <section v-if="!selectedScene && !loading" class="tips-section">
         <div class="container">
           <div class="tips-card">
             <div class="tips-icon">👆</div>
@@ -161,11 +170,14 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { getMerchants } from '../../api/restaurant'
 
 const router = useRouter()
 const userInfo = ref({ username: '' })
 const selectedScene = ref(null)
 const restaurants = ref([])
+const loading = ref(false)
+const allMerchants = ref([])
 
 const filters = reactive({
   budget: '',
@@ -260,12 +272,120 @@ const allRestaurants = [
   { id: 16, name: '星巴克早餐', category: '咖啡', rating: 4.6, avgPrice: 42, distance: '800米', tags: ['早餐', '西式', '咖啡'], emoji: '🥐', color: 'linear-gradient(135deg, #ffd666 0%, #ffc53d 100%)', recommendReason: '西式早餐配咖啡，牛角包、三明治新鲜美味，开启活力一天', envScore: 80, privacyLevel: 45, openHours: '07:00-22:00', capacity: 35 }
 ]
 
-onMounted(() => {
+onMounted(async () => {
   const user = localStorage.getItem('user')
   if (user) {
     userInfo.value = JSON.parse(user)
   }
+  await fetchMerchants()
 })
+
+const fetchMerchants = async () => {
+  loading.value = true
+  try {
+    const response = await getMerchants({ pageNum: 1, pageSize: 100 })
+    if (response.success && response.data) {
+      const merchants = response.data.records || response.data
+      allMerchants.value = merchants.map(merchant => ({
+        id: merchant.id,
+        name: merchant.name,
+        category: merchant.category,
+        rating: parseFloat(merchant.rating) || 0,
+        avgPrice: parseFloat(merchant.averagePrice) || 0,
+        distance: calculateDistance(merchant) + '公里',
+        tags: parseTags(merchant.environmentTags),
+        emoji: getCategoryEmoji(merchant.category),
+        color: getCategoryColor(merchant.category),
+        recommendReason: merchant.description || '暂无推荐理由',
+        envScore: merchant.rating ? merchant.rating * 20 : 50,
+        privacyLevel: getPrivacyLevel(merchant),
+        openHours: getOpenHours(merchant),
+        capacity: merchant.reviewCount ? merchant.reviewCount * 10 : 50
+      }))
+    }
+  } catch (error) {
+    console.error('获取商家数据失败:', error)
+    allMerchants.value = [...allRestaurants]
+  } finally {
+    loading.value = false
+  }
+}
+
+const calculateDistance = (merchant) => {
+  const userLat = 30.5728 // 默认用户位置（成都）
+  const userLng = 104.0668
+  const merchantLat = parseFloat(merchant.latitude) || userLat
+  const merchantLng = parseFloat(merchant.longitude) || userLng
+  
+  const R = 6371
+  const dLat = (merchantLat - userLat) * Math.PI / 180
+  const dLon = (merchantLng - userLng) * Math.PI / 180
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(userLat * Math.PI / 180) * Math.cos(merchantLat * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return (R * c).toFixed(2)
+}
+
+const parseTags = (tags) => {
+  if (!tags) return []
+  try {
+    return typeof tags === 'string' ? JSON.parse(tags) : tags
+  } catch {
+    return []
+  }
+}
+
+const getCategoryEmoji = (category) => {
+  const emojiMap = {
+    '川菜': '🌶️', '粤菜': '🍵', '烧烤': '🍢', '轻食沙拉': '🥗', 
+    '日料': '🍣', '西餐': '🍽️', '火锅': '🍲', '快餐': '🍱',
+    '咖啡': '☕', '甜品': '🍰', '早茶': '🍤', '高端': '💎'
+  }
+  return emojiMap[category] || '🍽️'
+}
+
+const getCategoryColor = (category) => {
+  const colorMap = {
+    '川菜': 'linear-gradient(135deg, #ff6b6b 0%, #ffa502 100%)',
+    '粤菜': 'linear-gradient(135deg, #7bed9f 0%, #70a1ff 100%)',
+    '烧烤': 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
+    '轻食沙拉': 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+    '日料': 'linear-gradient(135deg, #dfe6e9 0%, #b2bec3 100%)',
+    '西餐': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    '火锅': 'linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%)',
+    '快餐': 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+    '咖啡': 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+    '甜品': 'linear-gradient(135deg, #ffdde1 0%, #ee9ca7 100%)',
+    '早茶': 'linear-gradient(135deg, #73d13d 0%, #95de64 100%)',
+    '高端': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+  }
+  return colorMap[category] || 'linear-gradient(135deg, #ff6700 0%, #ff9500 100%)'
+}
+
+const getPrivacyLevel = (merchant) => {
+  const tags = parseTags(merchant.environmentTags) || []
+  if (tags.some(t => t.includes('包间') || t.includes('私密') || t.includes('情侣'))) {
+    return 80
+  }
+  if (tags.some(t => t.includes('安静') || t.includes('日式') || t.includes('榻榻米'))) {
+    return 65
+  }
+  if (tags.some(t => t.includes('家庭') || t.includes('聚会'))) {
+    return 50
+  }
+  return 40
+}
+
+const getOpenHours = (merchant) => {
+  const category = merchant.category
+  if (category === '烧烤') return '17:00-02:00'
+  if (category === '粤菜' || category === '早茶') return '08:00-22:00'
+  if (category === '轻食沙拉') return '09:00-21:00'
+  if (category === '日料') return '11:00-23:00'
+  return '10:00-22:00'
+}
 
 const selectScene = (scene) => {
   selectedScene.value = scene
@@ -374,7 +494,7 @@ const getSceneScore = (restaurant, scene) => {
 }
 
 const searchRestaurants = () => {
-  let result = [...allRestaurants]
+  let result = [...(allMerchants.value.length > 0 ? allMerchants.value : allRestaurants)]
   
   if (filters.budget) {
     const budgetMap = {
@@ -846,6 +966,39 @@ const goToProfile = () => {
   font-size: 13px;
   color: #667085;
   line-height: 1.5;
+}
+
+.loading-section {
+  margin-bottom: 40px;
+}
+
+.loading-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #ff6700;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-card p {
+  font-size: 15px;
+  color: #667085;
+  margin: 0;
 }
 
 .tips-section {
