@@ -168,6 +168,163 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         return toSubmitResponse(review, activeImages);
     }
 
+    // ==================== 评论编辑与删除 ====================
+
+    /**
+     * 公共校验：评价必须存在、属于当前用户、且未被逻辑删除。
+     * 编辑和删除都需要相同的权限检查，抽出来避免重复代码
+     */
+    private Review requireOwnedActiveReview(Long userId, Long reviewId) {
+        // 查数据库评论是否存在
+        Review review = this.getById(reviewId);
+        if (review == null) {
+            throw new ApiException(
+                    HttpStatus.NOT_FOUND,
+                    "REVIEW_NOT_FOUND",
+                    "评论不存在"
+            );
+        }
+
+        // 权限校验：这条评论是否是用户自己写的
+        if (!review.getUserId().equals(userId)) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "REVIEW_NOT_OWNED",
+                    "只能操作自己的评论"
+            );
+        }
+
+        // 状态校验：已删除的评论不允许再操作
+        if ("DELETED".equals(review.getStatus())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "REVIEW_DELETED",
+                    "已删除的评论不可操作"
+            );
+        }
+
+        return review;
+    }
+
+    /**
+     * 编辑评价 —— 仅允许作者自己修改评价。
+     * 流程和"重新提交评价"基本一致：版本号+1、内容覆盖、安全审核、
+     * 图片增删、版本快照、刷新商家评分、触发AI重新分析。
+     */
+    @Transactional
+    public ReviewSubmitResponse editReview(
+            Long userId,
+            Long reviewId,
+            ReviewSubmitRequest request,
+            List<MultipartFile> images
+    ) {
+        // 入参格式校验（内容长度、评分范围等），复用提交评价的校验逻辑
+        validateSubmitRequest(request);
+
+        // 前置校验：存在性 + 归属 + 未删除（公共方法，编辑和删除共用）
+        Review review = requireOwnedActiveReview(userId, reviewId);
+
+        // 版本号 +1，记录这是第几次修改
+        int currentVersion = review.getCurrentVersion() == null
+                ? 1
+                : review.getCurrentVersion();
+        review.setCurrentVersion(currentVersion + 1);
+
+        // 记录编辑时间（写入数据库 edited_at 列）
+        review.setEditedAt(OffsetDateTime.now());
+
+        // 用前端传来的新内容覆盖旧字段（content、rating、tasteRating 等）
+        applyReviewFields(review, request);
+
+        // 内容安全审核：如果新内容包含敏感词，状态会变成 PENDING 待审核
+        applyContentSafety(review);
+
+        // 执行 UPDATE SQL，把改动持久化到 reviews 表
+        this.updateById(review);
+
+        // 处理图片：保留 keepImageIds 中的旧图 + 上传新图，其余标记删除
+        List<ReviewImage> activeImages = replaceImages(
+                review.getId(),
+                request.getKeepImageIds(),
+                images
+        );
+
+        // 在 review_versions 表存一份快照，changeType = "EDIT"
+        saveVersion(review, activeImages, "EDIT");
+
+        // 编辑可能改了评分，重新计算商家的平均分和评价总数
+        refreshMerchantRatingStats(review.getMerchantId());
+
+        // 插入一条 PENDING 状态的分析占位记录，等 AI 服务来重新分析
+        triggerAnalysisPlaceholder(review);
+
+        // 把最终的 Review 对象 + 图片列表转成前端要的 JSON 格式
+        return toSubmitResponse(review, activeImages);
+    }
+
+    /**
+     * 删除评价 —— 逻辑删除，仅修改 status 和 deleted_at，不物理删除数据。
+     * 数据仍然保留在数据库里，方便后续审计和数据分析。
+     */
+    @Transactional
+    public void deleteReview(Long userId, Long reviewId) {
+        // 前置校验：存在性 + 归属 + 未删除
+        Review review = requireOwnedActiveReview(userId, reviewId);
+
+        // 版本号 +1：因为 saveVersion 依赖 (review_id, version) 唯一约束，
+        // 编辑已经占了当前版本号，删除必须用新版本号才能插入版本快照
+        int currentVersion = review.getCurrentVersion() == null
+                ? 1
+                : review.getCurrentVersion();
+        review.setCurrentVersion(currentVersion + 1);
+
+        // 逻辑删除：改状态 + 记录删除时间，数据仍然留在数据库里
+        review.setStatus("DELETED");
+        review.setDeletedAt(OffsetDateTime.now());
+        review.setUpdatedAt(OffsetDateTime.now());
+
+        // 执行 UPDATE
+        this.updateById(review);
+
+        // 记录版本快照，changeType = "DELETE"，方便追溯
+        // List.of() 表示删除后没有保留任何图片
+        saveVersion(review, List.of(), "DELETE");
+
+        // 删掉的评价不再计入商家评分，重新算一次
+        refreshMerchantRatingStats(review.getMerchantId());
+    }
+
+    /**
+     * 分页查询当前用户的评价列表（"我的评价"页面用）。
+     */
+    public Page<Review> listByUser(
+            Long userId,
+            int pageNum,
+            int pageSize,
+            String statusFilter
+    ) {
+        Page<Review> page = Page.of(pageNum, pageSize);
+        LambdaQueryWrapper<Review> wrapper = new LambdaQueryWrapper<>();
+
+        // 核心条件：只查当前用户自己的评价
+        wrapper.eq(Review::getUserId, userId);
+
+        // 状态筛选逻辑
+        if (statusFilter != null && !statusFilter.isBlank()) {
+            // 前端明确指定了筛选状态（比如只看已发布的）
+            wrapper.eq(Review::getStatus, statusFilter);
+        } else {
+            // 默认不展示已删除的
+            wrapper.ne(Review::getStatus, "DELETED");
+        }
+
+        // 按更新时间倒序，最近改动的排最上面
+        wrapper.orderByDesc(Review::getUpdatedAt);
+
+        return this.page(page, wrapper);
+    }
+
+
     /**
      * 计算商家评分汇总。
      */
