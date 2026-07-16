@@ -5,11 +5,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.foodadvisor.backend.common.ApiResponse;
 import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.dto.ReviewAnalysisResultVO;
+import com.foodadvisor.dto.review.ReviewSubmitRequest;
+import com.foodadvisor.dto.review.ReviewSubmitResponse;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewAnalysis;
 import com.foodadvisor.service.AIClientService;
 import com.foodadvisor.service.ReviewService;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -162,4 +165,54 @@ public class ReviewController {
         }
         return ApiResponse.success("分析完成", count);
     }
+
+    // ==================== 评论编辑与删除 ====================
+
+    /**
+     * 编辑评价 —— 仅允许作者修改自己的评价。
+     * 前端用 multipart/form-data 格式提交（可能包含图片）。
+     */
+    @PutMapping("/{reviewId}")
+    public ApiResponse<ReviewSubmitResponse> edit(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long userId,
+            @RequestPart("request") ReviewSubmitRequest request,
+            @RequestPart(value = "images", required = false) List<MultipartFile> images
+    ) {
+        ReviewSubmitResponse response = reviewService.editReview(
+                userId, reviewId, request,
+                images != null ? images : List.of()
+        );
+        return ApiResponse.success(response);
+    }
+
+    /**
+     * 删除评价 —— 逻辑删除（标记 status = "DELETED"），不物理删除数据。
+     */
+    @DeleteMapping("/{reviewId}")
+    public ApiResponse<Void> delete(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long userId
+    ) {
+        reviewService.deleteReview(userId, reviewId);
+        return ApiResponse.success("评价已删除", null);
+    }
+
+    /**
+     * 查询当前用户的评价列表（"我的评价"页面用）。
+     */
+    @GetMapping("/my-reviews")
+    public ApiResponse<PageResult<Review>> myReviews(
+            @RequestHeader("X-User-Id") Long userId,
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String status
+    ) {
+        Page<Review> page = reviewService.listByUser(
+                userId, pageNum, pageSize, status
+        );
+        return ApiResponse.success(PageResult.from(page));
+    }
+
+    // ==================== 评论编辑与删除 结束 ====================
 }
