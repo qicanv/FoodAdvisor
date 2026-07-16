@@ -261,7 +261,8 @@ const handleLogin = async () => {
   try {
     const response = await request.post('/api/auth/login', {
       username: loginForm.value.username,
-      password: loginForm.value.password
+      password: loginForm.value.password,
+      role: 'USER'
     })
     
     if (response.success && response.data) {

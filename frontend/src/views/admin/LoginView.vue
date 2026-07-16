@@ -9,6 +9,10 @@
           </div>
           <div class="nav-links">
             <a href="/" class="nav-link">返回首页</a>
+            <div v-if="isLoggedIn" class="user-info">
+              <span class="user-name">{{ userInfo.username }}</span>
+              <button class="logout-btn" @click="handleLogout">退出</button>
+            </div>
           </div>
         </div>
       </div>
@@ -44,10 +48,12 @@
               <div class="form-group">
                 <label>用户名</label>
                 <input type="text" v-model="loginForm.username" placeholder="请输入用户名" class="form-input" />
+                <span v-if="loginErrors.username" class="error-text">{{ loginErrors.username }}</span>
               </div>
               <div class="form-group">
                 <label>密码</label>
                 <input type="password" v-model="loginForm.password" placeholder="请输入密码" class="form-input" />
+                <span v-if="loginErrors.password" class="error-text">{{ loginErrors.password }}</span>
               </div>
               <div class="form-group">
                 <label class="checkbox-label">
@@ -55,27 +61,33 @@
                   <span>记住我</span>
                 </label>
               </div>
-              <button type="submit" class="submit-btn">登录</button>
+              <span v-if="loginErrors.general" class="error-text general-error">{{ loginErrors.general }}</span>
+              <button type="submit" class="submit-btn" :disabled="loginLoading">{{ loginLoading ? '登录中...' : '登录' }}</button>
             </form>
             
             <form v-else @submit.prevent="handleRegister" class="auth-form">
               <div class="form-group">
                 <label>用户名</label>
                 <input type="text" v-model="registerForm.username" placeholder="请输入用户名" class="form-input" />
+                <span v-if="registerErrors.username" class="error-text">{{ registerErrors.username }}</span>
               </div>
               <div class="form-group">
                 <label>邮箱</label>
                 <input type="email" v-model="registerForm.email" placeholder="请输入邮箱" class="form-input" />
+                <span v-if="registerErrors.email" class="error-text">{{ registerErrors.email }}</span>
               </div>
               <div class="form-group">
                 <label>密码</label>
                 <input type="password" v-model="registerForm.password" placeholder="请输入密码" class="form-input" />
+                <span v-if="registerErrors.password" class="error-text">{{ registerErrors.password }}</span>
               </div>
               <div class="form-group">
                 <label>确认密码</label>
                 <input type="password" v-model="registerForm.confirmPassword" placeholder="请确认密码" class="form-input" />
+                <span v-if="registerErrors.confirmPassword" class="error-text">{{ registerErrors.confirmPassword }}</span>
               </div>
-              <button type="submit" class="submit-btn">注册</button>
+              <span v-if="registerErrors.general" class="error-text general-error">{{ registerErrors.general }}</span>
+              <button type="submit" class="submit-btn" :disabled="registerLoading">{{ registerLoading ? '注册中...' : '注册' }}</button>
             </form>
           </div>
         </div>
@@ -121,10 +133,13 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import request from '../../api/request'
 
 const router = useRouter()
+const isLoggedIn = ref(false)
+const userInfo = ref({ username: '' })
 const activeTab = ref('login')
 
 const loginForm = ref({
@@ -140,18 +155,211 @@ const registerForm = ref({
   confirmPassword: ''
 })
 
-const handleLogin = () => {
-  localStorage.setItem('token', 'dummy-token')
-  localStorage.setItem('user', JSON.stringify({ username: loginForm.value.username }))
-  localStorage.setItem('userRole', 'admin')
-  router.push('/admin/home')
+const loginErrors = ref({
+  username: '',
+  password: '',
+  general: ''
+})
+
+const registerErrors = ref({
+  username: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+  general: ''
+})
+
+const loginLoading = ref(false)
+const registerLoading = ref(false)
+const loginAttempts = ref(0)
+const isLocked = ref(false)
+
+onMounted(() => {
+  const token = localStorage.getItem('token')
+  const user = localStorage.getItem('user')
+  if (token && user) {
+    isLoggedIn.value = true
+    userInfo.value = JSON.parse(user)
+  }
+  
+  const savedUsername = localStorage.getItem('savedUsername')
+  if (savedUsername) {
+    loginForm.value.username = savedUsername
+    loginForm.value.remember = true
+  }
+})
+
+const validateLogin = () => {
+  loginErrors.value = { username: '', password: '', general: '' }
+  
+  if (!loginForm.value.username.trim()) {
+    loginErrors.value.username = '请输入用户名'
+    return false
+  }
+  
+  if (!loginForm.value.password.trim()) {
+    loginErrors.value.password = '请输入密码'
+    return false
+  }
+  
+  return true
 }
 
-const handleRegister = () => {
-  localStorage.setItem('token', 'dummy-token')
-  localStorage.setItem('user', JSON.stringify({ username: registerForm.value.username }))
-  localStorage.setItem('userRole', 'admin')
-  router.push('/admin/home')
+const validateRegister = () => {
+  registerErrors.value = { username: '', email: '', password: '', confirmPassword: '', general: '' }
+  
+  if (!registerForm.value.username.trim()) {
+    registerErrors.value.username = '请输入用户名'
+    return false
+  }
+  
+  if (registerForm.value.username.length < 3 || registerForm.value.username.length > 20) {
+    registerErrors.value.username = '用户名长度应在3-20个字符之间'
+    return false
+  }
+  
+  if (!registerForm.value.email.trim()) {
+    registerErrors.value.email = '请输入邮箱'
+    return false
+  }
+  
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(registerForm.value.email)) {
+    registerErrors.value.email = '请输入有效的邮箱地址'
+    return false
+  }
+  
+  if (!registerForm.value.password.trim()) {
+    registerErrors.value.password = '请输入密码'
+    return false
+  }
+  
+  if (registerForm.value.password.length < 6) {
+    registerErrors.value.password = '密码长度至少6个字符'
+    return false
+  }
+  
+  if (registerForm.value.password !== registerForm.value.confirmPassword) {
+    registerErrors.value.confirmPassword = '两次输入的密码不一致'
+    return false
+  }
+  
+  return true
+}
+
+const handleLogin = async () => {
+  if (isLocked.value) {
+    loginErrors.value.general = '账号已锁定，请稍后再试'
+    return
+  }
+  
+  if (!validateLogin()) return
+  
+  loginLoading.value = true
+  loginErrors.value.general = ''
+  
+  try {
+    const response = await request.post('/api/auth/login', {
+      username: loginForm.value.username,
+      password: loginForm.value.password,
+      role: 'ADMIN'
+    })
+    
+    if (response.success && response.data) {
+      const { token, userId, username, nickname, email, role } = response.data
+      localStorage.setItem('token', token)
+      localStorage.setItem('user', JSON.stringify({
+        id: userId,
+        username,
+        nickname,
+        email,
+        role
+      }))
+      localStorage.setItem('userRole', 'admin')
+      
+      if (loginForm.value.remember) {
+        localStorage.setItem('savedUsername', loginForm.value.username)
+      } else {
+        localStorage.removeItem('savedUsername')
+      }
+      
+      loginAttempts.value = 0
+      isLoggedIn.value = true
+      userInfo.value = { username }
+      router.push('/admin/home')
+    } else {
+      loginAttempts.value++
+      
+      if (loginAttempts.value >= 5) {
+        isLocked.value = true
+        loginErrors.value.general = '登录失败次数过多，账号已锁定，请1分钟后再试'
+        
+        setTimeout(() => {
+          isLocked.value = false
+          loginAttempts.value = 0
+        }, 60000)
+      } else if (response.message) {
+        loginErrors.value.general = response.message
+      } else {
+        loginErrors.value.general = '登录失败，请检查用户名或密码'
+      }
+    }
+  } catch (error) {
+    loginErrors.value.general = '网络错误，请稍后重试'
+  } finally {
+    loginLoading.value = false
+  }
+}
+
+const handleRegister = async () => {
+  if (!validateRegister()) return
+  
+  registerLoading.value = true
+  registerErrors.value.general = ''
+  
+  try {
+    const response = await request.post('/api/auth/register', {
+      username: registerForm.value.username,
+      password: registerForm.value.password,
+      confirmPassword: registerForm.value.confirmPassword,
+      email: registerForm.value.email,
+      nickname: registerForm.value.nickname || registerForm.value.username,
+      role: 'ADMIN'
+    })
+    
+    if (response.success && response.data) {
+      const { token, userId, username, nickname, email, role } = response.data
+      localStorage.setItem('token', token)
+      localStorage.setItem('user', JSON.stringify({
+        id: userId,
+        username,
+        nickname,
+        email,
+        role
+      }))
+      localStorage.setItem('userRole', 'admin')
+      
+      isLoggedIn.value = true
+      userInfo.value = { username }
+      router.push('/admin/home')
+    } else {
+      registerErrors.value.general = response.message || '注册失败'
+    }
+  } catch (error) {
+    registerErrors.value.general = '网络错误，请稍后重试'
+  } finally {
+    registerLoading.value = false
+  }
+}
+
+const handleLogout = () => {
+  isLoggedIn.value = false
+  userInfo.value = { username: '' }
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  localStorage.removeItem('userRole')
+  localStorage.removeItem('savedUsername')
+  router.push('/admin')
 }
 </script>
 
@@ -206,6 +414,31 @@ const handleRegister = () => {
 
 .nav-link:hover {
   color: #1890ff;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.user-name {
+  font-size: 14px;
+  color: #333333;
+}
+
+.logout-btn {
+  padding: 6px 16px;
+  background: #f5f5f5;
+  color: #666666;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  background: #e8e8e8;
 }
 
 .admin-main {
@@ -365,6 +598,23 @@ const handleRegister = () => {
   box-shadow: 0 6px 20px rgba(24, 144, 255, 0.3);
 }
 
+.submit-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.error-text {
+  display: block;
+  font-size: 13px;
+  color: #ff4d4f;
+  margin-top: 6px;
+}
+
+.error-text.general-error {
+  margin-bottom: 12px;
+}
+
 .features-section {
   width: 100%;
   max-width: 900px;
@@ -421,6 +671,14 @@ const handleRegister = () => {
   
   .auth-title {
     font-size: 24px;
+  }
+  
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .features-section {
+    margin-top: 32px;
   }
 }
 

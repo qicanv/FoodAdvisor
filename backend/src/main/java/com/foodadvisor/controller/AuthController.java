@@ -28,8 +28,9 @@ public class AuthController {
         try {
             String username = body.get("username");
             String password = body.get("password");
+            String requiredRole = body.get("role");
 
-            System.out.println("Login attempt - username: " + username + ", password: " + (password != null ? "***" : "null"));
+            System.out.println("Login attempt - username: " + username + ", password: " + (password != null ? "***" : "null") + ", requiredRole: " + requiredRole);
 
             if (username == null || username.isEmpty()) {
                 return ApiResponse.failure("ERROR", "用户名不能为空");
@@ -48,7 +49,7 @@ public class AuthController {
                 return ApiResponse.failure("ERROR", "用户名不存在");
             }
 
-            System.out.println("User found: " + user.getUsername() + ", status: " + user.getStatus());
+            System.out.println("User found: " + user.getUsername() + ", status: " + user.getStatus() + ", role: " + user.getRole());
             System.out.println("Stored password hash: " + user.getPasswordHash());
 
             if ("DISABLED".equals(user.getStatus())) {
@@ -68,6 +69,11 @@ public class AuthController {
 
             if (!passwordMatch) {
                 return ApiResponse.failure("ERROR", "密码错误");
+            }
+
+            if (requiredRole != null && !requiredRole.isEmpty() && !requiredRole.equals(user.getRole())) {
+                System.out.println("Role mismatch - required: " + requiredRole + ", actual: " + user.getRole());
+                return ApiResponse.failure("ERROR", "该账号不属于此端，请使用正确的端口登录");
             }
 
             String token = JwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole());
@@ -90,45 +96,67 @@ public class AuthController {
 
     @PostMapping("/register")
     public ApiResponse<Map<String, Object>> register(@RequestBody Map<String, String> body) {
-        String username = body.get("username");
-        String password = body.get("password");
-        String confirmPassword = body.get("confirmPassword");
-        String email = body.get("email");
-        String nickname = body.get("nickname");
-        String role = body.get("role");
+        try {
+            String username = body.get("username");
+            String password = body.get("password");
+            String confirmPassword = body.get("confirmPassword");
+            String email = body.get("email");
+            String nickname = body.get("nickname");
+            String role = body.get("role");
 
-        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(User::getUsername, username);
-        User existingUser = userMapper.selectOne(wrapper);
+            System.out.println("Register attempt - username: " + username + ", email: " + email + ", role: " + role);
 
-        if (existingUser != null) {
-            return ApiResponse.failure("ERROR", "用户名已存在");
+            if (username == null || username.isEmpty()) {
+                return ApiResponse.failure("ERROR", "用户名不能为空");
+            }
+
+            if (password == null || password.isEmpty()) {
+                return ApiResponse.failure("ERROR", "密码不能为空");
+            }
+
+            if (confirmPassword == null || confirmPassword.isEmpty()) {
+                return ApiResponse.failure("ERROR", "确认密码不能为空");
+            }
+
+            LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(User::getUsername, username);
+            User existingUser = userMapper.selectOne(wrapper);
+
+            if (existingUser != null) {
+                System.out.println("Username already exists: " + username);
+                return ApiResponse.failure("ERROR", "用户名已存在");
+            }
+
+            if (!password.equals(confirmPassword)) {
+                return ApiResponse.failure("ERROR", "两次输入的密码不一致");
+            }
+
+            User user = new User();
+            user.setUsername(username);
+            user.setPasswordHash(BCrypt.hashpw(password, BCrypt.gensalt()));
+            user.setNickname(nickname != null ? nickname : username);
+            user.setEmail(email);
+            user.setRole(role != null ? role : "USER");
+            user.setStatus("ACTIVE");
+
+            userMapper.insert(user);
+            System.out.println("User registered successfully: " + username);
+
+            String token = JwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole());
+
+            return ApiResponse.success(Map.of(
+                    "token", token,
+                    "userId", user.getId(),
+                    "username", user.getUsername(),
+                    "nickname", user.getNickname(),
+                    "email", user.getEmail(),
+                    "role", user.getRole(),
+                    "status", user.getStatus()
+            ));
+        } catch (Exception e) {
+            System.out.println("Register error: " + e.getMessage());
+            e.printStackTrace();
+            return ApiResponse.failure("ERROR", "注册失败：" + e.getMessage());
         }
-
-        if (!password.equals(confirmPassword)) {
-            return ApiResponse.failure("ERROR", "两次输入的密码不一致");
-        }
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPasswordHash(BCrypt.hashpw(password, BCrypt.gensalt()));
-        user.setNickname(nickname != null ? nickname : username);
-        user.setEmail(email);
-        user.setRole(role != null ? role : "USER");
-        user.setStatus("ACTIVE");
-
-        userMapper.insert(user);
-
-        String token = JwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole());
-
-        return ApiResponse.success(Map.of(
-                "token", token,
-                "userId", user.getId(),
-                "username", user.getUsername(),
-                "nickname", user.getNickname(),
-                "email", user.getEmail(),
-                "role", user.getRole(),
-                "status", user.getStatus()
-        ));
     }
 }
