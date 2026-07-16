@@ -182,21 +182,36 @@ INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_t
 (30, 5, 3, 3.0, '味道是不错，但是上菜节奏很慢，前菜到主菜中间等了快半小时。而且价格确实偏贵，刺身量有点少。', 'SYSTEM', '2026-07-11 20:15:00+08:00', 'PUBLISHED', 'APPROVED');
 
 -- ============================================
--- 7. 评论标签字典（12个常用标签）
+-- 7. 评论标签字典（20个标签，覆盖10个类别，每个类别正/负面各一个）
 -- ============================================
 INSERT INTO review_tags (code, name, category, status) VALUES
+-- 口味
 ('TASTE_GOOD',        '口味好',   'TASTE',        'ACTIVE'),
 ('TASTE_BAD',         '口味差',   'TASTE',        'ACTIVE'),
+-- 环境
 ('ENVIRONMENT_GOOD',  '环境好',   'ENVIRONMENT',  'ACTIVE'),
 ('ENVIRONMENT_BAD',   '环境差',   'ENVIRONMENT',  'ACTIVE'),
+-- 服务
 ('SERVICE_GOOD',      '服务好',   'SERVICE',      'ACTIVE'),
 ('SERVICE_BAD',       '服务差',   'SERVICE',      'ACTIVE'),
+-- 价格
 ('PRICE_LOW',         '价格实惠', 'PRICE',        'ACTIVE'),
 ('PRICE_HIGH',        '价格偏高', 'PRICE',        'ACTIVE'),
+-- 排队
 ('QUEUE_LONG',        '排队久',   'QUEUE_TIME',   'ACTIVE'),
+('QUEUE_SHORT',       '排队快',   'QUEUE_TIME',   'ACTIVE'),
+-- 分量
 ('PORTION_LARGE',     '分量足',   'PORTION',      'ACTIVE'),
+('PORTION_SMALL',     '分量少',   'PORTION',      'ACTIVE'),
+-- 卫生
+('HYGIENE_GOOD',      '卫生好',   'HYGIENE',      'ACTIVE'),
 ('HYGIENE_BAD',       '卫生差',   'HYGIENE',      'ACTIVE'),
-('SPEED_SLOW',        '上菜慢',   'SPEED',        'ACTIVE')
+-- 上菜速度
+('SPEED_FAST',        '上菜快',   'SPEED',        'ACTIVE'),
+('SPEED_SLOW',        '上菜慢',   'SPEED',        'ACTIVE'),
+-- 停车（新增类别，Jira 故事明确要求）
+('PARKING_GOOD',      '停车方便', 'PARKING',      'ACTIVE'),
+('PARKING_BAD',       '停车难',   'PARKING',      'ACTIVE')
 ON CONFLICT (code) DO NOTHING;
 
 -- ============================================
