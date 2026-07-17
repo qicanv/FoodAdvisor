@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.foodadvisor.backend.common.ApiResponse;
 import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.dto.ReviewAnalysisResultVO;
+import com.foodadvisor.dto.review.MyReviewDetailVO;
+import com.foodadvisor.dto.review.MyReviewListVO;
 import com.foodadvisor.dto.review.ReviewDisplayVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
@@ -29,11 +31,11 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDate;
 
 /**
  * 评价接口 — 评论查询 & AI 分析
@@ -81,7 +83,8 @@ public class ReviewController {
             @RequestParam(required = false) String tagCode,
             @RequestParam(required = false) String sentiment
             ) {
-        Page<ReviewDisplayVO> page = reviewService.listByMerchantWithUser(merchantId, pageNum, pageSize);
+        Page<ReviewDisplayVO> page = reviewService.listByMerchantWithUser(
+                merchantId, pageNum, pageSize, tagCode, sentiment);
         return ApiResponse.success(PageResult.from(page));
     }
 
@@ -359,8 +362,8 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
     // ==================== 评论编辑与删除 ====================
 
     /**
-     * 编辑评价 —— 仅允许作者修改自己的评价。
-     * 前端用 multipart/form-data 格式提交（可能包含图片）。
+     * 编辑评价（支持图片）—— 仅允许作者修改自己的评价。
+     * 前端用 multipart/form-data 格式提交。
      */
     @PutMapping("/{reviewId}")
     public ApiResponse<ReviewSubmitResponse> edit(
@@ -372,6 +375,22 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
         ReviewSubmitResponse response = reviewService.editReview(
                 userId, reviewId, request,
                 images != null ? images : List.of()
+        );
+        return ApiResponse.success(response);
+    }
+
+    /**
+     * 编辑评价（简单版，仅文字和评分）—— 仅允许作者修改自己的评价。
+     * 前端用 application/json 格式提交。
+     */
+    @PutMapping("/{reviewId}/simple")
+    public ApiResponse<ReviewSubmitResponse> editSimple(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long userId,
+            @RequestBody ReviewSubmitRequest request
+    ) {
+        ReviewSubmitResponse response = reviewService.editReviewSimple(
+                userId, reviewId, request
         );
         return ApiResponse.success(response);
     }
@@ -392,16 +411,29 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
      * 查询当前用户的评价列表（"我的评价"页面用）。
      */
     @GetMapping("/my-reviews")
-    public ApiResponse<PageResult<Review>> myReviews(
+    public ApiResponse<PageResult<MyReviewListVO>> myReviews(
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize,
-            @RequestParam(required = false) String status
+            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer rating
     ) {
-        Page<Review> page = reviewService.listByUser(
-                userId, pageNum, pageSize, status
+        Page<MyReviewListVO> page = reviewService.listMyReviews(
+                userId, pageNum, pageSize, status, rating
         );
         return ApiResponse.success(PageResult.from(page));
+    }
+
+    /**
+     * 获取当前用户的评价详情（含图片、版本历史）。
+     */
+    @GetMapping("/my-reviews/{reviewId}")
+    public ApiResponse<MyReviewDetailVO> myReviewDetail(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable Long reviewId
+    ) {
+        MyReviewDetailVO detail = reviewService.getMyReviewDetail(userId, reviewId);
+        return ApiResponse.success(detail);
     }
 
     // ==================== 评论编辑与删除 结束 ====================
@@ -480,10 +512,44 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
             
             jdbcTemplate.execute("SELECT setval('reviews_id_seq', (SELECT COALESCE(MAX(id), 1) FROM reviews))");
             
+            jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS review_reply (
+                    id BIGSERIAL PRIMARY KEY,
+                    review_id BIGINT NOT NULL,
+                    merchant_id BIGINT NOT NULL,
+                    reply_content TEXT NOT NULL,
+                    reply_time TIMESTAMPTZ NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'VISIBLE',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT fk_review_reply_review FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_review_reply_merchant FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE CASCADE,
+                    CONSTRAINT ck_review_reply_status CHECK (status IN ('VISIBLE', 'HIDDEN'))
+                )
+                """);
+            
+            jdbcTemplate.execute("DELETE FROM review_reply");
+            
+            String[] replySqls = {
+                "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (1, 1, 1, '非常感谢您的认可！麻婆豆腐是本店招牌，我们会持续把控麻辣口感，期待您再次光临~', '2026-07-01 14:20:00+08:00', 'VISIBLE')",
+                "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (2, 4, 1, '非常抱歉给您带来不好的用餐体验！我们已经针对上菜慢、服务问题全员培训，欢迎您下次到店监督我们的改进。', '2026-07-07 21:30:00+08:00', 'VISIBLE')",
+                "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (3, 7, 2, '感谢好评！我们每日新鲜采购虾料，保证虾饺口感，欢迎周末带家人来喝早茶~', '2026-07-02 10:15:00+08:00', 'VISIBLE')",
+                "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (4, 14, 3, '谢谢支持！蒜蓉烤茄子是深夜必点，我们每晚现捣蒜蓉，保证蒜香浓郁，宵夜随时等您！', '2026-07-02 23:50:00+08:00', 'VISIBLE')",
+                "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (5, 19, 4, '很高兴您喜欢我们的鸡胸沙拉！鸡胸全部低温慢煮无油，减脂人群专属搭配，欢迎常来~', '2026-07-03 13:00:00+08:00', 'VISIBLE')",
+                "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (6, 26, 5, '烤鳗鱼是每日现蒲烧，酱汁独家调配，感谢喜爱！纪念日欢迎提前预约，我们免费布置桌面。', '2026-07-04 21:00:00+08:00', 'VISIBLE')"
+            };
+            
+            for (String sql : replySqls) {
+                jdbcTemplate.execute(sql);
+            }
+            
+            jdbcTemplate.execute("SELECT setval('review_reply_id_seq', (SELECT COALESCE(MAX(id), 1) FROM review_reply))");
+            
             Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reviews", Long.class);
             Long published = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reviews WHERE status = 'PUBLISHED'", Long.class);
+            Long replyCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM review_reply", Long.class);
             
-            return ApiResponse.success(Map.of("total", total, "published", published));
+            return ApiResponse.success(Map.of("total", total, "published", published, "replyCount", replyCount));
         } catch (Exception e) {
             return ApiResponse.failure("RELOAD_FAILED", e.getMessage());
         }
