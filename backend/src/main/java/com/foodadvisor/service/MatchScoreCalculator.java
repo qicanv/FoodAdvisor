@@ -67,7 +67,12 @@ public class MatchScoreCalculator {
                         ? new ConstraintState()
                         : constraints;
 
-        if (!passesHardFilters(merchant, safeConstraints)) {
+        if (!passesHardFilters(
+                merchant,
+                safeConstraints,
+                userLatitude,
+                userLongitude
+        )) {
             return Optional.empty();
         }
 
@@ -238,9 +243,11 @@ public class MatchScoreCalculator {
      * 4. 价格超过预算或价格缺失；
      * 5. 命中明确排除的菜系或商家类型。
      */
-    private boolean passesHardFilters(
+    public boolean passesHardFilters(
             Merchant merchant,
-            ConstraintState constraints
+            ConstraintState constraints,
+            BigDecimal userLatitude,
+            BigDecimal userLongitude
     ) {
         if (merchant == null) {
             return false;
@@ -276,20 +283,95 @@ public class MatchScoreCalculator {
             }
         }
 
-        String merchantText =
-                buildMerchantSearchText(merchant);
-
         if (containsAny(
-                merchantText,
+                buildCuisineAndCategoryText(merchant),
                 constraints.getExcludedCuisines()
         )) {
             return false;
         }
 
-        return !containsAny(
-                merchantText,
+        if (containsAny(
+                buildMerchantTypeText(merchant),
                 constraints.getExcludedMerchantTypes()
-        );
+        )) {
+            return false;
+        }
+
+        if (hasValues(constraints.getCuisines())
+                && !containsAny(
+                buildCuisineAndCategoryText(merchant),
+                constraints.getCuisines()
+        )) {
+            return false;
+        }
+
+        if (hasValues(constraints.getMerchantTypes())
+                && !containsAny(
+                buildMerchantTypeText(merchant),
+                constraints.getMerchantTypes()
+        )) {
+            return false;
+        }
+
+        if (constraints.getMinRating() != null) {
+            if (merchant.getRating() == null
+                    || merchant.getRating().compareTo(
+                    constraints.getMinRating()
+            ) < 0) {
+                return false;
+            }
+        }
+
+        BigDecimal maximumDistance =
+                constraints.getDistanceKm();
+
+        if (maximumDistance != null
+                && maximumDistance.compareTo(ZERO) > 0) {
+            if (userLatitude == null
+                    || userLongitude == null
+                    || merchant.getLatitude() == null
+                    || merchant.getLongitude() == null) {
+                return false;
+            }
+
+            BigDecimal actualDistance =
+                    calculateDistanceKm(
+                            userLatitude,
+                            userLongitude,
+                            merchant.getLatitude(),
+                            merchant.getLongitude()
+                    );
+
+            if (actualDistance.compareTo(
+                    maximumDistance
+            ) > 0) {
+                return false;
+            }
+        }
+
+        List<String> merchantTags =
+                parseEnvironmentTags(
+                        merchant.getEnvironmentTags()
+                );
+
+        if (hasValues(constraints.getScenes())
+                && !matchesAnyTag(
+                merchantTags,
+                constraints.getScenes()
+        )) {
+            return false;
+        }
+
+        if (hasValues(
+                constraints.getEnvironmentRequirements()
+        ) && !matchesAllTags(
+                merchantTags,
+                constraints.getEnvironmentRequirements()
+        )) {
+            return false;
+        }
+
+        return true;
     }
 
     private RecommendationItemVO buildBaseResult(
@@ -804,7 +886,7 @@ public class MatchScoreCalculator {
         return score;
     }
 
-    private BigDecimal resolvePerCapitaBudget(
+    public BigDecimal resolvePerCapitaBudget(
             ConstraintState constraints
     ) {
         if (constraints.getPerCapitaBudget() != null
@@ -830,7 +912,7 @@ public class MatchScoreCalculator {
         return null;
     }
 
-    private BigDecimal calculateDistanceKm(
+    public BigDecimal calculateDistanceKm(
             BigDecimal userLatitude,
             BigDecimal userLongitude,
             BigDecimal merchantLatitude,
@@ -917,6 +999,26 @@ public class MatchScoreCalculator {
         ).toLowerCase(Locale.ROOT);
     }
 
+    private String buildCuisineAndCategoryText(
+            Merchant merchant
+    ) {
+        return String.join(
+                " ",
+                safeText(merchant.getCuisine()),
+                safeText(merchant.getCategory())
+        ).toLowerCase(Locale.ROOT);
+    }
+
+    private String buildMerchantTypeText(
+            Merchant merchant
+    ) {
+        return String.join(
+                " ",
+                safeText(merchant.getCategory()),
+                safeText(merchant.getName())
+        ).toLowerCase(Locale.ROOT);
+    }
+
     private boolean containsAny(
             String merchantText,
             List<String> values
@@ -977,6 +1079,56 @@ public class MatchScoreCalculator {
                 && values.stream().anyMatch(value ->
                 value != null && !value.isBlank()
         );
+    }
+
+    private boolean matchesAnyTag(
+            List<String> merchantTags,
+            List<String> requiredTags
+    ) {
+        if (!hasValues(requiredTags)) {
+            return true;
+        }
+
+        return requiredTags.stream()
+                .filter(value ->
+                        value != null
+                                && !value.isBlank()
+                )
+                .anyMatch(required ->
+                        merchantTags.stream()
+                                .anyMatch(tag ->
+                                        containsText(tag, required)
+                                                || containsText(
+                                                required,
+                                                tag
+                                        )
+                                )
+                );
+    }
+
+    private boolean matchesAllTags(
+            List<String> merchantTags,
+            List<String> requiredTags
+    ) {
+        if (!hasValues(requiredTags)) {
+            return true;
+        }
+
+        return requiredTags.stream()
+                .filter(value ->
+                        value != null
+                                && !value.isBlank()
+                )
+                .allMatch(required ->
+                        merchantTags.stream()
+                                .anyMatch(tag ->
+                                        containsText(tag, required)
+                                                || containsText(
+                                                required,
+                                                tag
+                                        )
+                                )
+                );
     }
 
     private BigDecimal clampFactor(BigDecimal factor) {

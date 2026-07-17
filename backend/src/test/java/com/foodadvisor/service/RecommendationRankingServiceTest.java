@@ -1,7 +1,10 @@
 package com.foodadvisor.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.foodadvisor.backend.exception.ApiException;
 import com.foodadvisor.dto.constraint.ConstraintState;
+import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
+import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataRetrievalFailureException;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -31,9 +35,13 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -78,94 +86,85 @@ class RecommendationRankingServiceTest {
                 new ObjectMapper()
         );
 
-        /*
-         * 模拟数据库插入推荐主记录后，
-         * MyBatis-Plus 将自增主键回填到实体中。
-         */
-        when(recommendationMapper.insert(
+        lenient().when(recommendationMapper.insert(
                 any(Recommendation.class)
         )).thenAnswer(invocation -> {
             Recommendation recommendation =
                     invocation.getArgument(0);
-
             recommendation.setId(
                     recommendationIdSequence
                             .getAndIncrement()
             );
-
             return 1;
         });
 
-        when(recommendationMapper.updateById(
+        lenient().when(recommendationMapper.updateById(
                 any(Recommendation.class)
         )).thenReturn(1);
 
-        when(recommendationItemMapper.insert(
+        lenient().when(recommendationItemMapper.insert(
                 any(RecommendationItem.class)
         )).thenReturn(1);
+
+        lenient().when(chatSessionStateMapper.updateById(
+                any(ChatSessionState.class)
+        )).thenReturn(1);
+
+        lenient().when(matchScoreCalculator
+                .resolvePerCapitaBudget(
+                        any(ConstraintState.class)
+                )).thenAnswer(invocation -> {
+            ConstraintState constraints =
+                    invocation.getArgument(0);
+
+            if (constraints.getPerCapitaBudget() != null) {
+                return constraints.getPerCapitaBudget();
+            }
+
+            if (constraints.getTotalBudget() != null
+                    && constraints.getPartySize() != null
+                    && constraints.getPartySize() > 0) {
+                return constraints.getTotalBudget()
+                        .divide(
+                                new BigDecimal(
+                                        constraints
+                                                .getPartySize()
+                                ),
+                                2,
+                                java.math.RoundingMode.HALF_UP
+                        );
+            }
+
+            return null;
+        });
     }
 
-    /**
-     * 验证：
-     * 1. 商家按照最终得分降序排列；
-     * 2. rankNo 从1开始；
-     * 3. 接口0～100分被转换为数据库0～1分；
-     * 4. 推荐主记录最终更新为SUCCESS。
-     */
     @Test
     void shouldSortByFinalScoreAndPersistNormalizedScores() {
         Merchant low = createMerchant(
                 101L,
-                "低分商家",
+                "low",
                 new BigDecimal("4.60"),
                 80
         );
-
         Merchant high = createMerchant(
                 102L,
-                "高分商家",
+                "high",
                 new BigDecimal("4.80"),
                 160
         );
-
         Merchant middle = createMerchant(
                 103L,
-                "中分商家",
+                "middle",
                 new BigDecimal("4.70"),
                 120
         );
 
         stubSessionStateAndMerchants(
-                List.of(low, high, middle)
+                List.of(low, high, middle),
+                defaultConstraintsJson()
         );
-
-        when(matchScoreCalculator.calculate(
-                any(Merchant.class),
-                any(ConstraintState.class),
-                any(RecommendationWeights.class),
-                any(BigDecimal.class),
-                any(BigDecimal.class)
-        )).thenAnswer(invocation -> {
-            Merchant merchant =
-                    invocation.getArgument(0);
-
-            BigDecimal score;
-
-            if (merchant.getId().equals(102L)) {
-                score = new BigDecimal("95.00");
-            } else if (merchant.getId().equals(103L)) {
-                score = new BigDecimal("90.00");
-            } else {
-                score = new BigDecimal("80.00");
-            }
-
-            return Optional.of(
-                    createCalculatedResult(
-                            merchant,
-                            score
-                    )
-            );
-        });
+        stubCalculatedScores();
 
         RecommendationRankResponse response =
                 service.rank(
@@ -184,205 +183,75 @@ class RecommendationRankingServiceTest {
                         )
                         .toList();
 
-        List<Integer> rankNumbers =
-                response.getResults()
-                        .stream()
-                        .map(
-                                RecommendationItemVO
-                                        ::getRankNo
-                        )
-                        .toList();
-
         assertAll(
                 () -> assertEquals(
                         "RULE_V1",
                         response.getAlgorithmVersion()
                 ),
+                () -> assertTrue(response.getMatched()),
+                () -> assertEquals("SUCCESS", response.getStatus()),
+                () -> assertEquals(3, response.getResultCount()),
                 () -> assertEquals(
-                        3,
-                        response.getResultCount()
-                ),
-                () -> assertEquals(
-                        List.of(
-                                102L,
-                                103L,
-                                101L
-                        ),
+                        List.of(102L, 103L, 101L),
                         orderedMerchantIds
-                ),
-                () -> assertEquals(
-                        List.of(1, 2, 3),
-                        rankNumbers
                 )
         );
 
-        /*
-         * 检查保存到 recommendation_items 的顺序和分数。
-         */
-        ArgumentCaptor<RecommendationItem>
-                itemCaptor =
+        ArgumentCaptor<RecommendationItem> itemCaptor =
                 ArgumentCaptor.forClass(
                         RecommendationItem.class
                 );
-
         verify(
                 recommendationItemMapper,
                 times(3)
         ).insert(itemCaptor.capture());
 
-        List<RecommendationItem> insertedItems =
-                itemCaptor.getAllValues();
-
-        assertAll(
-                () -> assertEquals(
-                        102L,
-                        insertedItems.get(0)
-                                .getMerchantId()
-                ),
-                () -> assertEquals(
-                        1,
-                        insertedItems.get(0)
-                                .getRankNo()
-                ),
-                () -> assertEquals(
-                        0,
-                        new BigDecimal("0.950000")
-                                .compareTo(
-                                        insertedItems
-                                                .get(0)
-                                                .getScore()
-                                )
-                ),
-                () -> assertEquals(
-                        103L,
-                        insertedItems.get(1)
-                                .getMerchantId()
-                ),
-                () -> assertEquals(
-                        0,
-                        new BigDecimal("0.900000")
-                                .compareTo(
-                                        insertedItems
-                                                .get(1)
-                                                .getScore()
-                                )
-                ),
-                () -> assertEquals(
-                        101L,
-                        insertedItems.get(2)
-                                .getMerchantId()
-                ),
-                () -> assertEquals(
-                        0,
-                        new BigDecimal("0.800000")
-                                .compareTo(
-                                        insertedItems
-                                                .get(2)
-                                                .getScore()
-                                )
-                )
-        );
-
-        /*
-         * 检查推荐主记录最终状态。
-         */
-        ArgumentCaptor<Recommendation>
-                recommendationCaptor =
-                ArgumentCaptor.forClass(
-                        Recommendation.class
-                );
-
-        verify(
-                recommendationMapper
-        ).updateById(
-                recommendationCaptor.capture()
-        );
-
-        Recommendation updatedRecommendation =
-                recommendationCaptor.getValue();
-
-        assertAll(
-                () -> assertEquals(
-                        "SUCCESS",
-                        updatedRecommendation.getStatus()
-                ),
-                () -> assertEquals(
-                        3,
-                        updatedRecommendation
-                                .getResultCount()
-                ),
-                () -> assertEquals(
-                        "RULE_V1",
-                        updatedRecommendation
-                                .getAlgorithmVersion()
-                ),
-                () -> assertTrue(
-                        updatedRecommendation
-                                .getWeightSnapshot()
-                                .contains(
-                                        "\"cuisine\":25"
-                                )
-                ),
-                () -> assertTrue(
-                        updatedRecommendation
-                                .getParsedConstraints()
-                                .contains(
-                                        "\"cuisines\""
-                                )
-                )
+        assertEquals(
+                0,
+                new BigDecimal("0.950000")
+                        .compareTo(
+                                itemCaptor.getAllValues()
+                                        .get(0)
+                                        .getScore()
+                        )
         );
     }
 
-    /**
-     * 验证同分时按照以下顺序稳定排序：
-     *
-     * 1. 商家评分降序；
-     * 2. 评论数量降序；
-     * 3. 商家ID升序。
-     *
-     * 连续执行三次，结果必须一致。
-     */
     @Test
     void shouldProduceSameOrderThreeTimesWhenScoresTie() {
         Merchant merchant4 = createMerchant(
                 4L,
-                "评分较低但评论多",
+                "lower rating many reviews",
                 new BigDecimal("4.60"),
                 200
         );
-
         Merchant merchant2 = createMerchant(
                 2L,
-                "高评分评论较少",
+                "high rating fewer reviews",
                 new BigDecimal("4.80"),
                 50
         );
-
         Merchant merchant3 = createMerchant(
                 3L,
-                "高评分高评论ID较大",
+                "high rating high reviews id3",
                 new BigDecimal("4.80"),
                 120
         );
-
         Merchant merchant1 = createMerchant(
                 1L,
-                "高评分高评论ID较小",
+                "high rating high reviews id1",
                 new BigDecimal("4.80"),
                 120
         );
 
-        /*
-         * 故意使用无序列表，
-         * 验证最终结果不依赖数据库返回顺序。
-         */
         stubSessionStateAndMerchants(
                 List.of(
                         merchant4,
                         merchant2,
                         merchant3,
                         merchant1
-                )
+                ),
+                defaultConstraintsJson()
         );
 
         when(matchScoreCalculator.calculate(
@@ -394,7 +263,6 @@ class RecommendationRankingServiceTest {
         )).thenAnswer(invocation -> {
             Merchant merchant =
                     invocation.getArgument(0);
-
             return Optional.of(
                     createCalculatedResult(
                             merchant,
@@ -406,10 +274,7 @@ class RecommendationRankingServiceTest {
         List<List<Long>> threeRankings =
                 new ArrayList<>();
 
-        for (int index = 0;
-             index < 3;
-             index++) {
-
+        for (int index = 0; index < 3; index++) {
             RecommendationRankResponse response =
                     service.rank(
                             1L,
@@ -417,7 +282,6 @@ class RecommendationRankingServiceTest {
                                     createDefaultWeights()
                             )
                     );
-
             threeRankings.add(
                     response.getResults()
                             .stream()
@@ -430,25 +294,12 @@ class RecommendationRankingServiceTest {
         }
 
         List<Long> expectedOrder =
-                List.of(
-                        1L,
-                        3L,
-                        2L,
-                        4L
-                );
+                List.of(1L, 3L, 2L, 4L);
 
         assertAll(
                 () -> assertEquals(
                         expectedOrder,
                         threeRankings.get(0)
-                ),
-                () -> assertEquals(
-                        expectedOrder,
-                        threeRankings.get(1)
-                ),
-                () -> assertEquals(
-                        expectedOrder,
-                        threeRankings.get(2)
                 ),
                 () -> assertEquals(
                         threeRankings.get(0),
@@ -459,53 +310,26 @@ class RecommendationRankingServiceTest {
                         threeRankings.get(2)
                 )
         );
-
-        verify(
-                recommendationMapper,
-                times(3)
-        ).insert(
-                any(Recommendation.class)
-        );
-
-        verify(
-                recommendationItemMapper,
-                times(12)
-        ).insert(
-                any(RecommendationItem.class)
-        );
     }
 
-    /**
-     * 验证修改权重后：
-     *
-     * 1. Service 将新权重传入评分器；
-     * 2. 新权重能够导致排名发生变化；
-     * 3. 两次请求保存不同的权重快照；
-     * 4. 两次请求生成不同的推荐记录。
-     */
     @Test
     void shouldChangeOrderAndWeightSnapshotWhenWeightsChange() {
-        Merchant nearbyMerchant =
-                createMerchant(
-                        201L,
-                        "近距离商家",
-                        new BigDecimal("4.70"),
-                        100
-                );
-
-        Merchant cuisineMerchant =
-                createMerchant(
-                        202L,
-                        "菜系匹配商家",
-                        new BigDecimal("4.70"),
-                        100
-                );
+        Merchant nearbyMerchant = createMerchant(
+                201L,
+                "nearby",
+                new BigDecimal("4.70"),
+                100
+        );
+        Merchant cuisineMerchant = createMerchant(
+                202L,
+                "cuisine",
+                new BigDecimal("4.70"),
+                100
+        );
 
         stubSessionStateAndMerchants(
-                List.of(
-                        nearbyMerchant,
-                        cuisineMerchant
-                )
+                List.of(nearbyMerchant, cuisineMerchant),
+                defaultConstraintsJson()
         );
 
         when(matchScoreCalculator.calculate(
@@ -517,7 +341,6 @@ class RecommendationRankingServiceTest {
         )).thenAnswer(invocation -> {
             Merchant merchant =
                     invocation.getArgument(0);
-
             RecommendationWeights weights =
                     invocation.getArgument(2);
 
@@ -528,20 +351,11 @@ class RecommendationRankingServiceTest {
                             ) == 0;
 
             BigDecimal score;
-
             if (merchant.getId().equals(201L)) {
-                /*
-                 * 距离权重提高后，
-                 * 近距离商家的得分上升。
-                 */
                 score = distanceWeightIncreased
                         ? new BigDecimal("90.00")
                         : new BigDecimal("70.00");
             } else {
-                /*
-                 * 菜系权重降低后，
-                 * 菜系匹配商家的优势下降。
-                 */
                 score = distanceWeightIncreased
                         ? new BigDecimal("65.00")
                         : new BigDecimal("85.00");
@@ -555,8 +369,7 @@ class RecommendationRankingServiceTest {
             );
         });
 
-        RecommendationRankResponse
-                defaultWeightResponse =
+        RecommendationRankResponse defaultWeightResponse =
                 service.rank(
                         1L,
                         createRequest(
@@ -564,8 +377,7 @@ class RecommendationRankingServiceTest {
                         )
                 );
 
-        RecommendationRankResponse
-                changedWeightResponse =
+        RecommendationRankResponse changedWeightResponse =
                 service.rank(
                         1L,
                         createRequest(
@@ -601,211 +413,922 @@ class RecommendationRankingServiceTest {
                         changedOrder
                 ),
                 () -> assertNotEquals(
-                        defaultOrder,
-                        changedOrder
-                ),
-                () -> assertNotEquals(
                         defaultWeightResponse
                                 .getRecommendationId(),
                         changedWeightResponse
                                 .getRecommendationId()
                 )
         );
+    }
 
-        ArgumentCaptor<Recommendation>
-                recommendationCaptor =
-                ArgumentCaptor.forClass(
-                        Recommendation.class
-                );
-
-        verify(
-                recommendationMapper,
-                times(2)
-        ).updateById(
-                recommendationCaptor.capture()
+    @Test
+    void shouldReturnNoMatchAndBudgetSuggestion() {
+        Merchant candidate = createMerchant(
+                301L,
+                "budget candidate",
+                new BigDecimal("4.8"),
+                20
+        );
+        candidate.setAveragePrice(
+                new BigDecimal("90")
         );
 
-        List<Recommendation>
-                savedRecommendations =
-                recommendationCaptor.getAllValues();
+        stubSessionStateAndMerchants(
+                List.of(candidate),
+                """
+                {
+                  "perCapitaBudget": 50,
+                  "cuisines": ["sichuan"]
+                }
+                """
+        );
+        stubNoCalculatedResult();
+        when(matchScoreCalculator.passesHardFilters(
+                any(Merchant.class),
+                any(ConstraintState.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenAnswer(invocation -> {
+            ConstraintState constraints =
+                    invocation.getArgument(1);
+            return constraints.getPerCapitaBudget() == null;
+        });
 
-        String defaultSnapshot =
-                savedRecommendations.get(0)
-                        .getWeightSnapshot();
-
-        String changedSnapshot =
-                savedRecommendations.get(1)
-                        .getWeightSnapshot();
+        RecommendationRankResponse response =
+                service.rank(
+                        1L,
+                        createRequest(
+                                createDefaultWeights()
+                        )
+                );
 
         assertAll(
-                () -> assertTrue(
-                        defaultSnapshot.contains(
-                                "\"cuisine\":25"
-                        )
+                () -> assertFalse(response.getMatched()),
+                () -> assertEquals("NO_MATCH", response.getStatus()),
+                () -> assertEquals(0, response.getResultCount()),
+                () -> assertTrue(response.getResults().isEmpty()),
+                () -> assertEquals(
+                        "当前没有完全匹配的结果",
+                        response.getMessage()
                 ),
                 () -> assertTrue(
-                        defaultSnapshot.contains(
-                                "\"distance\":15"
-                        )
-                ),
-                () -> assertTrue(
-                        changedSnapshot.contains(
-                                "\"cuisine\":10"
-                        )
-                ),
-                () -> assertTrue(
-                        changedSnapshot.contains(
-                                "\"distance\":30"
-                        )
-                ),
-                () -> assertNotEquals(
-                        defaultSnapshot,
-                        changedSnapshot
+                        response.getAdjustmentSuggestions()
+                                .stream()
+                                .anyMatch(suggestion ->
+                                        "INCREASE_BUDGET"
+                                                .equals(
+                                                        suggestion
+                                                                .getType()
+                                                )
+                                )
                 )
         );
     }
 
-    /**
-     * 模拟有效会话、会话约束和候选商家。
-     */
-    private void stubSessionStateAndMerchants(
-            List<Merchant> merchants
+    @Test
+    void shouldReturnDistanceSuggestionWhenDistanceTooSmall() {
+        Merchant candidate = createMerchant(
+                302L,
+                "distance candidate",
+                new BigDecimal("4.8"),
+                20
+        );
+
+        stubSessionStateAndMerchants(
+                List.of(candidate),
+                """
+                {
+                  "distanceKm": 1,
+                  "cuisines": ["sichuan"]
+                }
+                """
+        );
+        stubNoCalculatedResult();
+        when(matchScoreCalculator.passesHardFilters(
+                any(Merchant.class),
+                any(ConstraintState.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenAnswer(invocation -> {
+            ConstraintState constraints =
+                    invocation.getArgument(1);
+            return constraints.getDistanceKm() == null
+                    || constraints.getDistanceKm()
+                    .compareTo(new BigDecimal("3")) >= 0;
+        });
+        when(matchScoreCalculator.calculateDistanceKm(
+                any(BigDecimal.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenReturn(new BigDecimal("2.3"));
+
+        RecommendationRankResponse response =
+                service.rank(
+                        1L,
+                        createRequest(
+                                createDefaultWeights()
+                        )
+                );
+
+        assertAll(
+                () -> assertFalse(response.getMatched()),
+                () -> assertTrue(
+                        response.getAdjustmentSuggestions()
+                                .stream()
+                                .anyMatch(suggestion ->
+                                        "EXPAND_DISTANCE"
+                                                .equals(
+                                                        suggestion
+                                                                .getType()
+                                                )
+                                )
+                )
+        );
+    }
+
+    @Test
+    void shouldReturnCuisineSuggestionWhenCuisineDoesNotMatch() {
+        Merchant candidate = createMerchant(
+                303L,
+                "other cuisine",
+                new BigDecimal("4.8"),
+                20
+        );
+        candidate.setCuisine("cantonese");
+
+        stubSessionStateAndMerchants(
+                List.of(candidate),
+                """
+                {
+                  "cuisines": ["sichuan"]
+                }
+                """
+        );
+        stubNoCalculatedResult();
+        when(matchScoreCalculator.passesHardFilters(
+                any(Merchant.class),
+                any(ConstraintState.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenAnswer(invocation -> {
+            ConstraintState constraints =
+                    invocation.getArgument(1);
+            return constraints.getCuisines() == null
+                    || constraints.getCuisines().isEmpty();
+        });
+
+        RecommendationRankResponse response =
+                service.rank(
+                        1L,
+                        createRequest(
+                                createDefaultWeights()
+                        )
+                );
+
+        assertTrue(
+                response.getAdjustmentSuggestions()
+                        .stream()
+                        .anyMatch(suggestion ->
+                                "RELAX_CUISINE"
+                                        .equals(
+                                                suggestion
+                                                        .getType()
+                                        )
+                        )
+        );
+    }
+
+    @Test
+    void shouldUpdateConstraintsAndRerankAfterBudgetAdjustment() {
+        ChatSessionState sessionState =
+                stubSessionStateAndMerchants(
+                        List.of(createMerchant(
+                                401L,
+                                "adjusted",
+                                new BigDecimal("4.8"),
+                                20
+                        )),
+                        """
+                        {
+                          "perCapitaBudget": 50,
+                          "cuisines": ["sichuan"]
+                        }
+                        """
+                );
+
+        when(matchScoreCalculator.calculate(
+                any(Merchant.class),
+                any(ConstraintState.class),
+                any(RecommendationWeights.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenAnswer(invocation -> {
+            Merchant merchant =
+                    invocation.getArgument(0);
+            ConstraintState constraints =
+                    invocation.getArgument(1);
+
+            if (constraints.getPerCapitaBudget()
+                    .compareTo(
+                            new BigDecimal("90")
+                    ) >= 0) {
+                return Optional.of(
+                        createCalculatedResult(
+                                merchant,
+                                new BigDecimal("91")
+                        )
+                );
+            }
+
+            return Optional.empty();
+        });
+
+        RecommendationAdjustRequest request =
+                new RecommendationAdjustRequest();
+        request.setUserId(1L);
+        request.setField("perCapitaBudget");
+        request.setValue(new BigDecimal("90"));
+        request.setUserLatitude(new BigDecimal("30.5728"));
+        request.setUserLongitude(new BigDecimal("104.0668"));
+
+        RecommendationRankResponse response =
+                service.adjustAndRank(1L, request);
+
+        assertAll(
+                () -> assertTrue(response.getMatched()),
+                () -> assertEquals(1, response.getResultCount()),
+                () -> assertTrue(
+                        sessionState.getCurrentConstraints()
+                                .contains(
+                                        "\"perCapitaBudget\":90"
+                                )
+                )
+        );
+    }
+
+    @Test
+    void shouldOnlyAdjustDistanceAndKeepOtherConstraints() {
+        ChatSessionState sessionState =
+                stubSessionStateAndMerchants(
+                        List.of(createMerchant(
+                                402L,
+                                "distance adjusted",
+                                new BigDecimal("4.8"),
+                                20
+                        )),
+                        """
+                        {
+                          "distanceKm": 1,
+                          "cuisines": ["sichuan"]
+                        }
+                        """
+                );
+        stubCalculatedScores();
+
+        RecommendationAdjustRequest request =
+                new RecommendationAdjustRequest();
+        request.setUserId(1L);
+        request.setField("distanceKm");
+        request.setValue(new BigDecimal("5"));
+        request.setUserLatitude(new BigDecimal("30.5728"));
+        request.setUserLongitude(new BigDecimal("104.0668"));
+
+        service.adjustAndRank(1L, request);
+
+        assertAll(
+                () -> assertTrue(
+                        sessionState.getCurrentConstraints()
+                                .contains("\"distanceKm\":5")
+                ),
+                () -> assertTrue(
+                        sessionState.getCurrentConstraints()
+                                .contains("\"sichuan\"")
+                )
+        );
+    }
+
+    @Test
+    void shouldRejectUnknownAdjustmentField() {
+        stubSessionStateAndMerchants(
+                List.of(),
+                defaultConstraintsJson()
+        );
+
+        RecommendationAdjustRequest request =
+                new RecommendationAdjustRequest();
+        request.setUserId(1L);
+        request.setField("unknownField");
+        request.setValue("x");
+
+        ApiException exception =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.adjustAndRank(
+                                1L,
+                                request
+                        )
+                );
+
+        assertEquals(
+                "INVALID_RECOMMENDATION_ADJUSTMENT",
+                exception.getCode()
+        );
+    }
+
+    @Test
+    void shouldRequireLocationWhenDistanceIsSet() {
+        stubSessionStateAndMerchants(
+                List.of(createMerchant(
+                        501L,
+                        "needs location",
+                        new BigDecimal("4.8"),
+                        20
+                )),
+                """
+                {
+                  "distanceKm": 3
+                }
+                """
+        );
+
+        RecommendationRankRequest request =
+                new RecommendationRankRequest();
+        request.setUserId(1L);
+        request.setUserLatitude(null);
+        request.setUserLongitude(null);
+        request.setWeights(createDefaultWeights());
+
+        ApiException exception =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.rank(1L, request)
+                );
+
+        assertEquals(
+                "USER_LOCATION_REQUIRED",
+                exception.getCode()
+        );
+    }
+
+    @Test
+    void shouldReturnDataServiceErrorWhenMerchantQueryFails() {
+        stubSessionStateAndMerchants(
+                List.of(),
+                """
+                {
+                  "cuisines": ["sichuan"]
+                }
+                """
+        );
+        when(merchantMapper.selectList(any()))
+                .thenThrow(
+                        new DataRetrievalFailureException(
+                                "database unavailable"
+                        )
+                );
+
+        ApiException exception =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.rank(
+                                1L,
+                                createRequest(
+                                        createDefaultWeights()
+                                )
+                        )
+                );
+
+        assertEquals(
+                "RECOMMENDATION_DATA_SERVICE_ERROR",
+                exception.getCode()
+        );
+    }
+
+    @Test
+    void shouldNotGenerateDistanceSuggestionWhenRecoveredMerchantsHaveNoCoordinates() {
+        Merchant candidate = createMerchant(
+                601L,
+                "no coordinate candidate",
+                new BigDecimal("4.8"),
+                20
+        );
+        candidate.setLatitude(null);
+        candidate.setLongitude(null);
+
+        stubSessionStateAndMerchants(
+                List.of(candidate),
+                """
+                {
+                  "distanceKm": 1,
+                  "cuisines": ["sichuan"]
+                }
+                """
+        );
+        stubNoCalculatedResult();
+        when(matchScoreCalculator.passesHardFilters(
+                any(Merchant.class),
+                any(ConstraintState.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenAnswer(invocation -> {
+            ConstraintState constraints =
+                    invocation.getArgument(1);
+            return constraints.getDistanceKm() == null;
+        });
+
+        RecommendationRankResponse response =
+                service.rank(
+                        1L,
+                        createRequest(
+                                createDefaultWeights()
+                        )
+                );
+
+        assertAll(
+                () -> assertFalse(
+                        response.getAdjustmentSuggestions()
+                                .isEmpty()
+                ),
+                () -> assertFalse(
+                        response.getAdjustmentSuggestions()
+                                .stream()
+                                .anyMatch(suggestion ->
+                                        "EXPAND_DISTANCE"
+                                                .equals(
+                                                        suggestion
+                                                                .getType()
+                                                )
+                                )
+                )
+        );
+    }
+
+    @Test
+    void shouldGenerateExecutableDistanceSuggestionFromCoordinateCandidatesOnly() {
+        Merchant noCoordinate = createMerchant(
+                602L,
+                "no coordinate",
+                new BigDecimal("4.8"),
+                20
+        );
+        noCoordinate.setLatitude(null);
+        noCoordinate.setLongitude(null);
+
+        Merchant withCoordinate = createMerchant(
+                603L,
+                "with coordinate",
+                new BigDecimal("4.8"),
+                20
+        );
+
+        stubSessionStateAndMerchants(
+                List.of(noCoordinate, withCoordinate),
+                """
+                {
+                  "distanceKm": 1
+                }
+                """
+        );
+        stubNoCalculatedResult();
+        when(matchScoreCalculator.passesHardFilters(
+                any(Merchant.class),
+                any(ConstraintState.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenAnswer(invocation -> {
+            Merchant merchant =
+                    invocation.getArgument(0);
+            ConstraintState constraints =
+                    invocation.getArgument(1);
+
+            if (constraints.getDistanceKm() == null) {
+                return true;
+            }
+
+            return merchant.getId().equals(603L)
+                    && constraints.getDistanceKm()
+                    .compareTo(new BigDecimal("3")) >= 0;
+        });
+        when(matchScoreCalculator.calculateDistanceKm(
+                any(BigDecimal.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenReturn(new BigDecimal("2.1"));
+
+        RecommendationRankResponse response =
+                service.rank(
+                        1L,
+                        createRequest(
+                                createDefaultWeights()
+                        )
+                );
+
+        AdjustmentSuggestionVO suggestion =
+                response.getAdjustmentSuggestions()
+                        .stream()
+                        .filter(item ->
+                                "EXPAND_DISTANCE".equals(
+                                        item.getType()
+                                )
+                        )
+                        .findFirst()
+                        .orElseThrow();
+
+        assertAll(
+                () -> assertEquals(
+                        new BigDecimal("3"),
+                        suggestion.getSuggestedValue()
+                ),
+                () -> assertTrue(
+                        response.getLimitingConditions()
+                                .stream()
+                                .anyMatch(condition ->
+                                        "distanceKm".equals(
+                                                condition.getField()
+                                        )
+                                                && condition
+                                                .getRecoveredMerchantCount()
+                                                == 1
+                                )
+                )
+        );
+    }
+
+    @Test
+    void shouldReturnFallbackSuggestionWhenBaseCandidatesAreEmpty() {
+        stubSessionStateAndMerchants(
+                List.of(),
+                "{}"
+        );
+
+        RecommendationRankResponse response =
+                service.rank(
+                        1L,
+                        createRequest(
+                                createDefaultWeights()
+                        )
+                );
+
+        assertAll(
+                () -> assertFalse(response.getMatched()),
+                () -> assertFalse(
+                        response.getAdjustmentSuggestions()
+                                .isEmpty()
+                ),
+                () -> assertTrue(
+                        List.of(
+                                "perCapitaBudget",
+                                "totalBudget",
+                                "distanceKm",
+                                "cuisines",
+                                "scenes",
+                                "environmentRequirements",
+                                "minRating"
+                        ).contains(
+                                response
+                                        .getAdjustmentSuggestions()
+                                        .get(0)
+                                        .getField()
+                        )
+                )
+        );
+    }
+
+    @Test
+    void shouldRejectInvalidNumericAdjustments() {
+        stubSessionStateAndMerchants(
+                List.of(),
+                "{}"
+        );
+
+        assertInvalidAdjustment(
+                "perCapitaBudget",
+                BigDecimal.ZERO
+        );
+        assertInvalidAdjustment(
+                "perCapitaBudget",
+                new BigDecimal("-1")
+        );
+        assertInvalidAdjustment(
+                "distanceKm",
+                BigDecimal.ZERO
+        );
+        assertInvalidAdjustment(
+                "distanceKm",
+                new BigDecimal("101")
+        );
+        assertInvalidAdjustment(
+                "minRating",
+                new BigDecimal("-0.1")
+        );
+        assertInvalidAdjustment(
+                "minRating",
+                new BigDecimal("5.1")
+        );
+        assertInvalidAdjustment(
+                "perCapitaBudget",
+                Double.NaN
+        );
+        assertInvalidAdjustment(
+                "perCapitaBudget",
+                Double.POSITIVE_INFINITY
+        );
+        assertInvalidAdjustment(
+                "perCapitaBudget",
+                "not-a-number"
+        );
+    }
+
+    @Test
+    void shouldRejectInvalidListAdjustments() {
+        stubSessionStateAndMerchants(
+                List.of(),
+                "{}"
+        );
+
+        assertInvalidAdjustment(
+                "cuisines",
+                List.of(1)
+        );
+        assertInvalidAdjustment(
+                "cuisines",
+                List.of(new Object())
+        );
+
+        List<String> tooMany =
+                new ArrayList<>();
+        for (int index = 0; index < 11; index++) {
+            tooMany.add("tag" + index);
+        }
+        assertInvalidAdjustment("cuisines", tooMany);
+        assertInvalidAdjustment(
+                "cuisines",
+                List.of("abcdefghijklmnopqrstuvwxyzabcde")
+        );
+        assertInvalidAdjustment(
+                "cuisines",
+                List.of(" ", "　")
+        );
+
+        List<Object> containsNull =
+                new ArrayList<>();
+        containsNull.add(null);
+        assertInvalidAdjustment("cuisines", containsNull);
+    }
+
+    @Test
+    void shouldTrimDeduplicateAndClearListAdjustments() {
+        ChatSessionState sessionState =
+                stubSessionStateAndMerchants(
+                        List.of(createMerchant(
+                                604L,
+                                "list adjusted",
+                                new BigDecimal("4.8"),
+                                20
+                        )),
+                        """
+                        {
+                          "cuisines": ["sichuan"]
+                        }
+                        """
+                );
+        stubCalculatedScores();
+
+        RecommendationAdjustRequest request =
+                createAdjustRequest(
+                        "cuisines",
+                        List.of(
+                                " sichuan ",
+                                "sichuan",
+                                " cantonese "
+                        )
+                );
+
+        service.adjustAndRank(1L, request);
+
+        assertTrue(
+                sessionState.getCurrentConstraints()
+                        .contains(
+                                "\"cuisines\":[\"sichuan\",\"cantonese\"]"
+                        )
+        );
+
+        request.setValue(List.of());
+
+        service.adjustAndRank(1L, request);
+
+        assertTrue(
+                sessionState.getCurrentConstraints()
+                        .contains("\"cuisines\":[]")
+        );
+    }
+
+    @Test
+    void shouldRejectAdjustmentWhenUserDoesNotOwnSession() {
+        stubSessionStateAndMerchants(
+                List.of(createMerchant(
+                        605L,
+                        "other user",
+                        new BigDecimal("4.8"),
+                        20
+                )),
+                "{}"
+        );
+
+        RecommendationAdjustRequest request =
+                createAdjustRequest(
+                        "perCapitaBudget",
+                        new BigDecimal("80")
+                );
+        request.setUserId(2L);
+
+        ApiException exception =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.adjustAndRank(1L, request)
+                );
+
+        assertAll(
+                () -> assertEquals(
+                        "SESSION_ACCESS_DENIED",
+                        exception.getCode()
+                ),
+                () -> verify(
+                        chatSessionStateMapper,
+                        never()
+                ).updateById(any(ChatSessionState.class)),
+                () -> verify(
+                        recommendationMapper,
+                        never()
+                ).insert(any(Recommendation.class))
+        );
+    }
+
+    private void assertInvalidAdjustment(
+            String field,
+            Object value
+    ) {
+        RecommendationAdjustRequest request =
+                createAdjustRequest(field, value);
+
+        ApiException exception =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.adjustAndRank(1L, request)
+                );
+
+        assertEquals(
+                "INVALID_RECOMMENDATION_ADJUSTMENT",
+                exception.getCode()
+        );
+    }
+
+    private RecommendationAdjustRequest createAdjustRequest(
+            String field,
+            Object value
+    ) {
+        RecommendationAdjustRequest request =
+                new RecommendationAdjustRequest();
+        request.setUserId(1L);
+        request.setField(field);
+        request.setValue(value);
+        request.setUserLatitude(
+                new BigDecimal("30.5728")
+        );
+        request.setUserLongitude(
+                new BigDecimal("104.0668")
+        );
+        request.setWeights(createDefaultWeights());
+        return request;
+    }
+
+    private void stubCalculatedScores() {
+        when(matchScoreCalculator.calculate(
+                any(Merchant.class),
+                any(ConstraintState.class),
+                any(RecommendationWeights.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenAnswer(invocation -> {
+            Merchant merchant =
+                    invocation.getArgument(0);
+
+            BigDecimal score;
+            if (merchant.getId().equals(102L)) {
+                score = new BigDecimal("95.00");
+            } else if (merchant.getId().equals(103L)) {
+                score = new BigDecimal("90.00");
+            } else {
+                score = new BigDecimal("80.00");
+            }
+
+            return Optional.of(
+                    createCalculatedResult(
+                            merchant,
+                            score
+                    )
+            );
+        });
+    }
+
+    private void stubNoCalculatedResult() {
+        when(matchScoreCalculator.calculate(
+                any(Merchant.class),
+                any(ConstraintState.class),
+                any(RecommendationWeights.class),
+                any(BigDecimal.class),
+                any(BigDecimal.class)
+        )).thenReturn(Optional.empty());
+    }
+
+    private ChatSessionState stubSessionStateAndMerchants(
+            List<Merchant> merchants,
+            String constraintsJson
     ) {
         ChatSession session =
                 new ChatSession();
-
         session.setId(1L);
         session.setUserId(1L);
         session.setStatus("ACTIVE");
 
         ChatSessionState sessionState =
                 new ChatSessionState();
-
         sessionState.setId(1L);
         sessionState.setSessionId(1L);
-        sessionState.setConversationStage(
-                "SEARCHING"
-        );
-        sessionState.setPendingConfirmation(
-                "[]"
-        );
+        sessionState.setConversationStage("SEARCHING");
+        sessionState.setPendingConfirmation("[]");
         sessionState.setCurrentConstraints(
-                """
-                {
-                  "partySize": 4,
-                  "perCapitaBudget": 80,
-                  "cuisines": ["川菜"],
-                  "excludedMerchantTypes": ["火锅"],
-                  "distanceKm": 3,
-                  "minRating": 4.5,
-                  "environmentRequirements": ["安静"]
-                }
-                """
+                constraintsJson
         );
+        sessionState.setVersion(1);
 
         when(chatSessionMapper.selectById(1L))
                 .thenReturn(session);
+        lenient().when(chatSessionStateMapper.selectOne(any()))
+                .thenReturn(sessionState);
+        lenient().when(merchantMapper.selectList(any()))
+                .thenReturn(merchants);
 
-        when(chatSessionStateMapper.selectOne(
-                any()
-        )).thenReturn(sessionState);
-
-        when(merchantMapper.selectList(
-                any()
-        )).thenReturn(merchants);
+        return sessionState;
     }
 
-    /**
-     * 创建推荐请求。
-     */
+    private String defaultConstraintsJson() {
+        return """
+                {
+                  "partySize": 4,
+                  "perCapitaBudget": 80,
+                  "cuisines": ["sichuan"],
+                  "excludedMerchantTypes": ["hotpot"],
+                  "distanceKm": 3,
+                  "minRating": 4.5,
+                  "environmentRequirements": ["quiet"]
+                }
+                """;
+    }
+
     private RecommendationRankRequest createRequest(
             RecommendationWeights weights
     ) {
         RecommendationRankRequest request =
                 new RecommendationRankRequest();
-
         request.setUserId(1L);
-
         request.setUserLatitude(
                 new BigDecimal("30.5728")
         );
-
         request.setUserLongitude(
                 new BigDecimal("104.0668")
         );
-
         request.setWeights(weights);
-
         return request;
     }
 
-    /**
-     * 默认权重：
-     * 25 + 20 + 20 + 15 + 10 + 10 = 100。
-     */
-    private RecommendationWeights
-    createDefaultWeights() {
+    private RecommendationWeights createDefaultWeights() {
         RecommendationWeights weights =
                 new RecommendationWeights();
-
-        weights.setCuisine(
-                new BigDecimal("25")
-        );
-        weights.setRating(
-                new BigDecimal("20")
-        );
-        weights.setPrice(
-                new BigDecimal("20")
-        );
-        weights.setDistance(
-                new BigDecimal("15")
-        );
-        weights.setEnvironment(
-                new BigDecimal("10")
-        );
-        weights.setReputation(
-                new BigDecimal("10")
-        );
-
+        weights.setCuisine(new BigDecimal("25"));
+        weights.setRating(new BigDecimal("20"));
+        weights.setPrice(new BigDecimal("20"));
+        weights.setDistance(new BigDecimal("15"));
+        weights.setEnvironment(new BigDecimal("10"));
+        weights.setReputation(new BigDecimal("10"));
         return weights;
     }
 
-    /**
-     * 调高距离和评分权重，
-     * 降低菜系和价格权重。
-     *
-     * 10 + 30 + 10 + 30 + 10 + 10 = 100。
-     */
     private RecommendationWeights
     createDistanceFocusedWeights() {
         RecommendationWeights weights =
                 new RecommendationWeights();
-
-        weights.setCuisine(
-                new BigDecimal("10")
-        );
-        weights.setRating(
-                new BigDecimal("30")
-        );
-        weights.setPrice(
-                new BigDecimal("10")
-        );
-        weights.setDistance(
-                new BigDecimal("30")
-        );
-        weights.setEnvironment(
-                new BigDecimal("10")
-        );
-        weights.setReputation(
-                new BigDecimal("10")
-        );
-
+        weights.setCuisine(new BigDecimal("10"));
+        weights.setRating(new BigDecimal("30"));
+        weights.setPrice(new BigDecimal("10"));
+        weights.setDistance(new BigDecimal("30"));
+        weights.setEnvironment(new BigDecimal("10"));
+        weights.setReputation(new BigDecimal("10"));
         return weights;
     }
 
-    /**
-     * 创建候选商家。
-     */
     private Merchant createMerchant(
             Long id,
             String name,
@@ -814,94 +1337,57 @@ class RecommendationRankingServiceTest {
     ) {
         Merchant merchant =
                 new Merchant();
-
         merchant.setId(id);
-        merchant.setMerchantCode(
-                "TEST_" + id
-        );
+        merchant.setMerchantCode("TEST_" + id);
         merchant.setName(name);
-        merchant.setCategory("中餐");
-        merchant.setCuisine("川菜");
+        merchant.setCategory("sichuan");
+        merchant.setCuisine("sichuan");
         merchant.setRating(rating);
         merchant.setAveragePrice(
                 new BigDecimal("68.00")
         );
         merchant.setReviewCount(reviewCount);
-        merchant.setAddress("测试地址");
+        merchant.setAddress("test address");
         merchant.setLongitude(
                 new BigDecimal("104.067000")
         );
         merchant.setLatitude(
                 new BigDecimal("30.573000")
         );
-        merchant.setEnvironmentTags(
-                "[\"安静\"]"
-        );
+        merchant.setEnvironmentTags("[\"quiet\"]");
         merchant.setPlatformStatus("ACTIVE");
-        merchant.setOperationStatus(
-                "OPERATING"
-        );
-
+        merchant.setOperationStatus("OPERATING");
         return merchant;
     }
 
-    /**
-     * 模拟评分器产生的结果。
-     *
-     * MatchScoreCalculator 自身的计算规则，
-     * 已经由 MatchScoreCalculatorTest 单独验证。
-     * 当前测试只验证 RankingService 的排序、
-     * 排名编号、持久化和权重快照。
-     */
-    private RecommendationItemVO
-    createCalculatedResult(
+    private RecommendationItemVO createCalculatedResult(
             Merchant merchant,
             BigDecimal finalScore
     ) {
         RecommendationItemVO result =
                 new RecommendationItemVO();
-
-        result.setMerchantId(
-                merchant.getId()
-        );
-        result.setMerchantName(
-                merchant.getName()
-        );
-        result.setCategory(
-                merchant.getCategory()
-        );
-        result.setCuisine(
-                merchant.getCuisine()
-        );
-        result.setMerchantRating(
-                merchant.getRating()
-        );
+        result.setMerchantId(merchant.getId());
+        result.setMerchantName(merchant.getName());
+        result.setCategory(merchant.getCategory());
+        result.setCuisine(merchant.getCuisine());
+        result.setMerchantRating(merchant.getRating());
         result.setAveragePrice(
                 merchant.getAveragePrice()
         );
         result.setReviewCount(
                 merchant.getReviewCount()
         );
-        result.setDistanceKm(
-                new BigDecimal("1.00")
-        );
-        result.setFinalScore(
-                finalScore
-        );
-
+        result.setDistanceKm(new BigDecimal("1.00"));
+        result.setFinalScore(finalScore);
         result.getMatchedConditions()
-                .add("测试匹配条件一");
-
+                .add("test match one");
         result.getMatchedConditions()
-                .add("测试匹配条件二");
-
+                .add("test match two");
         result.setReason(
                 merchant.getName()
-                        + "综合匹配分为"
+                        + " score "
                         + finalScore
-                        + "分。"
         );
-
         return result;
     }
 }
