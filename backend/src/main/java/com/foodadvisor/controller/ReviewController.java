@@ -31,11 +31,11 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDate;
 
 /**
  * 评价接口 — 评论查询 & AI 分析
@@ -83,7 +83,8 @@ public class ReviewController {
             @RequestParam(required = false) String tagCode,
             @RequestParam(required = false) String sentiment
             ) {
-        Page<ReviewDisplayVO> page = reviewService.listByMerchantWithUser(merchantId, pageNum, pageSize);
+        Page<ReviewDisplayVO> page = reviewService.listByMerchantWithUser(
+                merchantId, pageNum, pageSize, tagCode, sentiment);
         return ApiResponse.success(PageResult.from(page));
     }
 

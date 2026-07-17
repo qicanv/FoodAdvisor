@@ -276,6 +276,117 @@ class MatchScoreCalculatorTest {
         assertTrue(result.isPresent());
     }
 
+    @Test
+    void shouldBuildReasonWithAtLeastTwoRealFacts() {
+        RecommendationItemVO result =
+                calculator.calculate(
+                        createBaseMerchant(),
+                        createBaseConstraints(),
+                        createDefaultWeights(),
+                        new BigDecimal("30.5728"),
+                        new BigDecimal("104.0668")
+                ).orElseThrow();
+
+        assertAll(
+                () -> assertTrue(
+                        result.getMatchedConditions()
+                                .size() >= 2
+                ),
+                () -> assertTrue(
+                        result.getReason() != null
+                                && !result.getReason().isBlank()
+                )
+        );
+    }
+
+    @Test
+    void shouldNotInventPriceFactWhenMerchantPriceIsMissing() {
+        Merchant merchant = createBaseMerchant();
+        merchant.setAveragePrice(null);
+
+        ConstraintState constraints =
+                createBaseConstraints();
+        constraints.setPerCapitaBudget(null);
+
+        RecommendationItemVO result =
+                calculator.calculate(
+                        merchant,
+                        constraints,
+                        createDefaultWeights(),
+                        new BigDecimal("30.5728"),
+                        new BigDecimal("104.0668")
+                ).orElseThrow();
+
+        assertAll(
+                () -> assertEquals(
+                        null,
+                        result.getAveragePrice()
+                ),
+                () -> assertTrue(
+                        result.getReason() != null
+                                && !result.getReason()
+                                .contains("68")
+                )
+        );
+    }
+
+    @Test
+    void shouldNotInventRatingFactWhenMerchantRatingIsMissing() {
+        Merchant merchant = createBaseMerchant();
+        merchant.setRating(null);
+
+        ConstraintState constraints =
+                createBaseConstraints();
+        constraints.setMinRating(null);
+
+        RecommendationItemVO result =
+                calculator.calculate(
+                        merchant,
+                        constraints,
+                        createDefaultWeights(),
+                        new BigDecimal("30.5728"),
+                        new BigDecimal("104.0668")
+                ).orElseThrow();
+
+        assertAll(
+                () -> assertEquals(
+                        null,
+                        result.getMerchantRating()
+                ),
+                () -> assertTrue(
+                        result.getReason() != null
+                                && !result.getReason()
+                                .contains("4.80")
+                )
+        );
+    }
+
+    @Test
+    void shouldUseRealStatusFactsWhenFewUserFactsAreAvailable() {
+        ConstraintState constraints =
+                new ConstraintState();
+
+        RecommendationItemVO result =
+                calculator.calculate(
+                        createBaseMerchant(),
+                        constraints,
+                        createDefaultWeights(),
+                        null,
+                        null
+                ).orElseThrow();
+
+        assertAll(
+                () -> assertTrue(
+                        result.getMatchedConditions()
+                                .size() >= 2
+                ),
+                () -> assertTrue(
+                        result.getReason() != null
+                                && !result.getReason().isBlank()
+                )
+        );
+    }
+
     private Merchant createBaseMerchant() {
         Merchant merchant = new Merchant();
 

@@ -46,14 +46,14 @@ import com.foodadvisor.dto.IssueReviewVO;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDate;
 import java.util.stream.Collectors;
 
 /**
@@ -131,13 +131,13 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 .orderByDesc(Review::getCreatedAt);
 
         List<Review> records = this.list(wrapper);
-        
+
         Page<Review> page = new Page<>();
         page.setRecords(records);
         page.setTotal((long) records.size());
         page.setCurrent(pageNum);
         page.setSize(pageSize);
-        
+
         return page;
     }
 
@@ -149,12 +149,10 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             int pageNum,
             int pageSize
     ) {
-        return listByMerchantWithUser(merchantId, pageNum, pageSize, null, null);
+        Page<Review> reviewPage = listByMerchant(merchantId, pageNum, pageSize);
+        return toDisplayPage(reviewPage, pageNum, pageSize);
     }
 
-    /**
-     * 按商家分页查询公开评价，包含用户信息，支持标签筛选。
-     */
     public Page<com.foodadvisor.dto.review.ReviewDisplayVO> listByMerchantWithUser(
             Long merchantId,
             int pageNum,
@@ -162,12 +160,26 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             String tagCode,
             String sentiment
     ) {
-        Page<Review> reviewPage = listByMerchant(merchantId, pageNum, pageSize, tagCode, sentiment);
-        
+        Page<Review> reviewPage = listByMerchant(
+                merchantId,
+                pageNum,
+                pageSize,
+                tagCode,
+                sentiment
+        );
+        return toDisplayPage(reviewPage, pageNum, pageSize);
+    }
+
+    private Page<com.foodadvisor.dto.review.ReviewDisplayVO> toDisplayPage(
+            Page<Review> reviewPage,
+            int pageNum,
+            int pageSize
+    ) {
+
         List<com.foodadvisor.dto.review.ReviewDisplayVO> displayVOs = new ArrayList<>();
         for (Review review : reviewPage.getRecords()) {
             com.foodadvisor.dto.review.ReviewDisplayVO vo = com.foodadvisor.dto.review.ReviewDisplayVO.from(review);
-            
+
             if (review.getUserId() != null) {
                 com.foodadvisor.entity.User user = userMapper.selectById(review.getUserId());
                 if (user != null) {
@@ -175,16 +187,16 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     vo.setNickname(user.getNickname());
                 }
             }
-            
+
             displayVOs.add(vo);
         }
-        
+
         Page<com.foodadvisor.dto.review.ReviewDisplayVO> page = new Page<>();
         page.setRecords(displayVOs);
         page.setTotal(reviewPage.getTotal());
         page.setCurrent(pageNum);
         page.setSize(pageSize);
-        
+
         return page;
     }
 
