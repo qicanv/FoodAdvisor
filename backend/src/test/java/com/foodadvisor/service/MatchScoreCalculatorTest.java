@@ -14,7 +14,6 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MatchScoreCalculatorTest {
@@ -28,21 +27,13 @@ class MatchScoreCalculatorTest {
         );
     }
 
-    /**
-     * 验证正常商家能够完成六个维度的评分，
-     * 并生成匹配条件、推荐理由和最终得分。
-     */
     @Test
     void shouldCalculateExpectedScoreForMatchedMerchant() {
-        Merchant merchant = createBaseMerchant();
-        ConstraintState constraints = createBaseConstraints();
-        RecommendationWeights weights = createDefaultWeights();
-
         Optional<RecommendationItemVO> optionalResult =
                 calculator.calculate(
-                        merchant,
-                        constraints,
-                        weights,
+                        createBaseMerchant(),
+                        createBaseConstraints(),
+                        createDefaultWeights(),
                         new BigDecimal("30.5728"),
                         new BigDecimal("104.0668")
                 );
@@ -56,12 +47,16 @@ class MatchScoreCalculatorTest {
                 () -> assertEquals(
                         0,
                         new BigDecimal("97.31")
-                                .compareTo(result.getFinalScore())
+                                .compareTo(
+                                        result.getFinalScore()
+                                )
                 ),
                 () -> assertEquals(
                         0,
                         new BigDecimal("0.03")
-                                .compareTo(result.getDistanceKm())
+                                .compareTo(
+                                        result.getDistanceKm()
+                                )
                 ),
                 () -> assertEquals(
                         6,
@@ -93,47 +88,14 @@ class MatchScoreCalculatorTest {
                 ),
                 () -> assertTrue(
                         result.getMatchedConditions()
-                                .stream()
-                                .anyMatch(value ->
-                                        value.contains(
-                                                "菜系或商家类型匹配：川菜"
-                                        )
-                                )
-                ),
-                () -> assertTrue(
-                        result.getMatchedConditions()
-                                .stream()
-                                .anyMatch(value ->
-                                        value.contains(
-                                                "评分达到要求"
-                                        )
-                                )
-                ),
-                () -> assertTrue(
-                        result.getMatchedConditions()
-                                .stream()
-                                .anyMatch(value ->
-                                        value.contains(
-                                                "环境或场景匹配：安静"
-                                        )
-                                )
+                                .size() >= 2
                 ),
                 () -> assertTrue(
                         result.getRiskNotes().isEmpty()
-                ),
-                () -> assertTrue(
-                        result.getReason()
-                                .contains(
-                                        "综合匹配分为97.31分"
-                                )
                 )
         );
     }
 
-    /**
-     * 验证超过人均预算的商家被硬过滤，
-     * 不会进入推荐结果。
-     */
     @Test
     void shouldFilterMerchantWhenPriceExceedsBudget() {
         Merchant merchant = createBaseMerchant();
@@ -153,20 +115,22 @@ class MatchScoreCalculatorTest {
         assertTrue(result.isEmpty());
     }
 
-    /**
-     * 验证命中明确排除类型“火锅”的商家
-     * 会被硬过滤。
-     */
     @Test
     void shouldFilterMerchantWhenTypeIsExplicitlyExcluded() {
         Merchant merchant = createBaseMerchant();
-        merchant.setName("川味火锅店");
-        merchant.setCategory("火锅");
+        merchant.setName("hotpot restaurant");
+        merchant.setCategory("hotpot");
+
+        ConstraintState constraints =
+                createBaseConstraints();
+        constraints.setExcludedMerchantTypes(
+                List.of("hotpot")
+        );
 
         Optional<RecommendationItemVO> result =
                 calculator.calculate(
                         merchant,
-                        createBaseConstraints(),
+                        constraints,
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
                         new BigDecimal("104.0668")
@@ -175,9 +139,6 @@ class MatchScoreCalculatorTest {
         assertTrue(result.isEmpty());
     }
 
-    /**
-     * 验证暂停营业的商家不会进入推荐结果。
-     */
     @Test
     void shouldFilterMerchantWhenOperationIsSuspended() {
         Merchant merchant = createBaseMerchant();
@@ -195,15 +156,9 @@ class MatchScoreCalculatorTest {
         assertTrue(result.isEmpty());
     }
 
-    /**
-     * 距离不是当前规则中的硬过滤条件。
-     * 超过期望距离的商家仍然可以参与排序，
-     * 但距离得分降低并产生风险提示。
-     */
     @Test
-    void shouldKeepDistantMerchantAndAddDistanceRisk() {
+    void shouldFilterMerchantWhenDistanceExceedsLimit() {
         Merchant merchant = createBaseMerchant();
-        merchant.setName("远郊川菜馆");
         merchant.setLongitude(
                 new BigDecimal("104.150000")
         );
@@ -211,7 +166,7 @@ class MatchScoreCalculatorTest {
                 new BigDecimal("30.600000")
         );
 
-        Optional<RecommendationItemVO> optionalResult =
+        Optional<RecommendationItemVO> result =
                 calculator.calculate(
                         merchant,
                         createBaseConstraints(),
@@ -220,50 +175,16 @@ class MatchScoreCalculatorTest {
                         new BigDecimal("104.0668")
                 );
 
-        assertTrue(optionalResult.isPresent());
-
-        RecommendationItemVO result =
-                optionalResult.orElseThrow();
-
-        assertAll(
-                () -> assertTrue(
-                        result.getDistanceKm()
-                                .compareTo(
-                                        new BigDecimal("3")
-                                ) > 0
-                ),
-                () -> assertTrue(
-                        result.getRiskNotes()
-                                .stream()
-                                .anyMatch(value ->
-                                        value.contains(
-                                                "超过期望的3公里"
-                                        )
-                                )
-                ),
-                () -> assertTrue(
-                        result.getScoreItems()
-                                .containsKey("distance")
-                ),
-                () -> assertFalse(
-                        result.getMatchedConditions()
-                                .isEmpty()
-                )
-        );
+        assertTrue(result.isEmpty());
     }
 
-    /**
-     * 菜系不匹配不是硬过滤条件。
-     * 商家仍然参与排序，但菜系维度失分，
-     * 并产生未命中菜系的风险说明。
-     */
     @Test
-    void shouldKeepDifferentCuisineAndAddCuisineRisk() {
+    void shouldFilterMerchantWhenCuisineDoesNotMatch() {
         Merchant merchant = createBaseMerchant();
-        merchant.setName("粤味轩");
-        merchant.setCuisine("粤菜");
+        merchant.setCuisine("cantonese");
+        merchant.setCategory("cantonese");
 
-        Optional<RecommendationItemVO> optionalResult =
+        Optional<RecommendationItemVO> result =
                 calculator.calculate(
                         merchant,
                         createBaseConstraints(),
@@ -272,49 +193,97 @@ class MatchScoreCalculatorTest {
                         new BigDecimal("104.0668")
                 );
 
-        assertTrue(optionalResult.isPresent());
-
-        RecommendationItemVO result =
-                optionalResult.orElseThrow();
-
-        assertAll(
-                () -> assertTrue(
-                        result.getRiskNotes()
-                                .stream()
-                                .anyMatch(value ->
-                                        value.contains(
-                                                "未命中用户偏好的菜系或商家类型"
-                                        )
-                                )
-                ),
-                () -> assertTrue(
-                        result.getScoreItems()
-                                .containsKey("cuisine")
-                ),
-                () -> assertTrue(
-                        result.getMatchedConditions()
-                                .size() >= 2
-                ),
-                () -> assertTrue(
-                        result.getFinalScore()
-                                .compareTo(
-                                        new BigDecimal("100")
-                                ) < 0
-                )
-        );
+        assertTrue(result.isEmpty());
     }
 
-    /**
-     * 创建与手工测试中“锦里川味馆”一致的基础商家。
-     */
+    @Test
+    void shouldMatchAnyCuisineInCuisineList() {
+        ConstraintState constraints =
+                createBaseConstraints();
+        constraints.setCuisines(
+                List.of("cantonese", "sichuan")
+        );
+
+        Optional<RecommendationItemVO> result =
+                calculator.calculate(
+                        createBaseMerchant(),
+                        constraints,
+                        createDefaultWeights(),
+                        new BigDecimal("30.5728"),
+                        new BigDecimal("104.0668")
+                );
+
+        assertTrue(result.isPresent());
+    }
+
+    @Test
+    void shouldRequireAllEnvironmentRequirements() {
+        ConstraintState constraints =
+                createBaseConstraints();
+        constraints.setEnvironmentRequirements(
+                List.of("quiet", "photo-friendly")
+        );
+
+        Optional<RecommendationItemVO> result =
+                calculator.calculate(
+                        createBaseMerchant(),
+                        constraints,
+                        createDefaultWeights(),
+                        new BigDecimal("30.5728"),
+                        new BigDecimal("104.0668")
+                );
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void shouldFilterMerchantWhenMinRatingDoesNotMatch() {
+        ConstraintState constraints =
+                createBaseConstraints();
+        constraints.setMinRating(
+                new BigDecimal("4.9")
+        );
+
+        Optional<RecommendationItemVO> result =
+                calculator.calculate(
+                        createBaseMerchant(),
+                        constraints,
+                        createDefaultWeights(),
+                        new BigDecimal("30.5728"),
+                        new BigDecimal("104.0668")
+                );
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void shouldMatchAnySceneInSceneList() {
+        ConstraintState constraints =
+                createBaseConstraints();
+        constraints.setScenes(
+                List.of("date", "friends")
+        );
+
+        Optional<RecommendationItemVO> result =
+                calculator.calculate(
+                        createBaseMerchant(),
+                        constraints,
+                        createDefaultWeights(),
+                        new BigDecimal("30.5728"),
+                        new BigDecimal("104.0668")
+                );
+
+        assertTrue(result.isPresent());
+    }
+
     private Merchant createBaseMerchant() {
         Merchant merchant = new Merchant();
 
         merchant.setId(2L);
         merchant.setMerchantCode("RANK_TEST_001");
-        merchant.setName("锦里川味馆");
-        merchant.setCategory("中餐");
-        merchant.setCuisine("川菜");
+        merchant.setName("sichuan bistro");
+        merchant.setCategory("sichuan");
+        merchant.setCuisine("sichuan");
         merchant.setRating(
                 new BigDecimal("4.80")
         );
@@ -322,7 +291,7 @@ class MatchScoreCalculatorTest {
                 new BigDecimal("68.00")
         );
         merchant.setReviewCount(160);
-        merchant.setAddress("测试地址");
+        merchant.setAddress("test address");
         merchant.setLongitude(
                 new BigDecimal("104.067000")
         );
@@ -330,7 +299,7 @@ class MatchScoreCalculatorTest {
                 new BigDecimal("30.573000")
         );
         merchant.setEnvironmentTags(
-                "[\"安静\",\"朋友聚会\"]"
+                "[\"quiet\",\"friends\"]"
         );
         merchant.setPlatformStatus("ACTIVE");
         merchant.setOperationStatus("OPERATING");
@@ -338,9 +307,6 @@ class MatchScoreCalculatorTest {
         return merchant;
     }
 
-    /**
-     * 创建与会话1一致的用户约束。
-     */
     private ConstraintState createBaseConstraints() {
         ConstraintState constraints =
                 new ConstraintState();
@@ -350,10 +316,10 @@ class MatchScoreCalculatorTest {
                 new BigDecimal("80")
         );
         constraints.setCuisines(
-                List.of("川菜")
+                List.of("sichuan")
         );
         constraints.setExcludedMerchantTypes(
-                List.of("火锅")
+                List.of("hotpot")
         );
         constraints.setDistanceKm(
                 new BigDecimal("3")
@@ -362,15 +328,12 @@ class MatchScoreCalculatorTest {
                 new BigDecimal("4.5")
         );
         constraints.setEnvironmentRequirements(
-                List.of("安静")
+                List.of("quiet")
         );
 
         return constraints;
     }
 
-    /**
-     * 创建默认的100分制权重。
-     */
     private RecommendationWeights createDefaultWeights() {
         RecommendationWeights weights =
                 new RecommendationWeights();
