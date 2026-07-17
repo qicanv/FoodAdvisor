@@ -6,13 +6,17 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.foodadvisor.backend.exception.ApiException;
 import com.foodadvisor.dto.review.MerchantRatingSummaryVO;
+import com.foodadvisor.dto.review.MyReviewDetailVO;
+import com.foodadvisor.dto.review.MyReviewListVO;
 import com.foodadvisor.dto.review.ReviewImageVO;
+import com.foodadvisor.dto.review.ReviewReplyVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewAnalysis;
 import com.foodadvisor.entity.ReviewImage;
+import com.foodadvisor.entity.ReviewReply;
 import com.foodadvisor.entity.ReviewTagRelation;
 import com.foodadvisor.entity.ReviewVersion;
 import com.foodadvisor.mapper.MerchantMapper;
@@ -81,6 +85,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final com.foodadvisor.mapper.UserMapper userMapper;
     private final ReviewIssueRelationMapper issueRelationMapper;
     private final ReviewIssueCategoryMapper issueCategoryMapper;
+    private final com.foodadvisor.mapper.ReviewReplyMapper replyMapper;
 
     public ReviewService(
             ReviewAnalysisMapper analysisMapper,
@@ -93,7 +98,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             JdbcTemplate jdbcTemplate,
             com.foodadvisor.mapper.UserMapper userMapper,
             ReviewIssueRelationMapper issueRelationMapper,
-            ReviewIssueCategoryMapper issueCategoryMapper
+            ReviewIssueCategoryMapper issueCategoryMapper,
+            com.foodadvisor.mapper.ReviewReplyMapper replyMapper
     ) {
         this.analysisMapper = analysisMapper;
         this.tagRelationMapper = tagRelationMapper;
@@ -106,6 +112,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         this.userMapper = userMapper;
         this.issueRelationMapper = issueRelationMapper;
         this.issueCategoryMapper = issueCategoryMapper;
+        this.replyMapper = replyMapper;
     }
 
     /**
@@ -341,6 +348,39 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         return toSubmitResponse(review, activeImages);
     }
 
+    public ReviewSubmitResponse editReviewSimple(
+            Long userId,
+            Long reviewId,
+            ReviewSubmitRequest request
+    ) {
+        validateSubmitRequest(request);
+
+        Review review = requireOwnedActiveReview(userId, reviewId);
+
+        int currentVersion = review.getCurrentVersion() == null
+                ? 1
+                : review.getCurrentVersion();
+        review.setCurrentVersion(currentVersion + 1);
+
+        review.setEditedAt(OffsetDateTime.now());
+
+        applyReviewFields(review, request);
+
+        applyContentSafety(review);
+
+        this.updateById(review);
+
+        List<ReviewImage> activeImages = List.of();
+
+        saveVersion(review, activeImages, "EDIT");
+
+        refreshMerchantRatingStats(review.getMerchantId());
+
+        triggerAnalysisPlaceholder(review);
+
+        return toSubmitResponse(review, activeImages);
+    }
+
     /**
      * 删除评价 —— 逻辑删除，仅修改 status 和 deleted_at，不物理删除数据。
      * 数据仍然保留在数据库里，方便后续审计和数据分析。
@@ -365,9 +405,9 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         // 执行 UPDATE
         this.updateById(review);
 
-        // 记录版本快照，changeType = "DELETE"，方便追溯
+        // 记录版本快照，changeType = "EDIT"（数据库约束不允许DELETE）
         // List.of() 表示删除后没有保留任何图片
-        saveVersion(review, List.of(), "DELETE");
+        saveVersion(review, List.of(), "EDIT");
 
         // 删掉的评价不再计入商家评分，重新算一次
         refreshMerchantRatingStats(review.getMerchantId());
@@ -401,6 +441,184 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         wrapper.orderByDesc(Review::getUpdatedAt);
 
         return this.page(page, wrapper);
+    }
+
+    public Page<MyReviewListVO> listMyReviews(
+            Long userId,
+            int pageNum,
+            int pageSize,
+            String status,
+            Integer rating
+    ) {
+        Page<Review> page = Page.of(pageNum, pageSize);
+        LambdaQueryWrapper<Review> wrapper = new LambdaQueryWrapper<>();
+
+        wrapper.eq(Review::getUserId, userId);
+
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(Review::getStatus, status);
+        } else {
+            wrapper.ne(Review::getStatus, "DELETED");
+        }
+
+        if (rating != null && rating > 0) {
+            wrapper.eq(Review::getRating, BigDecimal.valueOf(rating));
+        }
+
+        wrapper.orderByDesc(Review::getUpdatedAt);
+
+        this.page(page, wrapper);
+
+        List<MyReviewListVO> voList = new ArrayList<>();
+        for (Review review : page.getRecords()) {
+            MyReviewListVO vo = new MyReviewListVO();
+            vo.setId(review.getId());
+            vo.setMerchantId(review.getMerchantId());
+            vo.setRating(review.getRating());
+            vo.setContent(review.getContent());
+
+            if (review.getContent() != null && review.getContent().length() > 80) {
+                vo.setContentSummary(review.getContent().substring(0, 80) + "...");
+            } else {
+                vo.setContentSummary(review.getContent());
+            }
+
+            vo.setPublishedAt(review.getPublishedAt() != null ? review.getPublishedAt() : review.getReviewTime());
+            vo.setCreatedAt(review.getCreatedAt());
+            vo.setUpdatedAt(review.getUpdatedAt());
+            vo.setStatus(review.getStatus());
+            vo.setStatusText(mapStatusText(review.getStatus()));
+            vo.setCurrentVersion(review.getCurrentVersion());
+
+            Merchant merchant = merchantMapper.selectById(review.getMerchantId());
+            if (merchant != null) {
+                vo.setMerchantName(merchant.getName());
+            }
+
+            voList.add(vo);
+        }
+
+        Page<MyReviewListVO> resultPage = new Page<>();
+        resultPage.setRecords(voList);
+        resultPage.setTotal(page.getTotal());
+        resultPage.setCurrent(pageNum);
+        resultPage.setSize(pageSize);
+
+        return resultPage;
+    }
+
+    public MyReviewDetailVO getMyReviewDetail(Long userId, Long reviewId) {
+        Review review = this.getById(reviewId);
+        if (review == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "评价不存在");
+        }
+
+        if (!review.getUserId().equals(userId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "无权查看此评价");
+        }
+
+        MyReviewDetailVO vo = new MyReviewDetailVO();
+        vo.setId(review.getId());
+        vo.setMerchantId(review.getMerchantId());
+        vo.setRating(review.getRating());
+        vo.setTasteRating(review.getTasteRating());
+        vo.setEnvironmentRating(review.getEnvironmentRating());
+        vo.setServiceRating(review.getServiceRating());
+        vo.setAverageSpend(review.getAverageSpend());
+        vo.setConsumptionDate(review.getConsumptionDate());
+        vo.setContent(review.getContent());
+        vo.setStatus(review.getStatus());
+        vo.setStatusText(mapStatusText(review.getStatus()));
+        vo.setModerationStatus(review.getModerationStatus());
+        vo.setCurrentVersion(review.getCurrentVersion());
+        vo.setPublishedAt(review.getPublishedAt() != null ? review.getPublishedAt() : review.getReviewTime());
+        vo.setCreatedAt(review.getCreatedAt());
+        vo.setUpdatedAt(review.getUpdatedAt());
+        vo.setEditedAt(review.getEditedAt());
+
+        Merchant merchant = merchantMapper.selectById(review.getMerchantId());
+        if (merchant != null) {
+            vo.setMerchantName(merchant.getName());
+            vo.setMerchantCategory(merchant.getCategory());
+            vo.setMerchantCuisine(merchant.getCuisine());
+        }
+
+        try {
+            List<ReviewImage> images = imageMapper.selectList(
+                    new LambdaQueryWrapper<ReviewImage>()
+                            .eq(ReviewImage::getReviewId, reviewId)
+                            .orderByAsc(ReviewImage::getSortOrder)
+            );
+            List<ReviewImageVO> imageVOs = images.stream()
+                    .map(img -> {
+                        ReviewImageVO imgVO = new ReviewImageVO();
+                        imgVO.setId(img.getId());
+                        imgVO.setImageUrl(img.getImageUrl());
+                        return imgVO;
+                    })
+                    .collect(Collectors.toList());
+            vo.setImages(imageVOs);
+        } catch (Exception e) {
+            vo.setImages(new ArrayList<>());
+        }
+
+        try {
+            List<ReviewVersion> versions = versionMapper.selectList(
+                    new LambdaQueryWrapper<ReviewVersion>()
+                            .eq(ReviewVersion::getReviewId, reviewId)
+                            .orderByDesc(ReviewVersion::getVersion)
+            );
+            List<MyReviewDetailVO.ReviewVersionVO> versionVOs = versions.stream()
+                    .map(v -> {
+                        MyReviewDetailVO.ReviewVersionVO vVO = new MyReviewDetailVO.ReviewVersionVO();
+                        vVO.setVersion(v.getVersion());
+                        vVO.setRating(v.getRating());
+                        vVO.setContent(v.getContent());
+                        vVO.setChangeType(v.getChangeType());
+                        vVO.setCreatedAt(v.getCreatedAt());
+                        return vVO;
+                    })
+                    .collect(Collectors.toList());
+            vo.setVersionHistory(versionVOs);
+        } catch (Exception e) {
+            vo.setVersionHistory(new ArrayList<>());
+        }
+
+        try {
+            ReviewReply reply = replyMapper.selectOne(
+                    new LambdaQueryWrapper<ReviewReply>()
+                            .eq(ReviewReply::getReviewId, reviewId)
+                            .eq(ReviewReply::getStatus, "VISIBLE")
+            );
+            if (reply != null) {
+                ReviewReplyVO replyVO = new ReviewReplyVO();
+                replyVO.setId(reply.getId());
+                replyVO.setReviewId(reply.getReviewId());
+                replyVO.setMerchantId(reply.getMerchantId());
+                replyVO.setReplyContent(reply.getReplyContent());
+                replyVO.setReplyTime(reply.getReplyTime());
+                replyVO.setStatus(reply.getStatus());
+                if (merchant != null) {
+                    replyVO.setMerchantName(merchant.getName());
+                }
+                vo.setMerchantReply(replyVO);
+            }
+        } catch (Exception e) {
+            vo.setMerchantReply(null);
+        }
+
+        return vo;
+    }
+
+    private String mapStatusText(String status) {
+        if (status == null) return "未知";
+        return switch (status) {
+            case "PENDING" -> "待审核";
+            case "PUBLISHED" -> "正常";
+            case "HIDDEN" -> "已隐藏";
+            case "DELETED" -> "已删除";
+            default -> status;
+        };
     }
 
 // ==================== 评论编辑与删除 结束====================
