@@ -42,20 +42,15 @@ import com.foodadvisor.dto.IssueReviewVO;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-<<<<<<< HEAD
-=======
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.time.LocalDate;
 import java.util.stream.Collectors;
->>>>>>> aa4db35f698a23171b66f4426e733badad59cf33
 
 /**
  * 评价服务
@@ -83,12 +78,9 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final ReviewImageStorageService imageStorageService;
     private final JdbcTemplate jdbcTemplate;
     private final ReviewTagMapper tagMapper;
-<<<<<<< HEAD
     private final com.foodadvisor.mapper.UserMapper userMapper;
-=======
     private final ReviewIssueRelationMapper issueRelationMapper;
     private final ReviewIssueCategoryMapper issueCategoryMapper;
->>>>>>> aa4db35f698a23171b66f4426e733badad59cf33
 
     public ReviewService(
             ReviewAnalysisMapper analysisMapper,
@@ -99,12 +91,9 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             MerchantMapper merchantMapper,
             ReviewImageStorageService imageStorageService,
             JdbcTemplate jdbcTemplate,
-<<<<<<< HEAD
-            com.foodadvisor.mapper.UserMapper userMapper
-=======
+            com.foodadvisor.mapper.UserMapper userMapper,
             ReviewIssueRelationMapper issueRelationMapper,
             ReviewIssueCategoryMapper issueCategoryMapper
->>>>>>> aa4db35f698a23171b66f4426e733badad59cf33
     ) {
         this.analysisMapper = analysisMapper;
         this.tagRelationMapper = tagRelationMapper;
@@ -153,7 +142,20 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             int pageNum,
             int pageSize
     ) {
-        Page<Review> reviewPage = listByMerchant(merchantId, pageNum, pageSize);
+        return listByMerchantWithUser(merchantId, pageNum, pageSize, null, null);
+    }
+
+    /**
+     * 按商家分页查询公开评价，包含用户信息，支持标签筛选。
+     */
+    public Page<com.foodadvisor.dto.review.ReviewDisplayVO> listByMerchantWithUser(
+            Long merchantId,
+            int pageNum,
+            int pageSize,
+            String tagCode,
+            String sentiment
+    ) {
+        Page<Review> reviewPage = listByMerchant(merchantId, pageNum, pageSize, tagCode, sentiment);
         
         List<com.foodadvisor.dto.review.ReviewDisplayVO> displayVOs = new ArrayList<>();
         for (Review review : reviewPage.getRecords()) {

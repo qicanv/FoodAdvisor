@@ -13,7 +13,7 @@ public class IssueReviewVO {
     private Long reviewId;
 
     /** 综合评分 1-5 */
-    private Integer rating;
+    private BigDecimal rating;
 
     /** 评价正文（前端按需截断） */
     private String content;
