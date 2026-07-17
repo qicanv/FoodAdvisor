@@ -124,13 +124,13 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 .orderByDesc(Review::getCreatedAt);
 
         List<Review> records = this.list(wrapper);
-        
+
         Page<Review> page = new Page<>();
         page.setRecords(records);
         page.setTotal((long) records.size());
         page.setCurrent(pageNum);
         page.setSize(pageSize);
-        
+
         return page;
     }
 
@@ -168,11 +168,11 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             int pageNum,
             int pageSize
     ) {
-        
+
         List<com.foodadvisor.dto.review.ReviewDisplayVO> displayVOs = new ArrayList<>();
         for (Review review : reviewPage.getRecords()) {
             com.foodadvisor.dto.review.ReviewDisplayVO vo = com.foodadvisor.dto.review.ReviewDisplayVO.from(review);
-            
+
             if (review.getUserId() != null) {
                 com.foodadvisor.entity.User user = userMapper.selectById(review.getUserId());
                 if (user != null) {
@@ -180,16 +180,16 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     vo.setNickname(user.getNickname());
                 }
             }
-            
+
             displayVOs.add(vo);
         }
-        
+
         Page<com.foodadvisor.dto.review.ReviewDisplayVO> page = new Page<>();
         page.setRecords(displayVOs);
         page.setTotal(reviewPage.getTotal());
         page.setCurrent(pageNum);
         page.setSize(pageSize);
-        
+
         return page;
     }
 
@@ -866,7 +866,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
             IssueReviewVO vo = new IssueReviewVO();
             vo.setReviewId(review.getId());
-            vo.setRating(toIntegerRating(review.getRating()));
+            vo.setRating(review.getRating());
             vo.setContent(review.getContent());
             vo.setPublishedAt(review.getPublishedAt());
             vo.setEvidenceText(
@@ -1384,15 +1384,15 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 review.getMerchantId()
         );
         response.setContent(review.getContent());
-        response.setRating(toIntegerRating(review.getRating()));
+        response.setRating(review.getRating());
         response.setTasteRating(
-                toIntegerRating(review.getTasteRating())
+                review.getTasteRating()
         );
         response.setEnvironmentRating(
-                toIntegerRating(review.getEnvironmentRating())
+                review.getEnvironmentRating()
         );
         response.setServiceRating(
-                toIntegerRating(review.getServiceRating())
+                review.getServiceRating()
         );
         response.setAverageSpend(
                 review.getAverageSpend()
@@ -1443,10 +1443,6 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         );
 
         return vo;
-    }
-
-    private Integer toIntegerRating(BigDecimal rating) {
-        return rating == null ? null : rating.intValue();
     }
 
     private BigDecimal average(
