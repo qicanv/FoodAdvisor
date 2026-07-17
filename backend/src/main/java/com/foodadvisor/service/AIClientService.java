@@ -150,4 +150,26 @@ public class AIClientService {
             );
         }
     }
+
+    /**
+     * 调用评价摘要生成接口（EPIC-01 Story 7）
+     */
+    public JsonNode generateReviewSummary(
+            Long merchantId,
+            Integer version,
+            java.util.List<Map<String, Object>> reviews,
+            int minimumReviewCount
+    ) {
+        String url = aiServiceBaseUrl + "/internal/merchants/review-summary";
+
+        Map<String, Object> request = Map.of(
+                "requestId", "summary-" + merchantId + "-v" + version,
+                "merchantId", merchantId,
+                "version", version,
+                "reviews", reviews,
+                "minimumReviewCount", minimumReviewCount
+        );
+
+        return post(url, request);
+    }
 }
