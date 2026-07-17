@@ -23,6 +23,11 @@ import com.foodadvisor.mapper.ReviewTagRelationMapper;
 import com.foodadvisor.mapper.ReviewVersionMapper;
 import com.foodadvisor.storage.ReviewImageStorageService;
 import com.foodadvisor.storage.StoredReviewImage;
+import com.foodadvisor.dto.review.ReviewTagStatVO;
+import com.foodadvisor.entity.ReviewTag;
+import com.foodadvisor.mapper.ReviewTagMapper;
+import com.foodadvisor.mapper.TagRelationWithName;
+import com.foodadvisor.mapper.TagSentimentCount;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -37,6 +42,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 评价服务
@@ -63,10 +70,12 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final MerchantMapper merchantMapper;
     private final ReviewImageStorageService imageStorageService;
     private final JdbcTemplate jdbcTemplate;
+    private final ReviewTagMapper tagMapper;
 
     public ReviewService(
             ReviewAnalysisMapper analysisMapper,
             ReviewTagRelationMapper tagRelationMapper,
+            ReviewTagMapper tagMapper,
             ReviewImageMapper imageMapper,
             ReviewVersionMapper versionMapper,
             MerchantMapper merchantMapper,
@@ -75,6 +84,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     ) {
         this.analysisMapper = analysisMapper;
         this.tagRelationMapper = tagRelationMapper;
+        this.tagMapper = tagMapper;
         this.imageMapper = imageMapper;
         this.versionMapper = versionMapper;
         this.merchantMapper = merchantMapper;
@@ -324,6 +334,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         return this.page(page, wrapper);
     }
 
+// ==================== 评论编辑与删除 结束====================
 
     /**
      * 计算商家评分汇总。
@@ -509,11 +520,14 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
     /**
      * 批量保存标签关联。
+     * 先删除同一 review_id + tag_id 的旧记录，再插入新记录。
+     * 手动设置时间字段，因为 MyBatis-Plus 的 auto-fill 在某些调用链下不生效。
      */
     @Transactional
     public void saveTagRelations(
             List<ReviewTagRelation> relations
     ) {
+        OffsetDateTime now = OffsetDateTime.now();
         for (ReviewTagRelation relation : relations) {
             LambdaQueryWrapper<ReviewTagRelation> wrapper =
                     new LambdaQueryWrapper<>();
@@ -528,6 +542,11 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     );
 
             tagRelationMapper.delete(wrapper);
+
+            // 手动设置创建和更新时间
+            relation.setCreatedAt(now);
+            relation.setUpdatedAt(now);
+
             tagRelationMapper.insert(relation);
         }
     }
@@ -1142,6 +1161,153 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                         "APPROVED"
                 );
     }
+
+   // ==================== 标签统计与筛选 ====================
+
+/**
+ * 获取某个商家的评价标签统计。
+ *
+ * 查询逻辑：
+ * 1. 从 review_tag_relations 表按 merchantId 聚合
+ * 2. 只统计已发布且审核通过的评价（与公开列表口径一致）
+ * 3. 按情感倾向（POSITIVE/NEUTRAL/NEGATIVE）分别计数
+ * 4. 只返回至少关联一条公开评价的标签（totalCount > 0）
+ * @param merchantId 商家 ID
+ * @return 标签统计列表，按 totalCount 降序排列
+ */
+public List<ReviewTagStatVO> getMerchantReviewTags(Long merchantId) {
+    // 1. 执行 SQL 查询，得到原始统计行（每行是 标签+情感 维度的计数）
+    List<TagSentimentCount> rows = tagRelationMapper.countTagsByMerchant(merchantId);
+
+    // 2. 按 tagCode 分组，将不同 sentiment 的计数合并成一个 VO
+    Map<String, ReviewTagStatVO> grouped = new LinkedHashMap<>();
+
+    for (TagSentimentCount row : rows) {
+        String code = row.getTagCode();
+        ReviewTagStatVO vo = grouped.computeIfAbsent(code, key ->
+                ReviewTagStatVO.builder()
+                        .tagCode(code)
+                        .tagName(row.getTagName())
+                        .category(row.getCategory())
+                        .positiveCount(0L)
+                        .neutralCount(0L)
+                        .negativeCount(0L)
+                        .totalCount(0L)
+                        .build()
+        );
+
+        // 根据当前行的 sentiment 累加到对应计数器
+        switch (row.getSentiment()) {
+            case "POSITIVE" -> vo.setPositiveCount(row.getCnt());
+            case "NEUTRAL"  -> vo.setNeutralCount(row.getCnt());
+            case "NEGATIVE" -> vo.setNegativeCount(row.getCnt());
+        }
+        vo.setTotalCount(vo.getTotalCount() + row.getCnt());
+    }
+
+    // 3. 过滤掉计数为 0 的标签
+    List<ReviewTagStatVO> result = new ArrayList<>(grouped.values());
+    result.removeIf(vo -> vo.getTotalCount() == 0);
+
+    // 4. 按总数降序，同数量按标签名升序
+    result.sort((a, b) -> {
+        int cmp = Long.compare(b.getTotalCount(), a.getTotalCount());
+        return cmp != 0 ? cmp : a.getTagName().compareTo(b.getTagName());
+    });
+
+    return result;
+}
+
+/**
+ * 获取单条评价关联的所有标签（含标签名、情感等展示信息）。
+ *
+ * 用于评价列表中每条评价的标签展示。
+ *
+ * @param reviewId 评价 ID
+ * @return 该评价的标签关联列表
+ */
+public List<TagRelationWithName> getReviewTags(Long reviewId) {
+    return tagRelationMapper.findTagsByReviewId(reviewId);
+}
+
+/**
+ * 按商家分页查询公开评价，支持标签和情感倾向筛选。
+ *
+ * 两个筛选参数都是可选的：
+ * - tagCode 不为空时，只返回关联了该标签的评价
+ * - sentiment 不为空时，在 tagCode 筛选基础上进一步限定情感倾向
+ * - 都不传时行为和原来一样（返回所有公开评价）
+ *
+ * @param merchantId 商家 ID
+ * @param pageNum    页码（从 1 开始）
+ * @param pageSize   每页条数
+ * @param tagCode    可选，标签编码如 "TASTE_GOOD"
+ * @param sentiment  可选，情感倾向 POSITIVE / NEUTRAL / NEGATIVE
+ * @return 分页结果
+ */
+public Page<Review> listByMerchant(
+        Long merchantId,
+        int pageNum,
+        int pageSize,
+        String tagCode,
+        String sentiment
+) {
+    // 如果没有标签筛选条件，走原来的简单查询
+    if (tagCode == null || tagCode.isBlank()) {
+        return listByMerchant(merchantId, pageNum, pageSize);
+    }
+
+    // 有标签筛选条件时，需要通过子查询找到符合条件的 review_id 列表
+    // 再用这些 ID 去查评价主表，保证分页逻辑正确
+    Page<Review> page = Page.of(pageNum, pageSize);
+
+    // 先查出该 tagCode 对应的 tagId
+    ReviewTag tag = tagMapper.selectOne(
+            new LambdaQueryWrapper<ReviewTag>()
+                    .eq(ReviewTag::getCode, tagCode)
+                    .eq(ReviewTag::getStatus, "ACTIVE")
+    );
+
+    // 标签不存在或已禁用 → 返回空结果
+    if (tag == null) {
+        page.setRecords(List.of());
+        page.setTotal(0);
+        return page;
+    }
+
+    // 查 review_tag_relations 表，找到符合条件的 review_id 集合
+    LambdaQueryWrapper<ReviewTagRelation> relationWrapper = new LambdaQueryWrapper<>();
+    relationWrapper.eq(ReviewTagRelation::getTagId, tag.getId());
+
+    // 如果指定了情感倾向，进一步过滤
+    if (sentiment != null && !sentiment.isBlank()) {
+        relationWrapper.eq(ReviewTagRelation::getSentiment, sentiment.toUpperCase());
+    }
+
+    List<Long> filteredReviewIds = tagRelationMapper.selectList(relationWrapper)
+            .stream()
+            .map(ReviewTagRelation::getReviewId)
+            .distinct()
+            .toList();
+
+    // 没有匹配的评价
+    if (filteredReviewIds.isEmpty()) {
+        page.setRecords(List.of());
+        page.setTotal(0);
+        return page;
+    }
+
+    // 用筛选出的 ID 列表，加上公开评价条件，分页查询
+    LambdaQueryWrapper<Review> reviewWrapper = new LambdaQueryWrapper<>();
+    reviewWrapper.in(Review::getId, filteredReviewIds)
+            .eq(Review::getMerchantId, merchantId)
+            .eq(Review::getStatus, "PUBLISHED")
+            .eq(Review::getModerationStatus, "APPROVED")
+            .orderByDesc(Review::getPublishedAt);
+
+    return this.page(page, reviewWrapper);
+}
+//==============================================
 
     private ApiException badRequest(
             String code,

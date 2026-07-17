@@ -11,6 +11,13 @@ import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewAnalysis;
 import com.foodadvisor.service.AIClientService;
 import com.foodadvisor.service.ReviewService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.foodadvisor.dto.review.ReviewTagStatVO;
+import com.foodadvisor.entity.ReviewTag;
+import com.foodadvisor.entity.ReviewTagRelation;
+import com.foodadvisor.mapper.ReviewTagMapper;
+import com.foodadvisor.mapper.TagRelationWithName;
+
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -27,21 +34,33 @@ public class ReviewController {
 
     private final ReviewService reviewService;
     private final AIClientService aiClientService;
+    private final ReviewTagMapper reviewTagMapper;
 
-    public ReviewController(ReviewService reviewService, AIClientService aiClientService) {
+    public ReviewController(ReviewService reviewService, AIClientService aiClientService,ReviewTagMapper reviewTagMapper) {
         this.reviewService = reviewService;
         this.aiClientService = aiClientService;
+        this.reviewTagMapper = reviewTagMapper;
     }
 
     /**
      * 按商家分页查询评价
+     * 支持可选的标签和情感倾向筛选（EPIC-01 Story 8）。
+     * @param merchantId 商家 ID
+     * @param pageNum    页码，默认 1
+     * @param pageSize   每页条数，默认 10
+     * @param tagCode    可选，按标签编码筛选（如 TASTE_GOOD）
+     * @param sentiment  可选，按情感倾向筛选（POSITIVE / NEGATIVE / NEUTRAL）
+     *                   仅在 tagCode 不为空时生效
      */
     @GetMapping
     public ApiResponse<PageResult<Review>> list(
             @RequestParam Long merchantId,
             @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize) {
-        Page<Review> page = reviewService.listByMerchant(merchantId, pageNum, pageSize);
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String tagCode,
+            @RequestParam(required = false) String sentiment
+            ) {
+        Page<Review> page = reviewService.listByMerchant(merchantId, pageNum, pageSize, tagCode, sentiment);
         return ApiResponse.success(PageResult.from(page));
     }
 
@@ -84,6 +103,69 @@ public class ReviewController {
             analysis.setErrorMessage(result.get("errorMessage").asText());
         }
         reviewService.saveAnalysis(analysis);
+
+// ====== 持久化评价标签关联======
+// AI 分析结果中的 tags 字段包含了从评论中提取的标签列表。
+// 需要把这些标签关联写入 review_tag_relations 表，
+// 这样后续的标签统计和筛选功能才有数据可用。
+if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isArray()) {
+    List<ReviewTagRelation> relations = new ArrayList<>();
+
+    for (JsonNode tagNode : result.get("tags")) {
+        String tagCode = tagNode.has("tagCode")
+                ? tagNode.get("tagCode").asText()
+                : null;
+
+        if (tagCode == null || tagCode.isBlank()) {
+            continue;  // 跳过没有 tagCode 的异常数据
+        }
+
+        // 通过 tagCode 从 review_tags 字典表找到对应的标签 ID
+        // 只有字典中存在的标签才会被保存
+        ReviewTag tag = reviewTagMapper.selectOne(
+                new LambdaQueryWrapper<ReviewTag>()
+                        .eq(ReviewTag::getCode, tagCode)
+                        .eq(ReviewTag::getStatus, "ACTIVE")
+        );
+
+        if (tag == null) {
+            continue;  // 标签编码不在预定义字典中，丢弃
+        }
+
+        // 构建关联记录
+        ReviewTagRelation relation = new ReviewTagRelation();
+        relation.setReviewId(review.getId());
+        relation.setReviewVersion(reviewVersion);
+        relation.setTagId(tag.getId());
+        relation.setSentiment(
+                tagNode.has("sentiment")
+                        ? tagNode.get("sentiment").asText().toUpperCase()
+                        : "NEUTRAL"
+        );
+        relation.setConfidence(
+                tagNode.has("confidence")
+                        ? new BigDecimal(tagNode.get("confidence").asText())
+                        : BigDecimal.valueOf(0.5)
+        );
+        relation.setEvidenceText(
+                tagNode.has("evidenceText") && !tagNode.get("evidenceText").isNull()
+                        ? tagNode.get("evidenceText").asText()
+                        : null
+        );
+        relation.setModelName(
+                tagNode.has("modelName") && !tagNode.get("modelName").isNull()
+                        ? tagNode.get("modelName").asText()
+                        : null
+        );
+
+        relations.add(relation);
+    }
+
+    // 批量保存：先删旧关联再插入新的
+    if (!relations.isEmpty()) {
+        reviewService.saveTagRelations(relations);
+    }
+}
 
         // 构建返回 VO
         ReviewAnalysisResultVO vo = buildResultVO(review, result);
@@ -165,6 +247,41 @@ public class ReviewController {
         }
         return ApiResponse.success("分析完成", count);
     }
+
+    // ==================== 标签统计与筛选（EPIC-01 Story 8） ====================
+
+    /**
+    * 获取某个商家的评价标签统计（公开接口，不需要登录）。
+    *
+    * 返回该商家所有公开评价中出现的标签，以及每个标签的：
+    * - 正面/中性/负面评价数量
+    * - 总评价数量
+    *
+    * 前端用这个数据渲染标签筛选栏，用户点击标签后调用
+    * GET /api/reviews?merchantId=xxx&tagCode=TASTE_GOOD 来筛选评价。
+    *
+    * 只有至少关联一条公开评价的标签才会被返回，
+    * 没有评价支撑的标签不会出现
+    */
+    @GetMapping("/tags")
+    public ApiResponse<List<ReviewTagStatVO>> getMerchantReviewTags(
+        @RequestParam Long merchantId
+    ) {
+    List<ReviewTagStatVO> tags = reviewService.getMerchantReviewTags(merchantId);
+    return ApiResponse.success(tags);
+    }
+
+    /**
+    * 获取单条评价关联的标签（供评价列表使用）。
+    */
+    @GetMapping("/{reviewId}/tags")
+    public ApiResponse<List<TagRelationWithName>> getReviewTags(
+        @PathVariable Long reviewId
+    ) {
+    List<TagRelationWithName> tags = reviewService.getReviewTags(reviewId);
+    return ApiResponse.success(tags);
+    }
+
 
     // ==================== 评论编辑与删除 ====================
 
