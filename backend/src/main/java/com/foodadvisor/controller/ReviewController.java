@@ -8,6 +8,7 @@ import com.foodadvisor.dto.ReviewAnalysisResultVO;
 import com.foodadvisor.dto.review.MyReviewDetailVO;
 import com.foodadvisor.dto.review.MyReviewListVO;
 import com.foodadvisor.dto.review.ReviewDisplayVO;
+import com.foodadvisor.dto.review.ReviewReplyVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
 import com.foodadvisor.entity.Review;
@@ -28,6 +29,7 @@ import com.foodadvisor.dto.IssueReviewVO;
 
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
@@ -408,6 +410,23 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
     }
 
     /**
+     * 商家回复评价 —— 仅允许商家回复自己店铺的评价。
+     */
+    @PostMapping("/{reviewId}/reply")
+    public ApiResponse<ReviewReplyVO> reply(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long merchantId,
+            @RequestBody Map<String, String> request
+    ) {
+        String replyContent = request.get("replyContent");
+        if (replyContent == null || replyContent.isBlank()) {
+            return ApiResponse.failure("INVALID_REQUEST", "回复内容不能为空");
+        }
+        ReviewReplyVO response = reviewService.replyReview(merchantId, reviewId, replyContent);
+        return ApiResponse.success(response);
+    }
+
+    /**
      * 查询当前用户的评价列表（"我的评价"页面用）。
      */
     @GetMapping("/my-reviews")
@@ -544,6 +563,33 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
             }
             
             jdbcTemplate.execute("SELECT setval('review_reply_id_seq', (SELECT COALESCE(MAX(id), 1) FROM review_reply))");
+            
+            jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    review_id BIGINT NOT NULL,
+                    merchant_id BIGINT NOT NULL,
+                    type VARCHAR(20) NOT NULL DEFAULT 'REVIEW_REPLY',
+                    title VARCHAR(200) NOT NULL,
+                    review_summary TEXT,
+                    reply_summary TEXT,
+                    merchant_name VARCHAR(200),
+                    status VARCHAR(20) NOT NULL DEFAULT 'UNREAD',
+                    notified BOOLEAN NOT NULL DEFAULT false,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_notifications_review FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE,
+                    CONSTRAINT fk_notifications_merchant FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE CASCADE,
+                    CONSTRAINT ck_notifications_type CHECK (type IN ('REVIEW_REPLY')),
+                    CONSTRAINT ck_notifications_status CHECK (status IN ('UNREAD', 'READ'))
+                )
+                """);
+            
+            jdbcTemplate.execute("DELETE FROM notifications");
+            
+            jdbcTemplate.execute("SELECT setval('notifications_id_seq', (SELECT COALESCE(MAX(id), 1) FROM notifications))");
             
             Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reviews", Long.class);
             Long published = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reviews WHERE status = 'PUBLISHED'", Long.class);

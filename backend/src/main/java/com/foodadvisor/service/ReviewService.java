@@ -86,6 +86,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final ReviewIssueRelationMapper issueRelationMapper;
     private final ReviewIssueCategoryMapper issueCategoryMapper;
     private final com.foodadvisor.mapper.ReviewReplyMapper replyMapper;
+    private final NotificationService notificationService;
 
     public ReviewService(
             ReviewAnalysisMapper analysisMapper,
@@ -99,7 +100,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             com.foodadvisor.mapper.UserMapper userMapper,
             ReviewIssueRelationMapper issueRelationMapper,
             ReviewIssueCategoryMapper issueCategoryMapper,
-            com.foodadvisor.mapper.ReviewReplyMapper replyMapper
+            com.foodadvisor.mapper.ReviewReplyMapper replyMapper,
+            NotificationService notificationService
     ) {
         this.analysisMapper = analysisMapper;
         this.tagRelationMapper = tagRelationMapper;
@@ -113,6 +115,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         this.issueRelationMapper = issueRelationMapper;
         this.issueCategoryMapper = issueCategoryMapper;
         this.replyMapper = replyMapper;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -507,6 +510,13 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 vo.setMerchantName(merchant.getName());
             }
 
+            ReviewReply reply = replyMapper.selectOne(
+                    new LambdaQueryWrapper<ReviewReply>()
+                            .eq(ReviewReply::getReviewId, review.getId())
+                            .eq(ReviewReply::getStatus, "VISIBLE")
+            );
+            vo.setHasReply(reply != null);
+
             voList.add(vo);
         }
 
@@ -631,6 +641,62 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             case "DELETED" -> "已删除";
             default -> status;
         };
+    }
+
+    @Transactional
+    public ReviewReplyVO replyReview(Long merchantId, Long reviewId, String replyContent) {
+        Review review = this.getById(reviewId);
+        if (review == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "REVIEW_NOT_FOUND", "评论不存在");
+        }
+
+        if (!review.getMerchantId().equals(merchantId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "只能回复自己店铺的评价");
+        }
+
+        Merchant merchant = merchantMapper.selectById(merchantId);
+        if (merchant == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "MERCHANT_NOT_FOUND", "商家不存在");
+        }
+
+        ReviewReply existingReply = replyMapper.selectOne(
+                new LambdaQueryWrapper<ReviewReply>()
+                        .eq(ReviewReply::getReviewId, reviewId)
+        );
+
+        ReviewReply reply;
+        if (existingReply != null) {
+            reply = existingReply;
+            reply.setReplyContent(replyContent);
+            reply.setReplyTime(OffsetDateTime.now());
+            reply.setUpdatedAt(OffsetDateTime.now());
+            replyMapper.updateById(reply);
+        } else {
+            reply = new ReviewReply();
+            reply.setReviewId(reviewId);
+            reply.setMerchantId(merchantId);
+            reply.setReplyContent(replyContent);
+            reply.setReplyTime(OffsetDateTime.now());
+            reply.setStatus("VISIBLE");
+            reply.setCreatedAt(OffsetDateTime.now());
+            reply.setUpdatedAt(OffsetDateTime.now());
+            replyMapper.insert(reply);
+        }
+
+        notificationService.createReplyNotification(
+                reviewId, merchantId, replyContent, merchant.getName()
+        );
+
+        ReviewReplyVO replyVO = new ReviewReplyVO();
+        replyVO.setId(reply.getId());
+        replyVO.setReviewId(reply.getReviewId());
+        replyVO.setMerchantId(reply.getMerchantId());
+        replyVO.setReplyContent(reply.getReplyContent());
+        replyVO.setReplyTime(reply.getReplyTime());
+        replyVO.setStatus(reply.getStatus());
+        replyVO.setMerchantName(merchant.getName());
+
+        return replyVO;
     }
 
 // ==================== 评论编辑与删除 结束====================

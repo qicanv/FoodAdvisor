@@ -30,4 +30,6 @@ public class MyReviewListVO {
     private String statusText;
 
     private Integer currentVersion;
+
+    private Boolean hasReply;
 }
