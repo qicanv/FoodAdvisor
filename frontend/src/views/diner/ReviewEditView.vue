@@ -16,7 +16,7 @@
       <div class="container" v-if="review">
         <div class="edit-card">
           <h2 class="edit-title">编辑评价</h2>
-          
+
           <div class="form-group">
             <label class="form-label">商家</label>
             <div class="merchant-info">{{ review.merchantName }}</div>
