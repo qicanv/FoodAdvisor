@@ -198,6 +198,21 @@ public class ConstraintExtractionService {
             Long userId,
             String message
     ) {
+        return extractAndMerge(
+                sessionId,
+                userId,
+                message,
+                null
+        );
+    }
+
+    @Transactional
+    public ConstraintExtractResponse extractAndMerge(
+            Long sessionId,
+            Long userId,
+            String message,
+            String requestId
+    ) {
         /*
          * 1. 确认会话存在、属于当前用户并且仍处于 ACTIVE。
          */
@@ -207,7 +222,11 @@ public class ConstraintExtractionService {
          * 2. 保存用户本轮原始输入，并取得数据库生成的 messageId。
          */
         ChatMessage savedMessage =
-                saveUserMessage(sessionId, message);
+                saveUserMessage(
+                        sessionId,
+                        message,
+                        requestId
+                );
 
         /*
          * 3. 读取该会话之前已经合并好的消费条件。
@@ -278,6 +297,7 @@ public class ConstraintExtractionService {
                 new ConstraintExtractResponse();
 
         response.setSessionId(sessionId);
+        response.setMessageId(savedMessage.getId());
         response.setExtracted(extracted);
         response.setMerged(merged);
         response.setChanges(changes);
@@ -352,7 +372,8 @@ public class ConstraintExtractionService {
      */
     private ChatMessage saveUserMessage(
             Long sessionId,
-            String message
+            String message,
+            String requestId
     ) {
         if (message == null || message.isBlank()) {
             throw new ApiException(
@@ -367,7 +388,17 @@ public class ConstraintExtractionService {
         chatMessage.setRole("USER");
         chatMessage.setContent(message.trim());
         chatMessage.setMessageType("TEXT");
-        chatMessage.setMetadata("{}");
+        chatMessage.setRequestId(requestId);
+        chatMessage.setMetadata(
+                toJson(java.util.Map.of(
+                        "requestId",
+                        requestId == null ? "" : requestId,
+                        "extractor",
+                        "RULE_FALLBACK",
+                        "degraded",
+                        true
+                ))
+        );
         chatMessage.setCreatedAt(OffsetDateTime.now());
 
         int affectedRows =

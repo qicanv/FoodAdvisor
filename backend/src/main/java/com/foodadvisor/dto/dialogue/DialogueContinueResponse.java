@@ -18,6 +18,8 @@ public class DialogueContinueResponse {
      */
     private Long sessionId;
 
+    private Long userMessageId;
+
     /**
      * 当前对话阶段。
      *

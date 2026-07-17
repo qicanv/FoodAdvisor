@@ -138,6 +138,21 @@ public class DialogueService {
             Long userId,
             String message
     ) {
+        return continueDialogue(
+                sessionId,
+                userId,
+                message,
+                null
+        );
+    }
+
+    @Transactional
+    public DialogueContinueResponse continueDialogue(
+            Long sessionId,
+            Long userId,
+            String message,
+            String requestId
+    ) {
         /*
          * 必须在需求提取之前读取上一轮状态。
          *
@@ -187,7 +202,8 @@ public class DialogueService {
                 constraintExtractionService.extractAndMerge(
                         sessionId,
                         userId,
-                        message
+                        message,
+                        requestId
                 );
 
         /*
@@ -363,6 +379,9 @@ public class DialogueService {
                 new DialogueContinueResponse();
 
         response.setSessionId(sessionId);
+        response.setUserMessageId(
+                extractionResponse.getMessageId()
+        );
         response.setStage(stage);
         response.setConstraints(constraints);
         response.setMissingFields(

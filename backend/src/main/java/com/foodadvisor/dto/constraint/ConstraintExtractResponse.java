@@ -16,6 +16,8 @@ public class ConstraintExtractResponse {
      */
     private Long sessionId;
 
+    private Long messageId;
+
     /**
      * 仅从本轮用户消息中提取出的条件。
      */
@@ -36,4 +38,8 @@ public class ConstraintExtractResponse {
      */
     private List<ConstraintConflictVO> conflicts =
             new ArrayList<>();
+
+    private String extractor = "RULE_FALLBACK";
+
+    private Boolean degraded = true;
 }
