@@ -19,6 +19,7 @@ import com.foodadvisor.mapper.ReviewMapper;
 import com.foodadvisor.mapper.ReviewTagMapper;
 import com.foodadvisor.mapper.ReviewTagRelationMapper;
 import com.foodadvisor.mapper.ReviewVersionMapper;
+import com.foodadvisor.mapper.ReviewReplyMapper;
 import com.foodadvisor.storage.ReviewImageStorageService;
 import com.foodadvisor.util.SensitiveLogSanitizer;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -85,6 +86,10 @@ class ReviewServiceContentModerationTest {
     private ReviewIssueCategoryMapper issueCategoryMapper;
     @Mock
     private AuditLogService auditLogService;
+    @Mock
+    private ReviewReplyMapper replyMapper;
+    @Mock
+    private NotificationService notificationService;
 
     private ReviewService reviewService;
 
@@ -290,6 +295,8 @@ class ReviewServiceContentModerationTest {
                 userMapper,
                 issueRelationMapper,
                 issueCategoryMapper,
+                replyMapper,
+                notificationService,
                 auditLogService
         );
         ReflectionTestUtils.setField(service, "baseMapper", reviewMapper);

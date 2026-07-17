@@ -156,7 +156,7 @@ class AIClientServiceTest {
                 )
         );
 
-        assertEquals("AI service HTTP 500", exception.getMessage());
+        assertEquals("AI 服务请求失败，HTTP 状态码：500", exception.getMessage());
 
         AiCallLog aiLog = capturedAiLog();
         AuditLog auditLog = capturedAuditLog();
@@ -232,7 +232,7 @@ class AIClientServiceTest {
                 () -> aiClientService.analyzeReview(11L, 22L, "content", 1)
         );
 
-        assertEquals("AI service HTTP 500", exception.getMessage());
+        assertEquals("AI 服务请求失败，HTTP 状态码：500", exception.getMessage());
         server.verify();
     }
 
