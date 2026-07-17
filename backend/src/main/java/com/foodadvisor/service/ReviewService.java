@@ -12,6 +12,7 @@ import com.foodadvisor.dto.review.ReviewImageVO;
 import com.foodadvisor.dto.review.ReviewReplyVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
+import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewAnalysis;
@@ -85,6 +86,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final com.foodadvisor.mapper.UserMapper userMapper;
     private final ReviewIssueRelationMapper issueRelationMapper;
     private final ReviewIssueCategoryMapper issueCategoryMapper;
+    private final AuditLogService auditLogService;
     private final com.foodadvisor.mapper.ReviewReplyMapper replyMapper;
     private final NotificationService notificationService;
 
@@ -101,7 +103,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             ReviewIssueRelationMapper issueRelationMapper,
             ReviewIssueCategoryMapper issueCategoryMapper,
             com.foodadvisor.mapper.ReviewReplyMapper replyMapper,
-            NotificationService notificationService
+            NotificationService notificationService,
+            AuditLogService auditLogService
     ) {
         this.analysisMapper = analysisMapper;
         this.tagRelationMapper = tagRelationMapper;
@@ -116,6 +119,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         this.issueCategoryMapper = issueCategoryMapper;
         this.replyMapper = replyMapper;
         this.notificationService = notificationService;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -223,6 +227,11 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         );
 
         boolean creating = review == null;
+        String beforeStatus = review == null ? null : review.getStatus();
+        String beforeModerationStatus =
+                review == null ? null : review.getModerationStatus();
+        String beforeRiskLevel =
+                review == null ? null : review.getRiskLevel();
 
         if (creating) {
             review = new Review();
@@ -243,12 +252,18 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         }
 
         applyReviewFields(review, request);
+        int sensitiveHitCount = countSensitiveHits(review.getContent());
         applyContentSafety(review);
 
-        if (creating) {
-            this.save(review);
-        } else {
-            this.updateById(review);
+        boolean saved = creating
+                ? this.save(review)
+                : this.updateById(review);
+        if (!saved) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "REVIEW_SAVE_FAILED",
+                    "评价保存失败"
+            );
         }
 
         List<ReviewImage> activeImages = replaceImages(
@@ -265,6 +280,18 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         refreshMerchantRatingStats(merchant.getId());
         triggerAnalysisPlaceholder(review);
+
+        recordContentModerationSafely(
+                review,
+                userId,
+                creating
+                        ? "AUTO_MODERATE_REVIEW_CREATE"
+                        : "AUTO_MODERATE_REVIEW_UPDATE",
+                beforeStatus,
+                beforeModerationStatus,
+                beforeRiskLevel,
+                sensitiveHitCount
+        );
 
         return toSubmitResponse(review, activeImages);
     }
@@ -324,6 +351,9 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 前置校验：存在性 + 归属 + 未删除（公共方法，编辑和删除共用）
         Review review = requireOwnedActiveReview(userId, reviewId);
+        String beforeStatus = review.getStatus();
+        String beforeModerationStatus = review.getModerationStatus();
+        String beforeRiskLevel = review.getRiskLevel();
 
         // 版本号 +1，记录这是第几次修改
         int currentVersion = review.getCurrentVersion() == null
@@ -336,12 +366,19 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 用前端传来的新内容覆盖旧字段（content、rating、tasteRating 等）
         applyReviewFields(review, request);
+        int sensitiveHitCount = countSensitiveHits(review.getContent());
 
         // 内容安全审核：如果新内容包含敏感词，状态会变成 PENDING 待审核
         applyContentSafety(review);
 
         // 执行 UPDATE SQL，把改动持久化到 reviews 表
-        this.updateById(review);
+        if (!this.updateById(review)) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "REVIEW_UPDATE_FAILED",
+                    "评价更新失败"
+            );
+        }
 
         // 处理图片：保留 keepImageIds 中的旧图 + 上传新图，其余标记删除
         List<ReviewImage> activeImages = replaceImages(
@@ -359,6 +396,16 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         // 插入一条 PENDING 状态的分析占位记录，等 AI 服务来重新分析
         triggerAnalysisPlaceholder(review);
 
+        recordContentModerationSafely(
+                review,
+                userId,
+                "AUTO_MODERATE_REVIEW_UPDATE",
+                beforeStatus,
+                beforeModerationStatus,
+                beforeRiskLevel,
+                sensitiveHitCount
+        );
+
         // 把最终的 Review 对象 + 图片列表转成前端要的 JSON 格式
         return toSubmitResponse(review, activeImages);
     }
@@ -371,6 +418,9 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         validateSubmitRequest(request);
 
         Review review = requireOwnedActiveReview(userId, reviewId);
+        String beforeStatus = review.getStatus();
+        String beforeModerationStatus = review.getModerationStatus();
+        String beforeRiskLevel = review.getRiskLevel();
 
         int currentVersion = review.getCurrentVersion() == null
                 ? 1
@@ -380,10 +430,17 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         review.setEditedAt(OffsetDateTime.now());
 
         applyReviewFields(review, request);
+        int sensitiveHitCount = countSensitiveHits(review.getContent());
 
         applyContentSafety(review);
 
-        this.updateById(review);
+        if (!this.updateById(review)) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "REVIEW_UPDATE_FAILED",
+                    "评价更新失败"
+            );
+        }
 
         List<ReviewImage> activeImages = List.of();
 
@@ -392,6 +449,16 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         refreshMerchantRatingStats(review.getMerchantId());
 
         triggerAnalysisPlaceholder(review);
+
+        recordContentModerationSafely(
+                review,
+                userId,
+                "AUTO_MODERATE_REVIEW_UPDATE",
+                beforeStatus,
+                beforeModerationStatus,
+                beforeRiskLevel,
+                sensitiveHitCount
+        );
 
         return toSubmitResponse(review, activeImages);
     }
@@ -1216,7 +1283,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         if (request == null) {
             throw badRequest(
                     "REVIEW_REQUEST_REQUIRED",
-                    "Review request is required"
+                    "评价请求不能为空"
             );
         }
 
@@ -1228,46 +1295,46 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         if (content.length() < MIN_CONTENT_LENGTH) {
             throw badRequest(
                     "REVIEW_CONTENT_TOO_SHORT",
-                    "Review content must be at least 10 characters"
+                    "评价内容不能少于10个字符"
             );
         }
 
         if (content.length() > MAX_CONTENT_LENGTH) {
             throw badRequest(
                     "REVIEW_CONTENT_TOO_LONG",
-                    "Review content must be 2000 characters or less"
+                    "评价内容不能超过2000个字符"
             );
         }
 
         if (request.getRating() == null) {
             throw badRequest(
                     "REVIEW_RATING_REQUIRED",
-                    "Overall rating is required"
+                    "总体评分不能为空"
             );
         }
 
         validateRating(
                 "REVIEW_RATING_INVALID",
                 request.getRating(),
-                "Overall rating"
+                "总体评分"
         );
 
         validateRating(
                 "REVIEW_TASTE_RATING_INVALID",
                 request.getTasteRating(),
-                "Taste rating"
+                "口味评分"
         );
 
         validateRating(
                 "REVIEW_ENVIRONMENT_RATING_INVALID",
                 request.getEnvironmentRating(),
-                "Environment rating"
+                "环境评分"
         );
 
         validateRating(
                 "REVIEW_SERVICE_RATING_INVALID",
                 request.getServiceRating(),
-                "Service rating"
+                "服务评分"
         );
 
         if (request.getAverageSpend() != null
@@ -1275,7 +1342,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 .compareTo(BigDecimal.ZERO) < 0) {
             throw badRequest(
                     "REVIEW_AVERAGE_SPEND_INVALID",
-                    "Average spend cannot be negative"
+                    "人均消费不能为负数"
             );
         }
     }
@@ -1288,7 +1355,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         if (value != null && (value < 1 || value > 5)) {
             throw badRequest(
                     code,
-                    fieldName + " must be between 1 and 5"
+                    fieldName + "必须在1到5分之间"
             );
         }
     }
@@ -1303,7 +1370,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             throw new ApiException(
                     HttpStatus.NOT_FOUND,
                     "MERCHANT_NOT_FOUND",
-                    "Merchant not found"
+                    "商家不存在"
             );
         }
 
@@ -1323,7 +1390,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,
                     "MERCHANT_NOT_REVIEWABLE",
-                    "This merchant is disabled or closed and cannot receive new reviews"
+                    "该商家已停用或停止营业，暂时无法接收新评价"
             );
         }
 
@@ -1371,12 +1438,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
     private void applyContentSafety(Review review) {
         boolean highRisk =
-                HIGH_RISK_WORDS.stream()
-                        .anyMatch(
-                                word ->
-                                        review.getContent()
-                                                .contains(word)
-                        );
+                countSensitiveHits(review.getContent()) > 0;
 
         if (highRisk) {
             review.setStatus("PENDING");
@@ -1394,6 +1456,132 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 );
             }
         }
+    }
+
+    private int countSensitiveHits(String content) {
+        if (content == null || content.isBlank()) {
+            return 0;
+        }
+
+        return (int) HIGH_RISK_WORDS.stream()
+                .filter(content::contains)
+                .count();
+    }
+
+    private void recordContentModerationSafely(
+            Review review,
+            Long submitterUserId,
+            String operation,
+            String beforeStatus,
+            String beforeModerationStatus,
+            String beforeRiskLevel,
+            int sensitiveHitCount
+    ) {
+        if (review == null || review.getId() == null) {
+            return;
+        }
+
+        AuditLog auditLog = new AuditLog();
+        auditLog.setOperationType("CONTENT_MODERATION");
+        auditLog.setOperatorUserId(submitterUserId);
+        auditLog.setOperatorRole("USER");
+        auditLog.setModule("REVIEW_MODERATION");
+        auditLog.setLevel(moderationLevel(review, sensitiveHitCount));
+        auditLog.setResult("SUCCESS");
+        auditLog.setObjectType("REVIEW");
+        auditLog.setObjectId(String.valueOf(review.getId()));
+        auditLog.setMetadata(
+                buildContentModerationMetadata(
+                        review,
+                        submitterUserId,
+                        operation,
+                        beforeStatus,
+                        beforeModerationStatus,
+                        beforeRiskLevel,
+                        sensitiveHitCount
+                )
+        );
+
+        auditLogService.recordSafely(auditLog);
+    }
+
+    private String moderationLevel(
+            Review review,
+            int sensitiveHitCount
+    ) {
+        if (sensitiveHitCount > 0
+                || "PENDING".equals(review.getStatus())
+                || "PENDING".equals(review.getModerationStatus())
+                || !"LOW".equals(review.getRiskLevel())) {
+            return "WARN";
+        }
+        return "INFO";
+    }
+
+    private String buildContentModerationMetadata(
+            Review review,
+            Long submitterUserId,
+            String operation,
+            String beforeStatus,
+            String beforeModerationStatus,
+            String beforeRiskLevel,
+            int sensitiveHitCount
+    ) {
+        StringBuilder metadata = new StringBuilder("{");
+        appendJsonField(metadata, "operation", operation);
+        appendJsonField(metadata, "reviewId", review.getId());
+        appendJsonField(metadata, "merchantId", review.getMerchantId());
+        appendJsonField(metadata, "submitterUserId", submitterUserId);
+        appendJsonField(metadata, "beforeStatus", beforeStatus);
+        appendJsonField(metadata, "beforeModerationStatus", beforeModerationStatus);
+        appendJsonField(metadata, "beforeRiskLevel", beforeRiskLevel);
+        appendJsonField(metadata, "afterStatus", review.getStatus());
+        appendJsonField(metadata, "afterModerationStatus", review.getModerationStatus());
+        appendJsonField(metadata, "riskLevel", review.getRiskLevel());
+        appendJsonField(metadata, "sensitiveHit", sensitiveHitCount > 0);
+        appendJsonField(metadata, "sensitiveHitCount", sensitiveHitCount);
+        appendJsonField(metadata, "moderationMode", "AUTO_RULE");
+        appendJsonField(metadata, "executor", "AUTO_RULE");
+        appendJsonField(
+                metadata,
+                "textLength",
+                review.getContent() == null
+                        ? 0
+                        : review.getContent().length()
+        );
+        appendJsonField(metadata, "occurredAt", OffsetDateTime.now().toString());
+        metadata.append("}");
+        return metadata.toString();
+    }
+
+    private void appendJsonField(
+            StringBuilder metadata,
+            String field,
+            Object value
+    ) {
+        if (metadata.length() > 1) {
+            metadata.append(",");
+        }
+
+        metadata.append("\"")
+                .append(jsonEscape(field))
+                .append("\":");
+
+        if (value == null) {
+            metadata.append("null");
+        } else if (value instanceof Number || value instanceof Boolean) {
+            metadata.append(value);
+        } else {
+            metadata.append("\"")
+                    .append(jsonEscape(String.valueOf(value)))
+                    .append("\"");
+        }
+    }
+
+    private String jsonEscape(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
     }
 
     private List<ReviewImage> replaceImages(
@@ -1433,7 +1621,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             if (!existingIds.containsAll(keepIds)) {
                 throw badRequest(
                         "REVIEW_IMAGE_KEEP_INVALID",
-                        "Some retained images do not belong to this review"
+                        "部分保留图片不属于当前评价"
                 );
             }
         }
@@ -1473,7 +1661,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 > MAX_IMAGE_COUNT) {
             throw badRequest(
                     "REVIEW_IMAGE_LIMIT_EXCEEDED",
-                    "Each review can contain at most 9 images"
+                    "每条评价最多上传9张图片"
             );
         }
 

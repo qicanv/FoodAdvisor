@@ -696,20 +696,20 @@ onMounted(() => {
     flex-direction: column;
     gap: 12px;
   }
-  
+
   .rating-section {
     flex-direction: column;
     gap: 20px;
   }
-  
+
   .sub-ratings {
     gap: 16px;
   }
-  
+
   .info-row {
     gap: 16px;
   }
-  
+
   .action-section {
     flex-direction: column;
   }

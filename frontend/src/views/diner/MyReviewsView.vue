@@ -552,12 +552,12 @@ onMounted(() => {
   .filter-row {
     gap: 16px;
   }
-  
+
   .review-header {
     flex-direction: column;
     gap: 8px;
   }
-  
+
   .status-tag {
     align-self: flex-start;
   }

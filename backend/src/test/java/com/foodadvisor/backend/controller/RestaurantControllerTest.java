@@ -2,6 +2,8 @@ package com.foodadvisor.backend.controller;
 
 import com.foodadvisor.backend.entity.Restaurant;
 import com.foodadvisor.backend.service.RestaurantService;
+import com.foodadvisor.service.AuditLogService;
+import com.foodadvisor.util.SensitiveLogSanitizer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -25,6 +27,12 @@ class RestaurantControllerTest {
 
     @MockitoBean
     private RestaurantService restaurantService;
+
+    @MockitoBean
+    private AuditLogService auditLogService;
+
+    @MockitoBean
+    private SensitiveLogSanitizer sensitiveLogSanitizer;
 
     @Test
     void shouldReturnRestaurantList() throws Exception {
