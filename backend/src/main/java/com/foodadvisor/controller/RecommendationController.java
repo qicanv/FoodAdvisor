@@ -1,6 +1,7 @@
 package com.foodadvisor.controller;
 
 import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.service.RecommendationRankingService;
@@ -50,6 +51,26 @@ public class RecommendationController {
                         sessionId,
                         request
                 );
+
+        return ApiResponse.success(response);
+    }
+
+    @PostMapping(
+            "/{sessionId}/recommendations/adjust"
+    )
+    public ApiResponse<RecommendationRankResponse>
+    adjustRecommendation(
+            @PathVariable Long sessionId,
+            @Valid
+            @RequestBody
+            RecommendationAdjustRequest request
+    ) {
+        RecommendationRankResponse response =
+                recommendationRankingService
+                        .adjustAndRank(
+                                sessionId,
+                                request
+                        );
 
         return ApiResponse.success(response);
     }
