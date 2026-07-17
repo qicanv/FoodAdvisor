@@ -1,0 +1,14 @@
+# ===== 核心依赖 =====
+torch>=2.0.0
+transformers>=4.36.0
+
+# ===== 数据处理 =====
+pandas>=1.5.0
+numpy>=1.23.0
+
+# ===== 评估 =====
+scikit-learn>=1.2.0
+
+# ===== 可选：加速 =====
+# accelerate>=0.25.0    # 混合精度训练 + 多GPU
+# datasets>=2.16.0      # HuggingFace datasets 库（可选，本项目已自己实现 DataLoader）

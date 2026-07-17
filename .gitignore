@@ -113,3 +113,15 @@ Desktop.ini
 
 # Local uploaded files
 backend/uploads/
+train/datasets/sentiment_analysis_testa.csv
+train/datasets/sentiment_analysis_trainingset.csv
+train/datasets/sentiment_analysis_validationset.csv
+train/datasets/datasets_temp/sentiment_analysis_testa.csv
+train/datasets/datasets_temp/sentiment_analysis_trainingset.csv
+train/datasets/datasets_temp/sentiment_analysis_validationset.csv
+train/datasets/datasets_temp/processed/test_processed.csv
+train/datasets/datasets_temp/processed/train_processed.csv
+train/datasets/datasets_temp/processed/val_processed.csv
+train/datasets/processed/test_processed.csv
+train/datasets/processed/train_processed.csv
+train/datasets/processed/val_processed.csv
