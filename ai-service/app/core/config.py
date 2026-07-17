@@ -36,6 +36,12 @@ class Settings(BaseSettings):
 
     request_timeout_seconds: int = 30
 
+    # ---- 内容处理配置 ----
+    content_processing_enabled: bool = True
+    content_default_max_chunk_length: int = 512
+    content_default_chunk_overlap: int = 64
+    content_batch_max_size: int = 500
+
     model_config = SettingsConfigDict(
         case_sensitive=False,
         extra="ignore",
