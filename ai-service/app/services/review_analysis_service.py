@@ -1,5 +1,10 @@
 """
-评价分析服务 — 情感分析、关键词提取、方面识别、差评归因（V0.3）
+评价分析服务 — 情感分析、关键词提取、方面识别、差评归因（V0.4）
+
+支持三种分析模式（通过 SENTIMENT_ANALYSIS_MODE 环境变量配置）:
+- local:  仅用本地微调模型（MultiHeadSentimentClassifier），快速、离线、维度精准
+- llm:    仅用 DeepSeek LLM（向后兼容，支持关键词/标签/归因）
+- hybrid: 本地模型做维度情感，LLM 补充关键词/标签/归因
 """
 import logging
 import uuid
@@ -129,8 +134,80 @@ class ReviewAnalysisService:
 
     async def analyze(self, request: AnalyzeRequest, analysis_version: int = 1) -> AnalyzeResponse:
         """
-        分析单条评价 — 调用大模型完成情感、关键词、方面、归因
+        分析单条评价 — 根据 SENTIMENT_ANALYSIS_MODE 选择分析策略
         """
+        mode = settings.sentiment_analysis_mode
+        if mode == "local":
+            return self._analyze_with_local_model(request, analysis_version)
+        elif mode == "hybrid":
+            return await self._analyze_hybrid(request, analysis_version)
+        else:
+            return await self._analyze_with_llm(request, analysis_version)
+
+    # ============================================
+    # 本地模型分析
+    # ============================================
+
+    def _analyze_with_local_model(self, request: AnalyzeRequest, analysis_version: int = 1) -> AnalyzeResponse:
+        """使用本地微调模型进行情感分析"""
+        from app.services.ml_sentiment_service import ml_sentiment_service
+
+        try:
+            ml_result = ml_sentiment_service.predict(request.content)
+            return ml_sentiment_service.map_to_analyze_response(request, ml_result, analysis_version)
+        except Exception as e:
+            logger.error(f"本地模型分析失败 reviewId={request.reviewId}: {e}")
+            from app.services.ml_sentiment_service import ml_sentiment_service
+            return ml_sentiment_service.degrade_response(request, str(e))
+
+    # ============================================
+    # 混合分析：本地模型 + LLM
+    # ============================================
+
+    async def _analyze_hybrid(self, request: AnalyzeRequest, analysis_version: int = 1) -> AnalyzeResponse:
+        """本地模型做维度情感，LLM 补充关键词/标签/归因"""
+        from app.services.ml_sentiment_service import ml_sentiment_service
+
+        trace_id = self._generate_trace_id()
+
+        # Step 1: 本地模型做维度情感分类
+        try:
+            ml_result = ml_sentiment_service.predict(request.content)
+            base_response = ml_sentiment_service.map_to_analyze_response(request, ml_result, analysis_version)
+        except Exception as e:
+            logger.warning(f"混合模式：本地模型失败，降级到 LLM。原因: {e}")
+            return await self._analyze_with_llm(request, analysis_version)
+
+        # Step 2: LLM 补充关键词/标签/归因
+        try:
+            llm_result = await llm_service.chat_json(
+                system_prompt=SENTIMENT_ANALYSIS_PROMPT,
+                user_message=f"请分析以下用户评论：\n\n{request.content}",
+                temperature=0.1,
+                max_tokens=3000,
+            )
+            # 合并 LLM 的 keywords/tags/issueCategories 到本地模型的结果中
+            base_response.keywords = llm_result.get("keywords", [])[:10]
+            base_response.tags = self._parse_tags(llm_result.get("tags", []))
+            base_response.issueCategories = self._parse_issue_categories(
+                llm_result.get("issueCategories", [])
+            )
+            base_response.negativeReason = llm_result.get("negativeReason")
+            base_response.modelName = f"hybrid:{ml_sentiment_service.model_name}+{llm_service.model}"
+        except Exception as e:
+            logger.warning(f"混合模式：LLM 补充分析失败，仅返回本地模型结果。原因: {e}")
+            # LLM 失败时，本地模型结果仍然有效
+            base_response.modelName = f"hybrid-fallback:{ml_sentiment_service.model_name}"
+
+        base_response.businessTraceId = trace_id
+        return base_response
+
+    # ============================================
+    # LLM 分析（原有逻辑）
+    # ============================================
+
+    async def _analyze_with_llm(self, request: AnalyzeRequest, analysis_version: int = 1) -> AnalyzeResponse:
+        """使用 DeepSeek LLM 进行情感分析（现有实现）"""
         trace_id = self._generate_trace_id()
         started_at = datetime.now(timezone.utc)
 
