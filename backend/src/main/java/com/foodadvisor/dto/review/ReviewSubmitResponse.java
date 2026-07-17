@@ -14,10 +14,10 @@ public class ReviewSubmitResponse {
     private Long userId;
     private Long merchantId;
     private String content;
-    private Integer rating;
-    private Integer tasteRating;
-    private Integer environmentRating;
-    private Integer serviceRating;
+    private BigDecimal rating;
+    private BigDecimal tasteRating;
+    private BigDecimal environmentRating;
+    private BigDecimal serviceRating;
     private BigDecimal averageSpend;
     private LocalDate consumptionDate;
     private Integer currentVersion;
