@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/home/HomeView.vue'
+import RestaurantView from '../views/admin/RestaurantView.vue'
 
 const routes = [
   {
@@ -22,42 +23,6 @@ const routes = [
     path: '/diner/profile',
     name: 'diner-profile',
     component: () => import('../views/diner/ProfileView.vue'),
-    meta: { requiresAuth: true, role: 'diner' },
-  },
-  {
-    path: '/diner/my-reviews',
-    name: 'diner-my-reviews',
-    component: () => import('../views/diner/MyReviewsView.vue'),
-    meta: { requiresAuth: true, role: 'diner' },
-  },
-  {
-    path: '/diner/my-reviews/:id',
-    name: 'diner-my-review-detail',
-    component: () => import('../views/diner/MyReviewDetailView.vue'),
-    meta: { requiresAuth: true, role: 'diner' },
-  },
-  {
-    path: '/diner/review/edit/:id',
-    name: 'diner-review-edit',
-    component: () => import('../views/diner/ReviewEditView.vue'),
-    meta: { requiresAuth: true, role: 'diner' },
-  },
-  {
-    path: '/diner/notifications',
-    name: 'diner-notifications',
-    component: () => import('../views/diner/NotificationView.vue'),
-    meta: { requiresAuth: true, role: 'diner' },
-  },
-  {
-    path: '/diner/ranking',
-    name: 'diner-ranking',
-    component: () => import('../views/diner/HotRankingView.vue'),
-    meta: { requiresAuth: true, role: 'diner' },
-  },
-  {
-    path: '/diner/merchant/:id',
-    name: 'diner-merchant-detail',
-    component: () => import('../views/diner/MerchantDetailView.vue'),
     meta: { requiresAuth: true, role: 'diner' },
   },
   {

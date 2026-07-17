@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -14,40 +13,6 @@ def get_request_id(request: Request) -> str:
         return request_id
 
     return f"req-{uuid.uuid4().hex}"
-
-
-def make_json_safe(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {
-            str(key): make_json_safe(item)
-            for key, item in value.items()
-        }
-
-    if isinstance(value, (list, tuple)):
-        return [make_json_safe(item) for item in value]
-
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-
-    return str(value)
-
-
-def clean_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    cleaned: list[dict[str, Any]] = []
-
-    for error in errors:
-        item: dict[str, Any] = {
-            "loc": make_json_safe(error.get("loc")),
-            "type": make_json_safe(error.get("type")),
-            "msg": make_json_safe(error.get("msg")),
-        }
-
-        if "ctx" in error:
-            item["ctx"] = make_json_safe(error.get("ctx"))
-
-        cleaned.append(item)
-
-    return cleaned
 
 
 def register_exception_handlers(application: FastAPI) -> None:
@@ -90,9 +55,7 @@ def register_exception_handlers(application: FastAPI) -> None:
                     "code": "INVALID_REQUEST",
                     "message": "Request validation failed",
                     "retryable": False,
-                    "details": clean_validation_errors(
-                        exception.errors()
-                    ),
+                    "details": exception.errors(),
                 },
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },

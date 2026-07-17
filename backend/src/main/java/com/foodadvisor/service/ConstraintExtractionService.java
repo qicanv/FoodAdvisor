@@ -9,8 +9,6 @@ import com.foodadvisor.mapper.ChatMessageMapper;
 import com.foodadvisor.mapper.ChatSessionMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import com.foodadvisor.dto.ai.DialogueExtractAiRequest;
-import com.foodadvisor.dto.ai.DialogueExtractAiResponse;
 import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.dto.constraint.ConstraintConflictVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -171,7 +169,6 @@ public class ConstraintExtractionService {
     private final ChatMessageMapper chatMessageMapper;
     private final ChatSessionStateMapper chatSessionStateMapper;
     private final ConstraintExtractionMapper constraintExtractionMapper;
-    private final AIClientService aiClientService;
     private final ObjectMapper objectMapper;
 
     public ConstraintExtractionService(
@@ -179,7 +176,6 @@ public class ConstraintExtractionService {
             ChatMessageMapper chatMessageMapper,
             ChatSessionStateMapper chatSessionStateMapper,
             ConstraintExtractionMapper constraintExtractionMapper,
-            AIClientService aiClientService,
             ObjectMapper objectMapper
     ) {
         this.chatSessionMapper = chatSessionMapper;
@@ -187,7 +183,6 @@ public class ConstraintExtractionService {
         this.chatSessionStateMapper = chatSessionStateMapper;
         this.constraintExtractionMapper =
                 constraintExtractionMapper;
-        this.aiClientService = aiClientService;
         this.objectMapper = objectMapper;
     }
 
@@ -197,24 +192,11 @@ public class ConstraintExtractionService {
      * 整个方法处于同一个事务中：
      * 任意一步失败时，本轮消息、状态和历史记录会一起回滚。
      */
+    @Transactional
     public ConstraintExtractResponse extractAndMerge(
             Long sessionId,
             Long userId,
             String message
-    ) {
-        return extractAndMerge(
-                sessionId,
-                userId,
-                message,
-                null
-        );
-    }
-
-    public ConstraintExtractResponse extractAndMerge(
-            Long sessionId,
-            Long userId,
-            String message,
-            String requestId
     ) {
         /*
          * 1. 确认会话存在、属于当前用户并且仍处于 ACTIVE。
@@ -225,11 +207,7 @@ public class ConstraintExtractionService {
          * 2. 保存用户本轮原始输入，并取得数据库生成的 messageId。
          */
         ChatMessage savedMessage =
-                saveUserMessage(
-                        sessionId,
-                        message,
-                        requestId
-                );
+                saveUserMessage(sessionId, message);
 
         /*
          * 3. 读取该会话之前已经合并好的消费条件。
@@ -240,33 +218,8 @@ public class ConstraintExtractionService {
         /*
          * 4. 从本轮消息中提取结构化消费条件。
          */
-        AiExtractionResult aiExtraction =
-                tryExtractByAi(
-                        sessionId,
-                        savedMessage.getId(),
-                        message,
-                        oldState
-                );
-
-        ConstraintState extracted;
-        List<String> clearedFields;
-        String intent;
-        String extractor;
-        boolean degraded;
-
-        if (aiExtraction == null) {
-            extracted = extractByRules(message);
-            clearedFields = List.of();
-            intent = "MERCHANT_RECOMMENDATION";
-            extractor = "RULE_FALLBACK";
-            degraded = true;
-        } else {
-            extracted = aiExtraction.extracted();
-            clearedFields = aiExtraction.clearedFields();
-            intent = aiExtraction.intent();
-            extractor = aiExtraction.extractor();
-            degraded = aiExtraction.degraded();
-        }
+        ConstraintState extracted =
+                extractByRules(message);
 
         /*
          * 5. 检测本轮消息是否存在自相矛盾的条件。
@@ -287,7 +240,6 @@ public class ConstraintExtractionService {
                     extracted,
                     message
             );
-            applyClearedFields(merged, clearedFields);
 
             changes = detectChanges(
                     oldState,
@@ -326,14 +278,10 @@ public class ConstraintExtractionService {
                 new ConstraintExtractResponse();
 
         response.setSessionId(sessionId);
-        response.setMessageId(savedMessage.getId());
         response.setExtracted(extracted);
         response.setMerged(merged);
         response.setChanges(changes);
         response.setConflicts(conflicts);
-        response.setIntent(intent);
-        response.setExtractor(extractor);
-        response.setDegraded(degraded);
 
         return response;
     }
@@ -404,8 +352,7 @@ public class ConstraintExtractionService {
      */
     private ChatMessage saveUserMessage(
             Long sessionId,
-            String message,
-            String requestId
+            String message
     ) {
         if (message == null || message.isBlank()) {
             throw new ApiException(
@@ -420,17 +367,7 @@ public class ConstraintExtractionService {
         chatMessage.setRole("USER");
         chatMessage.setContent(message.trim());
         chatMessage.setMessageType("TEXT");
-        chatMessage.setRequestId(requestId);
-        chatMessage.setMetadata(
-                toJson(java.util.Map.of(
-                        "requestId",
-                        requestId == null ? "" : requestId,
-                        "extractor",
-                        "RULE_FALLBACK",
-                        "degraded",
-                        true
-                ))
-        );
+        chatMessage.setMetadata("{}");
         chatMessage.setCreatedAt(OffsetDateTime.now());
 
         int affectedRows =
@@ -452,277 +389,6 @@ public class ConstraintExtractionService {
      *
      * 当前阶段只提取用餐人数、预算、菜系、口味、环境、距离。
      */
-    private AiExtractionResult tryExtractByAi(
-            Long sessionId,
-            Long messageId,
-            String message,
-            ConstraintState currentConstraints
-    ) {
-        try {
-            DialogueExtractAiRequest request =
-                    new DialogueExtractAiRequest();
-            request.setSessionId(sessionId);
-            request.setMessageId(messageId);
-            request.setContent(message);
-            request.setCurrentConstraints(
-                    currentConstraints == null
-                            ? new ConstraintState()
-                            : currentConstraints
-            );
-
-            DialogueExtractAiResponse response =
-                    aiClientService.extractDialogueConstraints(
-                            request
-                    );
-
-            return validateAiResponse(response);
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private AiExtractionResult validateAiResponse(
-            DialogueExtractAiResponse response
-    ) {
-        if (response == null
-                || !"AI_MODEL".equals(response.getExtractor())
-                || Boolean.TRUE.equals(response.getDegraded())) {
-            return null;
-        }
-
-        return new AiExtractionResult(
-                normalizeIntent(response.getIntent()),
-                sanitizeAiConstraints(
-                        response.getExtractedConstraints()
-                ),
-                sanitizeClearedFields(
-                        response.getClearedFields()
-                ),
-                "AI_MODEL",
-                false
-        );
-    }
-
-    private String normalizeIntent(String intent) {
-        if ("MERCHANT_RECOMMENDATION".equals(intent)
-                || "CONSTRAINT_UPDATE".equals(intent)
-                || "GENERAL_CHAT".equals(intent)
-                || "UNKNOWN".equals(intent)) {
-            return intent;
-        }
-
-        return "UNKNOWN";
-    }
-
-    private ConstraintState sanitizeAiConstraints(
-            ConstraintState source
-    ) {
-        ConstraintState target = new ConstraintState();
-
-        if (source == null) {
-            return target;
-        }
-
-        if (source.getPartySize() != null
-                && source.getPartySize() > 0
-                && source.getPartySize() <= 20) {
-            target.setPartySize(source.getPartySize());
-        }
-
-        if (isPositiveFinite(source.getTotalBudget())) {
-            target.setTotalBudget(source.getTotalBudget());
-        }
-
-        if (isPositiveFinite(source.getPerCapitaBudget())) {
-            target.setPerCapitaBudget(
-                    source.getPerCapitaBudget()
-            );
-        }
-
-        if (isPositiveFinite(source.getDistanceKm())
-                && source.getDistanceKm().compareTo(
-                new BigDecimal("100")
-        ) <= 0) {
-            target.setDistanceKm(source.getDistanceKm());
-        }
-
-        if (source.getMinRating() != null
-                && source.getMinRating().compareTo(
-                BigDecimal.ZERO
-        ) >= 0
-                && source.getMinRating().compareTo(
-                new BigDecimal("5")
-        ) <= 0) {
-            target.setMinRating(source.getMinRating());
-        }
-
-        target.setMerchantTypes(
-                sanitizeStringList(source.getMerchantTypes())
-        );
-        target.setCuisines(
-                sanitizeStringList(source.getCuisines())
-        );
-        target.setTastePreferences(
-                sanitizeStringList(source.getTastePreferences())
-        );
-        target.setTasteRestrictions(
-                sanitizeStringList(source.getTasteRestrictions())
-        );
-        target.setExcludedCuisines(
-                sanitizeStringList(source.getExcludedCuisines())
-        );
-        target.setExcludedMerchantTypes(
-                sanitizeStringList(
-                        source.getExcludedMerchantTypes()
-                )
-        );
-        target.setScenes(
-                sanitizeStringList(source.getScenes())
-        );
-        target.setEnvironmentRequirements(
-                sanitizeStringList(
-                        source.getEnvironmentRequirements()
-                )
-        );
-
-        if ("NOW_OPEN".equals(source.getBusinessTime())
-                || "TONIGHT".equals(source.getBusinessTime())
-                || "LATE_NIGHT".equals(
-                source.getBusinessTime()
-        )) {
-            target.setBusinessTime(source.getBusinessTime());
-        }
-
-        calculatePerCapitaBudget(target);
-        return target;
-    }
-
-    private boolean isPositiveFinite(BigDecimal value) {
-        return value != null
-                && value.compareTo(BigDecimal.ZERO) > 0;
-    }
-
-    private List<String> sanitizeStringList(List<String> values) {
-        if (values == null || values.isEmpty()) {
-            return new ArrayList<>();
-        }
-
-        LinkedHashSet<String> result = new LinkedHashSet<>();
-
-        for (String value : values) {
-            if (value == null) {
-                continue;
-            }
-
-            String trimmed = value.trim();
-
-            if (!trimmed.isEmpty()
-                    && trimmed.length() <= 30) {
-                result.add(trimmed);
-            }
-        }
-
-        if (result.size() > 10) {
-            return new ArrayList<>(
-                    new ArrayList<>(result).subList(0, 10)
-            );
-        }
-
-        return new ArrayList<>(result);
-    }
-
-    private List<String> sanitizeClearedFields(
-            List<String> clearedFields
-    ) {
-        if (clearedFields == null || clearedFields.isEmpty()) {
-            return List.of();
-        }
-
-        List<String> allowedFields =
-                List.of(
-                        "partySize",
-                        "totalBudget",
-                        "perCapitaBudget",
-                        "merchantTypes",
-                        "cuisines",
-                        "tastePreferences",
-                        "tasteRestrictions",
-                        "excludedCuisines",
-                        "excludedMerchantTypes",
-                        "distanceKm",
-                        "minRating",
-                        "scenes",
-                        "environmentRequirements",
-                        "businessTime"
-                );
-
-        LinkedHashSet<String> result = new LinkedHashSet<>();
-
-        for (String field : clearedFields) {
-            if (field != null
-                    && allowedFields.contains(field)) {
-                result.add(field);
-            }
-        }
-
-        return new ArrayList<>(result);
-    }
-
-    private void applyClearedFields(
-            ConstraintState state,
-            List<String> clearedFields
-    ) {
-        if (state == null
-                || clearedFields == null
-                || clearedFields.isEmpty()) {
-            return;
-        }
-
-        for (String field : clearedFields) {
-            switch (field) {
-                case "partySize" -> state.setPartySize(null);
-                case "totalBudget" -> state.setTotalBudget(null);
-                case "perCapitaBudget" ->
-                        state.setPerCapitaBudget(null);
-                case "merchantTypes" ->
-                        state.setMerchantTypes(new ArrayList<>());
-                case "cuisines" ->
-                        state.setCuisines(new ArrayList<>());
-                case "tastePreferences" ->
-                        state.setTastePreferences(new ArrayList<>());
-                case "tasteRestrictions" ->
-                        state.setTasteRestrictions(new ArrayList<>());
-                case "excludedCuisines" ->
-                        state.setExcludedCuisines(new ArrayList<>());
-                case "excludedMerchantTypes" ->
-                        state.setExcludedMerchantTypes(
-                                new ArrayList<>()
-                        );
-                case "distanceKm" -> state.setDistanceKm(null);
-                case "minRating" -> state.setMinRating(null);
-                case "scenes" ->
-                        state.setScenes(new ArrayList<>());
-                case "environmentRequirements" ->
-                        state.setEnvironmentRequirements(
-                                new ArrayList<>()
-                        );
-                case "businessTime" ->
-                        state.setBusinessTime(null);
-                default -> {
-                }
-            }
-        }
-    }
-
-    private record AiExtractionResult(
-            String intent,
-            ConstraintState extracted,
-            List<String> clearedFields,
-            String extractor,
-            boolean degraded
-    ) {
-    }
-
     private ConstraintState extractByRules(String message) {
         ConstraintState state = new ConstraintState();
 

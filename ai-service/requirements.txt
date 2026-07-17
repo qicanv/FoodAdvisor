@@ -6,4 +6,8 @@ opensearch-py
 httpx
 python-dotenv
 pytest
-pytest-asyncio
+
+# ---- 本地情感模型 (V1.0) ----
+# 如果只使用 LLM 分析，这两项可不装
+torch>=2.0.0
+transformers>=4.36.0

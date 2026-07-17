@@ -30,6 +30,11 @@ class Settings(BaseSettings):
 
     sentiment_low_confidence_threshold: float = 0.6
 
+    # ---- 本地情感模型 (V1.0) ----
+    local_model_path: str = os.path.join(
+        os.path.dirname(__file__), "..", "..", "..", "train", "model", "final"
+    )
+
     request_timeout_seconds: int = 30
 
     model_config = SettingsConfigDict(

@@ -43,8 +43,7 @@ class LLMService:
             "Content-Type": "application/json"
         }
 
-        # 推理模型（deepseek-v4-pro）带思维链，长输入下 60 秒不够用
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()

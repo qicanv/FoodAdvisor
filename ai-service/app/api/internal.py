@@ -13,13 +13,14 @@ from app.core.security import verify_internal_token
 from app.schemas.common import InternalResponse, InternalTestRequest
 from app.models.schemas import (
     AnalyzeRequest, AnalyzeResponse,
-    BatchAnalyzeRequest, BatchAnalyzeResponse
+    BatchAnalyzeRequest, BatchAnalyzeResponse,
+    # 本地模型 (V1.0)
+    LocalSentimentRequest, LocalSentimentResponse,
+    LocalSentimentBatchRequest, LocalSentimentBatchResponse,
+    LocalSentimentStatsRequest, LocalSentimentStatsResponse,
 )
-from app.schemas.dialogue import DialogueExtractRequest, DialogueExtractResponse
-from app.services.dialogue_extraction_service import dialogue_extraction_service
 from app.services.review_analysis_service import review_analysis_service
-from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
-from app.services.review_summary_service import review_summary_service
+from app.services.local_sentiment_service import local_sentiment_service
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +86,137 @@ async def batch_analyze_reviews(request: BatchAnalyzeRequest):
     )
 
 
-@router.post("/dialogue/extract", response_model=DialogueExtractResponse)
-async def extract_dialogue_constraints(request: DialogueExtractRequest):
-    if not request.content or not request.content.strip():
-        raise HTTPException(status_code=422, detail="content must not be blank")
+# =====================================================
+# 本地模型端点 (V1.0) — 使用自己训练的 RoBERTa 模型
+# 免费、低延迟、三维度（整体/服务/菜品）情感分类
+# =====================================================
 
-    return await dialogue_extraction_service.extract(request)
+@router.get("/local/health")
+async def local_model_health():
+    """检查本地模型是否已加载"""
+    return {
+        "available": local_sentiment_service.is_available,
+        "model_info": local_sentiment_service.model_info if local_sentiment_service.is_available else None,
+    }
+
+
+@router.post(
+    "/local/sentiment",
+    response_model=LocalSentimentResponse,
+    response_model_by_alias=False,
+)
+async def local_sentiment(request: LocalSentimentRequest):
+    """
+    使用本地模型分析单条评价。
+
+    返回三维度情感：整体(overall)、服务(service)、菜品(dish)
+    每维度输出四分类标签 + 置信度：
+      - 0 未提及 / 1 负向 / 2 中性 / 3 正向
+    """
+    if not request.content or not request.content.strip():
+        raise HTTPException(status_code=422, detail="评价内容不能为空")
+
+    if not local_sentiment_service.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail="本地模型未加载，请检查模型文件是否存在"
+        )
+
+    logger.info(f"本地分析评价 reviewId={request.review_id}")
+    try:
+        result = local_sentiment_service.predict(
+            text=request.content,
+            review_id=request.review_id,
+            merchant_id=request.merchant_id,
+        )
+        return LocalSentimentResponse(**result)
+    except Exception as e:
+        logger.error(f"本地分析失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/local/sentiment/batch")
+async def local_sentiment_batch(request: LocalSentimentBatchRequest):
+    """
+    批量分析 — 使用本地模型。
+
+    返回每条评价的三维度情感结果 + 整体统计聚合。
+    单次最多 500 条。
+    """
+    if not request.reviews:
+        raise HTTPException(status_code=422, detail="评价列表不能为空")
+
+    if len(request.reviews) > 500:
+        raise HTTPException(status_code=422, detail="单次最多分析500条评价")
+
+    if not local_sentiment_service.is_available:
+        raise HTTPException(status_code=503, detail="本地模型未加载")
+
+    logger.info(f"本地批量分析 {len(request.reviews)} 条评价")
+
+    reviews_dict = [
+        {
+            "review_id": r.review_id,
+            "merchant_id": r.merchant_id,
+            "content": r.content,
+            "created_at": r.created_at,
+        }
+        for r in request.reviews
+    ]
+
+    try:
+        predictions = local_sentiment_service.predict_batch(reviews_dict)
+        from app.services.local_sentiment_service import aggregate_stats
+        stats = aggregate_stats(predictions)
+    except Exception as e:
+        logger.error(f"本地批量分析失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    results = [LocalSentimentResponse(**p) for p in predictions]
+    return {
+        "successCount": len(results),
+        "failCount": 0,
+        "results": results,
+        "stats": stats,
+    }
+
+
+@router.post("/local/sentiment/stats")
+async def local_sentiment_stats(request: LocalSentimentStatsRequest):
+    """
+    统计聚合 — 对一批评价做情感分布统计。
+
+    支持按时间（月度）、菜品、服务维度分别统计，
+    返回每个维度的正向/负向/中性/未提及的数量和占比。
+    这正是需求文档要求的"按时间、菜品、服务维度分别统计情感分布"。
+    """
+    if not request.reviews:
+        raise HTTPException(status_code=422, detail="评价列表不能为空")
+
+    if len(request.reviews) > 1000:
+        raise HTTPException(status_code=422, detail="单次最多统计1000条评价")
+
+    if not local_sentiment_service.is_available:
+        raise HTTPException(status_code=503, detail="本地模型未加载")
+
+    logger.info(f"统计聚合 {len(request.reviews)} 条评价")
+
+    reviews_dict = [
+        {
+            "review_id": r.review_id,
+            "merchant_id": r.merchant_id,
+            "content": r.content,
+            "created_at": r.created_at,
+        }
+        for r in request.reviews
+    ]
+
+    try:
+        stats = local_sentiment_service.compute_stats(reviews_dict)
+        return stats
+    except Exception as e:
+        logger.error(f"统计聚合失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ---- 以下为后续 Sprint 接口骨架，仅定义路由签名 ----
@@ -101,19 +227,10 @@ async def rag_recommend(request: dict):
     raise HTTPException(status_code=501, detail="RAG推荐功能尚未实现")
 
 
-@router.post("/merchants/review-summary", response_model=ReviewSummaryResponse)
-async def generate_review_summary(request: ReviewSummaryRequest):
-    """
-    商家评价智能总结（EPIC-01 Story 7）
-
-    由 Spring Boot 传入评论列表，返回结构化口碑摘要。
-    评论不足时返回 summaryStatus=INSUFFICIENT_DATA，不调用大模型。
-    """
-    logger.info(
-        f"生成评价摘要 merchantId={request.merchantId}, "
-        f"reviewCount={len(request.reviews)}"
-    )
-    return await review_summary_service.summarize(request)
+@router.post("/reviews/summary")
+async def generate_summary(merchantId: int):
+    """评价智能总结（后续实现）"""
+    raise HTTPException(status_code=501, detail="评价总结功能尚未实现")
 
 
 @router.get("/hot-words/{region}")

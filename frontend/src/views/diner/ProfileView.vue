@@ -78,15 +78,6 @@
             <div class="actions-section">
               <h3>账户管理</h3>
               <div class="action-grid">
-                <button class="action-btn" @click="goToMyReviews">
-                  <span class="action-icon">📝</span>
-                  <span class="action-text">我的评价</span>
-                </button>
-                <button class="action-btn notification-btn" @click="goToNotifications">
-                  <span class="action-icon">💬</span>
-                  <span class="action-text">消息中心</span>
-                  <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount }}</span>
-                </button>
                 <button class="action-btn">
                   <span class="action-icon">✏️</span>
                   <span class="action-text">修改密码</span>
@@ -115,41 +106,19 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import request from '../../api/request'
 
 const router = useRouter()
 const userInfo = ref({ username: '', createdAt: new Date(), loginCount: 1 })
-const unreadCount = ref(0)
 
 onMounted(() => {
   const user = localStorage.getItem('user')
   if (user) {
     userInfo.value = JSON.parse(user)
   }
-  loadUnreadCount()
 })
-
-const loadUnreadCount = async () => {
-  try {
-    const response = await request.get('/api/notifications/count-unread')
-    if (response.success && response.data) {
-      unreadCount.value = response.data.count || 0
-    }
-  } catch (error) {
-    console.error('获取未读消息数量失败:', error)
-  }
-}
 
 const goBack = () => {
   router.push('/diner/home')
-}
-
-const goToMyReviews = () => {
-  router.push('/diner/my-reviews')
-}
-
-const goToNotifications = () => {
-  router.push('/diner/notifications')
 }
 
 const handleLogout = () => {
@@ -413,19 +382,6 @@ const formatDate = (date) => {
 
 .action-text {
   font-weight: 500;
-}
-
-.unread-badge {
-  padding: 2px 6px;
-  background: #ff4d4f;
-  color: #fff;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.notification-btn {
-  position: relative;
 }
 
 @media (max-width: 600px) {

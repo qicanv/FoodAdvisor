@@ -18,8 +18,6 @@ public class DialogueContinueResponse {
      */
     private Long sessionId;
 
-    private Long userMessageId;
-
     /**
      * 当前对话阶段。
      *
@@ -63,10 +61,4 @@ public class DialogueContinueResponse {
      */
     private List<ConstraintConflictVO> conflicts =
             new ArrayList<>();
-
-    private String intent = "MERCHANT_RECOMMENDATION";
-
-    private String extractor = "RULE_FALLBACK";
-
-    private Boolean degraded = true;
 }

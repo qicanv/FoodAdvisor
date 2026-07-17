@@ -85,6 +85,7 @@ logs/
 
 models/
 model/
+datasets/
 checkpoints/
 *.pt
 *.pth

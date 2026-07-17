@@ -5,14 +5,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.foodadvisor.backend.common.ApiResponse;
-import com.foodadvisor.dto.BusinessHourVO;
 import com.foodadvisor.dto.MerchantDetailVO;
 import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.dto.ReviewSummaryVO;
 import com.foodadvisor.dto.review.MerchantRatingSummaryVO;
 import com.foodadvisor.entity.Merchant;
-import com.foodadvisor.entity.MerchantBusinessHours;
-import com.foodadvisor.mapper.BusinessHoursMapper;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.service.ReviewService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,18 +28,15 @@ public class MerchantController {
     private final MerchantMapper merchantMapper;
     private final ReviewService reviewService;
     private final ObjectMapper objectMapper;
-    private final BusinessHoursMapper businessHoursMapper;
 
     public MerchantController(
             MerchantMapper merchantMapper,
             ReviewService reviewService,
-            ObjectMapper objectMapper,
-            BusinessHoursMapper businessHoursMapper
+            ObjectMapper objectMapper
     ) {
         this.merchantMapper = merchantMapper;
         this.reviewService = reviewService;
         this.objectMapper = objectMapper;
-        this.businessHoursMapper = businessHoursMapper;
     }
 
     /**
@@ -135,19 +129,8 @@ public class MerchantController {
             vo.setEnvironmentTags(new ArrayList<>());
         }
 
-        // 获取真实营业时间
-        List<MerchantBusinessHours> hoursList = businessHoursMapper.selectByMerchantId(merchantId);
-        List<BusinessHourVO> businessHours = new ArrayList<>();
-        for (MerchantBusinessHours hour : hoursList) {
-            BusinessHourVO hourVO = new BusinessHourVO();
-            hourVO.setDayOfWeek(hour.getDayOfWeek());
-            hourVO.setOpenTime(hour.getOpenTime());
-            hourVO.setCloseTime(hour.getCloseTime());
-            hourVO.setIsClosed(hour.getIsClosed());
-            hourVO.setCrossesMidnight(hour.getCrossesMidnight());
-            businessHours.add(hourVO);
-        }
-        vo.setBusinessHours(businessHours);
+        // 营业时间功能尚未接入。
+        vo.setBusinessHours(new ArrayList<>());
 
         ReviewSummaryVO summary = new ReviewSummaryVO();
         summary.setReviewCount(

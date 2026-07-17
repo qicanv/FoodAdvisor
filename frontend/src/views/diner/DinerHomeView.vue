@@ -28,22 +28,6 @@
         </div>
       </section>
 
-      <section class="ranking-entry-section">
-        <div class="container">
-          <div class="ranking-card" @click="goToRanking">
-            <div class="ranking-icon">🔥</div>
-            <div class="ranking-content">
-              <h3 class="ranking-title">热门商家榜单</h3>
-              <p class="ranking-subtitle">本周热议、月度新晋、性价比、人气商家</p>
-            </div>
-            <div class="ranking-arrow">
-              <span class="arrow-text">查看榜单</span>
-              <span class="arrow-icon">→</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section class="scenes-section">
         <div class="container">
           <h2 class="section-title">选择用餐场景</h2>
@@ -567,10 +551,6 @@ const handleLogout = () => {
 const goToProfile = () => {
   router.push('/diner/profile')
 }
-
-const goToRanking = () => {
-  router.push('/diner/ranking')
-}
 </script>
 
 <style scoped>
@@ -712,68 +692,6 @@ const goToRanking = () => {
   font-weight: 400;
   color: #667085;
   margin-left: 12px;
-}
-
-.ranking-entry-section {
-  padding: 20px 0;
-}
-
-.ranking-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%);
-  border-radius: 16px;
-  padding: 24px;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 4px 16px rgba(255, 107, 53, 0.3);
-}
-
-.ranking-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(255, 107, 53, 0.4);
-}
-
-.ranking-icon {
-  font-size: 40px;
-}
-
-.ranking-content {
-  flex: 1;
-}
-
-.ranking-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #fff;
-  margin-bottom: 4px;
-}
-
-.ranking-subtitle {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.ranking-arrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.arrow-text {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.arrow-icon {
-  font-size: 20px;
-  color: #fff;
-  transition: transform 0.3s;
-}
-
-.ranking-card:hover .arrow-icon {
-  transform: translateX(4px);
 }
 
 .scenes-grid {

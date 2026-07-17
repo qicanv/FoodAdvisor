@@ -20,7 +20,7 @@ server:
 
 foodadvisor:
   crypto:
-    model-key-secret: ${MODEL_KEY_SECRET:foodadvisor-secret-key-2024}
+    model-key-secret: ${MODEL_KEY_SECRET:}
   upload:
     review-image-dir: ${REVIEW_IMAGE_UPLOAD_DIR:uploads/reviews}
 
@@ -56,5 +56,3 @@ logging:
   level:
     com.foodadvisor: INFO
     org.springframework.web: INFO
-    com.baomidou.mybatisplus: DEBUG
-    com.foodadvisor.mapper: DEBUG
