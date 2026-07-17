@@ -78,6 +78,10 @@
             <div class="actions-section">
               <h3>账户管理</h3>
               <div class="action-grid">
+                <button class="action-btn" @click="goToMyReviews">
+                  <span class="action-icon">📝</span>
+                  <span class="action-text">我的评价</span>
+                </button>
                 <button class="action-btn">
                   <span class="action-icon">✏️</span>
                   <span class="action-text">修改密码</span>
@@ -119,6 +123,10 @@ onMounted(() => {
 
 const goBack = () => {
   router.push('/diner/home')
+}
+
+const goToMyReviews = () => {
+  router.push('/diner/my-reviews')
 }
 
 const handleLogout = () => {
