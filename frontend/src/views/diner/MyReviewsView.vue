@@ -78,6 +78,9 @@
               <span v-if="review.currentVersion && review.currentVersion > 1" class="version-text">
                 已编辑 {{ review.currentVersion - 1 }} 次
               </span>
+              <span v-if="review.hasReply" class="reply-badge">
+                💬 已回复
+              </span>
               <span class="arrow-icon">→</span>
             </div>
           </div>
@@ -441,6 +444,12 @@ onMounted(() => {
 .version-text {
   font-size: 13px;
   color: #ff6700;
+}
+
+.reply-badge {
+  font-size: 13px;
+  color: #1890ff;
+  font-weight: 500;
 }
 
 .arrow-icon {
