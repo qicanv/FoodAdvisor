@@ -18,10 +18,10 @@ public class ReviewVersion {
 
     private Long reviewId;
     private Integer version;
-    private Integer rating;
-    private Integer tasteRating;
-    private Integer environmentRating;
-    private Integer serviceRating;
+    private BigDecimal rating;
+    private BigDecimal tasteRating;
+    private BigDecimal environmentRating;
+    private BigDecimal serviceRating;
     private BigDecimal averageSpend;
     private LocalDate consumptionDate;
     private String content;

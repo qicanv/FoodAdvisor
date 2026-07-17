@@ -25,6 +25,18 @@ const routes = [
     meta: { requiresAuth: true, role: 'diner' },
   },
   {
+    path: '/diner/ranking',
+    name: 'diner-ranking',
+    component: () => import('../views/diner/HotRankingView.vue'),
+    meta: { requiresAuth: true, role: 'diner' },
+  },
+  {
+    path: '/diner/merchant/:id',
+    name: 'diner-merchant-detail',
+    component: () => import('../views/diner/MerchantDetailView.vue'),
+    meta: { requiresAuth: true, role: 'diner' },
+  },
+  {
     path: '/merchant',
     name: 'merchant-login',
     component: () => import('../views/merchant/MerchantView.vue'),

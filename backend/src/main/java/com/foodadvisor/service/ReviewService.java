@@ -39,11 +39,10 @@ import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
  * 评价服务
@@ -71,6 +70,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final ReviewImageStorageService imageStorageService;
     private final JdbcTemplate jdbcTemplate;
     private final ReviewTagMapper tagMapper;
+    private final com.foodadvisor.mapper.UserMapper userMapper;
 
     public ReviewService(
             ReviewAnalysisMapper analysisMapper,
@@ -80,7 +80,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             ReviewVersionMapper versionMapper,
             MerchantMapper merchantMapper,
             ReviewImageStorageService imageStorageService,
-            JdbcTemplate jdbcTemplate
+            JdbcTemplate jdbcTemplate,
+            com.foodadvisor.mapper.UserMapper userMapper
     ) {
         this.analysisMapper = analysisMapper;
         this.tagRelationMapper = tagRelationMapper;
@@ -90,6 +91,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         this.merchantMapper = merchantMapper;
         this.imageStorageService = imageStorageService;
         this.jdbcTemplate = jdbcTemplate;
+        this.userMapper = userMapper;
     }
 
     /**
@@ -100,16 +102,56 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             int pageNum,
             int pageSize
     ) {
-        Page<Review> page = Page.of(pageNum, pageSize);
-
         LambdaQueryWrapper<Review> wrapper =
                 new LambdaQueryWrapper<>();
 
         wrapper.eq(Review::getMerchantId, merchantId)
                 .eq(Review::getStatus, "PUBLISHED")
-                .orderByDesc(Review::getPublishedAt);
+                .orderByDesc(Review::getCreatedAt);
 
-        return this.page(page, wrapper);
+        List<Review> records = this.list(wrapper);
+        
+        Page<Review> page = new Page<>();
+        page.setRecords(records);
+        page.setTotal((long) records.size());
+        page.setCurrent(pageNum);
+        page.setSize(pageSize);
+        
+        return page;
+    }
+
+    /**
+     * 按商家分页查询公开评价，包含用户信息。
+     */
+    public Page<com.foodadvisor.dto.review.ReviewDisplayVO> listByMerchantWithUser(
+            Long merchantId,
+            int pageNum,
+            int pageSize
+    ) {
+        Page<Review> reviewPage = listByMerchant(merchantId, pageNum, pageSize);
+        
+        List<com.foodadvisor.dto.review.ReviewDisplayVO> displayVOs = new ArrayList<>();
+        for (Review review : reviewPage.getRecords()) {
+            com.foodadvisor.dto.review.ReviewDisplayVO vo = com.foodadvisor.dto.review.ReviewDisplayVO.from(review);
+            
+            if (review.getUserId() != null) {
+                com.foodadvisor.entity.User user = userMapper.selectById(review.getUserId());
+                if (user != null) {
+                    vo.setUsername(user.getUsername());
+                    vo.setNickname(user.getNickname());
+                }
+            }
+            
+            displayVOs.add(vo);
+        }
+        
+        Page<com.foodadvisor.dto.review.ReviewDisplayVO> page = new Page<>();
+        page.setRecords(displayVOs);
+        page.setTotal(reviewPage.getTotal());
+        page.setCurrent(pageNum);
+        page.setSize(pageSize);
+        
+        return page;
     }
 
     /**
@@ -728,13 +770,13 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 request.getContent().trim()
         );
 
-        review.setRating(request.getRating());
-        review.setTasteRating(request.getTasteRating());
+        review.setRating(request.getRating() != null ? BigDecimal.valueOf(request.getRating()) : null);
+        review.setTasteRating(request.getTasteRating() != null ? BigDecimal.valueOf(request.getTasteRating()) : null);
         review.setEnvironmentRating(
-                request.getEnvironmentRating()
+                request.getEnvironmentRating() != null ? BigDecimal.valueOf(request.getEnvironmentRating()) : null
         );
         review.setServiceRating(
-                request.getServiceRating()
+                request.getServiceRating() != null ? BigDecimal.valueOf(request.getServiceRating()) : null
         );
         review.setAverageSpend(
                 request.getAverageSpend()
@@ -1106,9 +1148,9 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     }
 
     private BigDecimal average(
-            List<Integer> values
+            List<BigDecimal> values
     ) {
-        List<Integer> present =
+        List<BigDecimal> present =
                 values.stream()
                         .filter(value -> value != null)
                         .toList();
@@ -1119,7 +1161,6 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         BigDecimal sum =
                 present.stream()
-                        .map(BigDecimal::valueOf)
                         .reduce(
                                 BigDecimal.ZERO,
                                 BigDecimal::add
