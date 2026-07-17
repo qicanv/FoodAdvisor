@@ -76,6 +76,7 @@ public class MerchantController {
 
     /**
      * 商家详情，包含评价评分摘要。
+     * 仅返回平台启用且正常营业的商家详情。
      */
     @GetMapping("/{merchantId}")
     public ApiResponse<MerchantDetailVO> detail(
@@ -84,6 +85,10 @@ public class MerchantController {
         Merchant merchant = merchantMapper.selectById(merchantId);
 
         if (merchant == null) {
+            return ApiResponse.notFound("商家不存在");
+        }
+
+        if (!"ACTIVE".equals(merchant.getPlatformStatus()) || !"OPERATING".equals(merchant.getOperationStatus())) {
             return ApiResponse.notFound("商家不存在");
         }
 
