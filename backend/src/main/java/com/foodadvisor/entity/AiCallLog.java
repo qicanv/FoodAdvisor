@@ -1,12 +1,13 @@
 package com.foodadvisor.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.foodadvisor.config.JsonbTypeHandler;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Data
-@TableName("ai_call_logs")
+@TableName(value = "ai_call_logs", autoResultMap = true)
 public class AiCallLog {
 
     @TableId(type = IdType.AUTO)
@@ -32,9 +33,11 @@ public class AiCallLog {
     private String errorMessage;
 
     /** JSONB */
+    @TableField(typeHandler = JsonbTypeHandler.class)
     private String requestSummary;
 
     /** JSONB */
+    @TableField(typeHandler = JsonbTypeHandler.class)
     private String responseSummary;
 
     @TableField(fill = FieldFill.INSERT)
