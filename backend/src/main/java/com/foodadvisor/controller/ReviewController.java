@@ -17,6 +17,11 @@ import com.foodadvisor.entity.ReviewTag;
 import com.foodadvisor.entity.ReviewTagRelation;
 import com.foodadvisor.mapper.ReviewTagMapper;
 import com.foodadvisor.mapper.TagRelationWithName;
+import com.foodadvisor.entity.ReviewIssueCategory;
+import com.foodadvisor.entity.ReviewIssueRelation;
+import com.foodadvisor.mapper.ReviewIssueCategoryMapper;
+import com.foodadvisor.dto.IssueStatVO;
+import com.foodadvisor.dto.IssueReviewVO;
 
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,6 +29,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.time.LocalDate;
 
 /**
  * 评价接口 — 评论查询 & AI 分析
@@ -35,12 +41,20 @@ public class ReviewController {
     private final ReviewService reviewService;
     private final AIClientService aiClientService;
     private final ReviewTagMapper reviewTagMapper;
+    private final ReviewIssueCategoryMapper issueCategoryMapper;
 
-    public ReviewController(ReviewService reviewService, AIClientService aiClientService,ReviewTagMapper reviewTagMapper) {
+    public ReviewController(
+            ReviewService reviewService,
+            AIClientService aiClientService,
+            ReviewTagMapper reviewTagMapper,
+            ReviewIssueCategoryMapper issueCategoryMapper
+    ) {
         this.reviewService = reviewService;
         this.aiClientService = aiClientService;
         this.reviewTagMapper = reviewTagMapper;
+        this.issueCategoryMapper = issueCategoryMapper;
     }
+
 
     /**
      * 按商家分页查询评价
@@ -166,6 +180,58 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
         reviewService.saveTagRelations(relations);
     }
 }
+
+        // ====== 持久化差评归因关联（V0.3）======
+        // AI 分析结果中的 issueCategories 包含每条差评的问题归类。
+        // 需要写入 review_issue_relations 表，供商家端差评归因统计使用。
+        if (result.has("issueCategories") && !result.get("issueCategories").isNull()
+                && result.get("issueCategories").isArray()) {
+            List<ReviewIssueRelation> issueRelations = new ArrayList<>();
+
+            for (JsonNode issueNode : result.get("issueCategories")) {
+                String catCode = issueNode.has("category")
+                        ? issueNode.get("category").asText()
+                        : null;
+
+                if (catCode == null || catCode.isBlank()) {
+                    continue;
+                }
+
+                // 通过类别编码查字典表取得 ID
+                ReviewIssueCategory cat = issueCategoryMapper.selectOne(
+                        new LambdaQueryWrapper<ReviewIssueCategory>()
+                                .eq(ReviewIssueCategory::getCode, catCode)
+                                .eq(ReviewIssueCategory::getStatus, "ACTIVE")
+                );
+
+                if (cat == null) {
+                    continue; // 不在预定义类别中，跳过
+                }
+
+                ReviewIssueRelation relation = new ReviewIssueRelation();
+                relation.setReviewId(review.getId());
+                relation.setReviewVersion(reviewVersion);
+                relation.setIssueCategoryId(cat.getId());
+                relation.setConfidence(
+                        issueNode.has("confidence")
+                                ? new BigDecimal(issueNode.get("confidence").asText())
+                                : BigDecimal.valueOf(0.5)
+                );
+                relation.setEvidenceText(
+                        issueNode.has("evidenceText")
+                                && !issueNode.get("evidenceText").isNull()
+                                ? issueNode.get("evidenceText").asText()
+                                : null
+                );
+
+                issueRelations.add(relation);
+            }
+
+            if (!issueRelations.isEmpty()) {
+                reviewService.saveIssueRelations(issueRelations);
+            }
+        }
+
 
         // 构建返回 VO
         ReviewAnalysisResultVO vo = buildResultVO(review, result);
@@ -332,4 +398,71 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
     }
 
     // ==================== 评论编辑与删除 结束 ====================
+
+    // ==================== 差评归因分析（EPIC-02 Story 4） ====================
+
+    /**
+     * 获取商家差评归因统计。
+     *
+     * 返回指定时间范围内各类问题（卫生、服务、上菜速度等）的数量和占比。
+     * 前端用这个数据渲染饼图/柱状图。
+     *
+     * 请求示例：
+     *   GET /api/reviews/merchants/1/issue-stats?startDate=2026-06-01&endDate=2026-07-17
+     */
+    @GetMapping("/merchants/{merchantId}/issue-stats")
+    public ApiResponse<List<IssueStatVO>> getMerchantIssueStats(
+            @PathVariable Long merchantId,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate
+    ) {
+        List<IssueStatVO> stats = reviewService.getMerchantIssueStats(
+                merchantId, startDate, endDate);
+        return ApiResponse.success(stats);
+    }
+
+    /**
+     * 获取某问题类别下的关联评价列表。
+     *
+     * 商家用户点击某个问题类别（如"上菜速度"）后，调用此接口查看
+     * 被归因为该问题的原始评价及 AI 提取的依据片段。
+     *
+     * 请求示例：
+     *   GET /api/reviews/merchants/1/issue-categories/SERVING_SPEED/reviews?pageNum=1&pageSize=10
+     */
+    @GetMapping("/merchants/{merchantId}/issue-categories/{categoryCode}/reviews")
+    public ApiResponse<PageResult<IssueReviewVO>> getIssueCategoryReviews(
+            @PathVariable Long merchantId,
+            @PathVariable String categoryCode,
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate
+    ) {
+        Page<IssueReviewVO> page = reviewService.getIssueCategoryReviews(
+                merchantId, categoryCode, pageNum, pageSize,
+                startDate, endDate);
+        return ApiResponse.success(PageResult.from(page));
+    }
+
+    /**
+     * 获取全部可用的问题类别字典。
+     *
+     * 前端用这个接口渲染类别筛选列表（保证和后端内置类别一致）。
+     *
+     * 请求示例：
+     *   GET /api/reviews/issue-categories
+     */
+    @GetMapping("/issue-categories")
+    public ApiResponse<List<ReviewIssueCategory>> getIssueCategories() {
+        List<ReviewIssueCategory> categories = issueCategoryMapper.selectList(
+                new LambdaQueryWrapper<ReviewIssueCategory>()
+                        .eq(ReviewIssueCategory::getStatus, "ACTIVE")
+                        .orderByAsc(ReviewIssueCategory::getId)
+        );
+        return ApiResponse.success(categories);
+    }
+
+    // ==================== 差评归因分析 结束 ====================
+
 }
