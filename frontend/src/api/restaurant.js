@@ -11,3 +11,7 @@ export const getMerchants = params => {
 export const getMerchantDetail = merchantId => {
   return request.get(`/api/merchants/${merchantId}`)
 }
+
+export const searchMerchants = params => {
+  return request.get('/api/merchants/search', { params })
+}

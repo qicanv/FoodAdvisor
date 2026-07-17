@@ -15,26 +15,26 @@ ON CONFLICT (username) DO NOTHING;
 -- ============================================
 -- 2. 商家（5家）
 -- ============================================
-INSERT INTO merchants (id, merchant_code, name, category, cuisine, rating, average_price, review_count, address, region_code, longitude, latitude, phone, description, environment_tags, platform_status, business_status) VALUES
+INSERT INTO merchants (id, merchant_code, name, category, cuisine, rating, average_price, review_count, address, region_code, longitude, latitude, phone, description, environment_tags, platform_status, operation_status) VALUES
 (1, 'M000001', '川味小馆',   '川菜',   '川菜', 4.7, 78.00,  9, '成都市锦江区春熙路88号',          'REGION-001', 104.081534, 30.655823, '028-88880001',
  '一家主打传统川菜的餐厅，招牌菜有麻婆豆腐、水煮鱼和回锅肉。店内装修走的是新中式风格，环境舒适。',
- '["朋友聚会","家庭聚餐","环境舒适","新中式"]', 'ACTIVE', 'OPEN'),
+ '["朋友聚会","家庭聚餐","环境舒适","新中式"]', 'ACTIVE', 'OPERATING'),
 
 (2, 'M000002', '粤鲜坊',     '粤菜',   '粤菜', 4.5, 120.00, 8, '广州市天河区体育西路168号',        'REGION-002', 113.321335, 23.129163, '020-88880002',
  '专注正宗粤菜和精致早茶，由资深粤菜大厨主理。店内环境优雅，设有包间。',
- '["商务宴请","家庭聚会","早茶","包间","环境优雅"]', 'ACTIVE', 'OPEN'),
+ '["商务宴请","家庭聚会","早茶","包间","环境优雅"]', 'ACTIVE', 'OPERATING'),
 
 (3, 'M000003', '深夜烧烤王', '烧烤',   '烧烤', 4.3, 60.00,  6, '北京市朝阳区三里屯路55号',          'REGION-003', 116.455147, 39.932569, '010-88880003',
  '营业至凌晨两点的深夜烧烤店，主打东北风味炭火烧烤。店面不大但氛围热闹。',
- '["夜宵","热闹氛围","朋友聚会","深夜营业"]', 'ACTIVE', 'OPEN'),
+ '["夜宵","热闹氛围","朋友聚会","深夜营业"]', 'ACTIVE', 'OPERATING'),
 
 (4, 'M000004', '绿意轻食',   '轻食沙拉','轻食', 4.6, 45.00,  6, '上海市静安区南京西路1266号',        'REGION-004', 121.447935, 31.229511, '021-88880004',
  '主打健康轻食和创意沙拉，选用新鲜有机蔬菜。简约清新的装修风格。',
- '["独自用餐","健康轻食","简约清新","快速简餐"]', 'ACTIVE', 'OPEN'),
+ '["独自用餐","健康轻食","简约清新","快速简餐"]', 'ACTIVE', 'OPERATING'),
 
 (5, 'M000005', '和风居酒屋', '日料',   '日料', 4.8, 150.00, 6, '杭州市西湖区龙井路8号',            'REGION-005', 120.129723, 30.241901, '0571-88880005',
  '一家氛围温馨的日式居酒屋，提供新鲜刺身、烤物和各类日本酒。榻榻米和木质装修。',
- '["情侣约会","朋友小聚","日式风格","榻榻米","安静舒适"]', 'ACTIVE', 'OPEN')
+ '["情侣约会","朋友小聚","日式风格","榻榻米","安静舒适"]', 'ACTIVE', 'OPERATING')
 ON CONFLICT (merchant_code) DO NOTHING;
 
 -- ============================================
@@ -182,21 +182,36 @@ INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_t
 (30, 5, 3, 3.0, '味道是不错，但是上菜节奏很慢，前菜到主菜中间等了快半小时。而且价格确实偏贵，刺身量有点少。', 'SYSTEM', '2026-07-11 20:15:00+08:00', 'PUBLISHED', 'APPROVED');
 
 -- ============================================
--- 7. 评论标签字典（12个常用标签）
+-- 7. 评论标签字典（20个标签，覆盖10个类别，每个类别正/负面各一个）
 -- ============================================
 INSERT INTO review_tags (code, name, category, status) VALUES
+-- 口味
 ('TASTE_GOOD',        '口味好',   'TASTE',        'ACTIVE'),
 ('TASTE_BAD',         '口味差',   'TASTE',        'ACTIVE'),
+-- 环境
 ('ENVIRONMENT_GOOD',  '环境好',   'ENVIRONMENT',  'ACTIVE'),
 ('ENVIRONMENT_BAD',   '环境差',   'ENVIRONMENT',  'ACTIVE'),
+-- 服务
 ('SERVICE_GOOD',      '服务好',   'SERVICE',      'ACTIVE'),
 ('SERVICE_BAD',       '服务差',   'SERVICE',      'ACTIVE'),
+-- 价格
 ('PRICE_LOW',         '价格实惠', 'PRICE',        'ACTIVE'),
 ('PRICE_HIGH',        '价格偏高', 'PRICE',        'ACTIVE'),
+-- 排队
 ('QUEUE_LONG',        '排队久',   'QUEUE_TIME',   'ACTIVE'),
+('QUEUE_SHORT',       '排队快',   'QUEUE_TIME',   'ACTIVE'),
+-- 分量
 ('PORTION_LARGE',     '分量足',   'PORTION',      'ACTIVE'),
+('PORTION_SMALL',     '分量少',   'PORTION',      'ACTIVE'),
+-- 卫生
+('HYGIENE_GOOD',      '卫生好',   'HYGIENE',      'ACTIVE'),
 ('HYGIENE_BAD',       '卫生差',   'HYGIENE',      'ACTIVE'),
-('SPEED_SLOW',        '上菜慢',   'SPEED',        'ACTIVE')
+-- 上菜速度
+('SPEED_FAST',        '上菜快',   'SPEED',        'ACTIVE'),
+('SPEED_SLOW',        '上菜慢',   'SPEED',        'ACTIVE'),
+-- 停车（新增类别，Jira 故事明确要求）
+('PARKING_GOOD',      '停车方便', 'PARKING',      'ACTIVE'),
+('PARKING_BAD',       '停车难',   'PARKING',      'ACTIVE')
 ON CONFLICT (code) DO NOTHING;
 
 -- ============================================

@@ -7,7 +7,7 @@ const request = axios.create({
 
 request.interceptors.request.use(
   config => {
-    const token = localStorage.getItem('accessToken')
+    const token = localStorage.getItem('token') || localStorage.getItem('accessToken')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -19,12 +19,14 @@ request.interceptors.request.use(
 request.interceptors.response.use(
   response => {
     const { code, message, data } = response.data
-    if (code === 200 || code === 201) {
+    if (code === 'SUCCESS' || code === 200 || code === 201) {
       return { success: true, data, message }
-    } else if (code === 40101 || code === 40102) {
+    } else if (code === 'UNAUTHORIZED' || code === 40101 || code === 40102) {
+      localStorage.removeItem('token')
       localStorage.removeItem('accessToken')
+      localStorage.removeItem('user')
       localStorage.removeItem('userInfo')
-      window.location.href = '/login'
+      window.location.href = '/diner'
       return { success: false, code, message }
     }
     return { success: false, code, message, data }
