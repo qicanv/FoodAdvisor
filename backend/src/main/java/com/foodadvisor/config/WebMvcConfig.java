@@ -23,8 +23,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/health",
                         "/api/password/**",
                         "/api/merchants/**",
+                        "/api/restaurants/**",
                         "/api/dishes/**",
-                        "/api/reviews/**"  // 评价查询（暂免登录，方便测试标签功能）
+                        "/api/reviews/**",
+                        "/api/notifications/**"
                 );
     }
 }

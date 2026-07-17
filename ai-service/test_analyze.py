@@ -1,55 +1,75 @@
-"""快速测试情感分析接口"""
-import httpx
-import asyncio
 import json
-import os
 
-AI_SERVICE_URL = "http://localhost:8000"
-INTERNAL_TOKEN = os.getenv("INTERNAL_API_TOKEN")
+import httpx
+
+from app.core.config import settings
+from app.main import app
+from app.services import review_analysis_service as service_module
 
 
-async def test_review():
-    """测试正面评价和负面评价"""
-    if not INTERNAL_TOKEN:
-        raise RuntimeError("INTERNAL_API_TOKEN is required")
+async def test_review(monkeypatch):
+    settings.internal_api_token = "test-token"
 
-    headers = {"X-Internal-Token": INTERNAL_TOKEN}
+    async def chat_json(*args, **kwargs):
+        return {
+            "sentiment": "POSITIVE",
+            "confidence": 0.9,
+            "keywords": ["taste"],
+            "aspects": [
+                {
+                    "category": "TASTE",
+                    "sentiment": "POSITIVE",
+                    "text": "good taste",
+                }
+            ],
+            "tags": [],
+            "issueCategories": [],
+            "negativeReason": None,
+        }
 
-    # trust_env=False 跳过系统代理，timeout=60 给 LLM 调用留够时间
-    async with httpx.AsyncClient(trust_env=False, timeout=60.0) as client:
-        # 1. 健康检查
-        resp = await client.get(f"{AI_SERVICE_URL}/health")
-        print("=== 健康检查 ===")
-        print("状态码:", resp.status_code)
+    monkeypatch.setattr(
+        service_module.llm_service,
+        "chat_json",
+        chat_json,
+    )
+
+    headers = {"X-Internal-Token": "test-token"}
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        trust_env=False,
+        timeout=60.0,
+    ) as client:
+        resp = await client.get("/health")
+        print("=== health ===")
+        print("status:", resp.status_code)
         if resp.status_code == 200:
             print(resp.text)
 
-        # 2. 正面评价测试
-        print("\n=== 正面评价分析 ===")
+        print("\n=== positive review analysis ===")
         resp = await client.post(
-            f"{AI_SERVICE_URL}/internal/reviews/analyze",
+            "/internal/reviews/analyze",
             headers=headers,
             json={
                 "reviewId": 1,
                 "merchantId": 1,
-                "content": "味道非常正宗！麻婆豆腐特别好吃，麻辣鲜香，每次来都要点。水煮鱼的分量也很足。"
-            }
+                "content": "taste is very good",
+            },
         )
+        assert resp.status_code == 200
         print(json.dumps(resp.json(), ensure_ascii=False, indent=2))
 
-        # 3. 负面评价测试
-        print("\n=== 负面评价分析 ===")
+        print("\n=== negative review analysis ===")
         resp = await client.post(
-            f"{AI_SERVICE_URL}/internal/reviews/analyze",
+            "/internal/reviews/analyze",
             headers=headers,
             json={
                 "reviewId": 4,
                 "merchantId": 1,
-                "content": "上菜速度太慢了！等了半个多小时才上来第一个菜，而且服务员态度冷漠，叫了好几次都没人理。"
-            }
+                "content": "service was slow",
+            },
         )
+        assert resp.status_code == 200
         print(json.dumps(resp.json(), ensure_ascii=False, indent=2))
-
-
-if __name__ == "__main__":
-    asyncio.run(test_review())

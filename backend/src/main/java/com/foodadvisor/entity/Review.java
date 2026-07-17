@@ -24,16 +24,16 @@ public class Review {
     private Long parentReviewId;
 
     /** 综合评分 1-5 */
-    private Integer rating;
+    private BigDecimal rating;
 
     /** 口味评分 1-5 */
-    private Integer tasteRating;
+    private BigDecimal tasteRating;
 
     /** 环境评分 1-5 */
-    private Integer environmentRating;
+    private BigDecimal environmentRating;
 
     /** 服务评分 1-5 */
-    private Integer serviceRating;
+    private BigDecimal serviceRating;
 
     /** 人均消费 */
     private BigDecimal averageSpend;
@@ -46,6 +46,9 @@ public class Review {
 
     /** SYSTEM / IMPORT */
     private String source;
+
+    /** 评价时间（兼容原始种子数据） */
+    private OffsetDateTime reviewTime;
 
     /** 外部导入编号 */
     private String externalId;
