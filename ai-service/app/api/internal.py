@@ -5,6 +5,8 @@ FastAPI 内部接口 — 供 Spring Boot 后端调用
 - POST /internal/test                      连接测试
 - POST /internal/reviews/analyze           单条评价分析
 - POST /internal/reviews/batch-analyze     批量分析
+- POST /internal/content/process           内容清洗与切分
+- POST /internal/content/query             查询/导出处理结果
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,10 +18,14 @@ from app.models.schemas import (
     BatchAnalyzeRequest, BatchAnalyzeResponse
 )
 from app.schemas.dialogue import DialogueExtractRequest, DialogueExtractResponse
+from app.schemas.content_processing import (
+    ProcessRequest, ProcessResult, QueryRequest,
+)
 from app.services.dialogue_extraction_service import dialogue_extraction_service
 from app.services.review_analysis_service import review_analysis_service
 from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
 from app.services.review_summary_service import review_summary_service
+from app.services.content_processing_service import content_processing_service
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +97,64 @@ async def extract_dialogue_constraints(request: DialogueExtractRequest):
         raise HTTPException(status_code=422, detail="content must not be blank")
 
     return await dialogue_extraction_service.extract(request)
+
+
+# ---- 内容清洗与切分 ----
+
+@router.post(
+    "/content/process",
+    response_model=ProcessResult,
+    summary="内容清洗与切分",
+)
+async def process_content(request: ProcessRequest):
+    """
+    对商家介绍、菜单描述和用户评价进行统一清洗和切分。
+
+    清洗操作：
+    - 去除 HTML 标签、控制字符、重复空格
+    - 统一日期格式（YYYY-MM-DD）、价格格式（¥XX）
+    - 去除无意义内容（如"该用户没有填写评价"）
+
+    切分操作：
+    - 按段落和句子边界智能切分
+    - 超长文本保留上下文重叠
+    - 每个文本块保留 merchantId、sourceType、sourceId、时间等来源信息
+
+    容错：单条数据处理失败记录错误，不影响其他数据继续处理。
+    确定性：相同输入和配置重复处理时得到一致的 chunkId。
+    """
+    if not request.items:
+        raise HTTPException(status_code=422, detail="内容列表不能为空")
+    if len(request.items) > 500:
+        raise HTTPException(status_code=422, detail="单次最多处理500条内容")
+
+    logger.info(
+        "内容处理请求: items=%d, maxChunkLength=%d, overlap=%d",
+        len(request.items),
+        request.chunkConfig.maxChunkLength,
+        request.chunkConfig.overlapLength,
+    )
+    result = content_processing_service.process(request)
+    logger.info(
+        "内容处理完成: success=%d, fail=%d, chunks=%d",
+        result.successCount,
+        result.failCount,
+        result.totalChunks,
+    )
+    return result
+
+
+@router.post(
+    "/content/query",
+    summary="查询/导出处理结果",
+)
+async def query_content(request: QueryRequest):
+    """
+    按 merchantId / sourceType / sourceId 查询处理前后的内容和切分结果。
+
+    当前返回占位 — 后续可对接 OpenSearch 或数据库进行持久化查询。
+    """
+    raise HTTPException(status_code=501, detail="内容查询功能将在数据持久化后实现（可对接 OpenSearch）")
 
 
 # ---- 以下为后续 Sprint 接口骨架，仅定义路由签名 ----
