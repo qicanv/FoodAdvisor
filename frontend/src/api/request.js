@@ -11,7 +11,7 @@ request.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
-    
+
     const userInfo = localStorage.getItem('user') || localStorage.getItem('userInfo')
     if (userInfo) {
       try {
@@ -23,12 +23,12 @@ request.interceptors.request.use(
         console.log('解析用户信息失败')
       }
     }
-    
+
     const userId = localStorage.getItem('userId')
     if (userId && !config.headers['X-User-Id']) {
       config.headers['X-User-Id'] = userId
     }
-    
+
     return config
   },
   error => Promise.reject(error)
