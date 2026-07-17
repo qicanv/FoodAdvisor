@@ -215,10 +215,29 @@ INSERT INTO review_tags (code, name, category, status) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- ============================================
--- 8. 更新序列号
+-- 8.商家回复食客的评论
+-- ============================================
+INSERT INTO review_reply (review_id, merchant_id, reply_content, reply_time, status) VALUES
+-- 川味小馆 merchant_id=1
+(1, 1, '非常感谢您的认可！麻婆豆腐是本店招牌，我们会持续把控麻辣口感，期待您再次光临~', '2026-07-02 14:20:00+08:00', 'VISIBLE'),
+(4, 1, '非常抱歉给您带来不好的用餐体验！我们已经针对上菜慢、服务问题全员培训，欢迎您下次到店监督我们的改进。', '2026-07-07 21:30:00+08:00', 'VISIBLE'),
+-- 粤鲜坊 merchant_id=2
+(7, 2, '感谢好评！我们每日新鲜采购虾料，保证虾饺口感，欢迎周末带家人来喝早茶~', '2026-07-02 10:15:00+08:00', 'VISIBLE'),
+(35, 2, '万分抱歉出现卫生问题！我们已经全面整改后厨卫生，加强餐具检查，赠送您一张50元代金券，期待给您一次全新体验。', '2026-07-14 20:10:00+08:00', 'VISIBLE'),
+-- 深夜烧烤王 merchant_id=3
+(14, 3, '谢谢支持！蒜蓉烤茄子是深夜必点，我们每晚现捣蒜蓉，保证蒜香浓郁，宵夜随时等您！', '2026-07-02 23:50:00+08:00', 'VISIBLE'),
+-- 绿意轻食 merchant_id=4
+(19, 4, '很高兴您喜欢我们的鸡胸沙拉！鸡胸全部低温慢煮无油，减脂人群专属搭配，欢迎常来~', '2026-07-03 13:00:00+08:00', 'VISIBLE'),
+-- 和风居酒屋 merchant_id=5
+(26, 5, '烤鳗鱼是每日现蒲烧，酱汁独家调配，感谢喜爱！纪念日欢迎提前预约，我们免费布置桌面。', '2026-07-04 21:00:00+08:00', 'VISIBLE')
+ON CONFLICT DO NOTHING;
+
+-- ============================================
+-- 9. 更新序列号
 -- ============================================
 SELECT setval('users_id_seq', (SELECT COALESCE(MAX(id), 1) FROM users));
 SELECT setval('merchants_id_seq', (SELECT COALESCE(MAX(id), 1) FROM merchants));
 SELECT setval('dishes_id_seq', (SELECT COALESCE(MAX(id), 1) FROM dishes));
 SELECT setval('reviews_id_seq', (SELECT COALESCE(MAX(id), 1) FROM reviews));
 SELECT setval('review_tags_id_seq', (SELECT COALESCE(MAX(id), 1) FROM review_tags));
+SELECT setval('review_reply_id_seq', (SELECT COALESCE(MAX(id), 1) FROM review_reply));

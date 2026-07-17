@@ -25,7 +25,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/merchants/**",
                         "/api/restaurants/**",
                         "/api/dishes/**",
-                        "/api/reviews/**"
+                        "/api/reviews/**",
+                        "/api/notifications/**"
                 );
     }
 }

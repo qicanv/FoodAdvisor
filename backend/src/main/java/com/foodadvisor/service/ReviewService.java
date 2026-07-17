@@ -6,7 +6,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.foodadvisor.backend.exception.ApiException;
 import com.foodadvisor.dto.review.MerchantRatingSummaryVO;
+import com.foodadvisor.dto.review.MyReviewDetailVO;
+import com.foodadvisor.dto.review.MyReviewListVO;
 import com.foodadvisor.dto.review.ReviewImageVO;
+import com.foodadvisor.dto.review.ReviewReplyVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
 import com.foodadvisor.entity.AuditLog;
@@ -14,6 +17,7 @@ import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewAnalysis;
 import com.foodadvisor.entity.ReviewImage;
+import com.foodadvisor.entity.ReviewReply;
 import com.foodadvisor.entity.ReviewTagRelation;
 import com.foodadvisor.entity.ReviewVersion;
 import com.foodadvisor.mapper.MerchantMapper;
@@ -83,6 +87,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final ReviewIssueRelationMapper issueRelationMapper;
     private final ReviewIssueCategoryMapper issueCategoryMapper;
     private final AuditLogService auditLogService;
+    private final com.foodadvisor.mapper.ReviewReplyMapper replyMapper;
+    private final NotificationService notificationService;
 
     public ReviewService(
             ReviewAnalysisMapper analysisMapper,
@@ -96,6 +102,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             com.foodadvisor.mapper.UserMapper userMapper,
             ReviewIssueRelationMapper issueRelationMapper,
             ReviewIssueCategoryMapper issueCategoryMapper,
+            com.foodadvisor.mapper.ReviewReplyMapper replyMapper,
+            NotificationService notificationService,
             AuditLogService auditLogService
     ) {
         this.analysisMapper = analysisMapper;
@@ -109,6 +117,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         this.userMapper = userMapper;
         this.issueRelationMapper = issueRelationMapper;
         this.issueCategoryMapper = issueCategoryMapper;
+        this.replyMapper = replyMapper;
+        this.notificationService = notificationService;
         this.auditLogService = auditLogService;
     }
 
@@ -252,7 +262,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             throw new ApiException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "REVIEW_SAVE_FAILED",
-                    "Review save failed"
+                    "评价保存失败"
             );
         }
 
@@ -366,7 +376,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             throw new ApiException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "REVIEW_UPDATE_FAILED",
-                    "Review update failed"
+                    "评价更新失败"
             );
         }
 
@@ -400,6 +410,59 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         return toSubmitResponse(review, activeImages);
     }
 
+    public ReviewSubmitResponse editReviewSimple(
+            Long userId,
+            Long reviewId,
+            ReviewSubmitRequest request
+    ) {
+        validateSubmitRequest(request);
+
+        Review review = requireOwnedActiveReview(userId, reviewId);
+        String beforeStatus = review.getStatus();
+        String beforeModerationStatus = review.getModerationStatus();
+        String beforeRiskLevel = review.getRiskLevel();
+
+        int currentVersion = review.getCurrentVersion() == null
+                ? 1
+                : review.getCurrentVersion();
+        review.setCurrentVersion(currentVersion + 1);
+
+        review.setEditedAt(OffsetDateTime.now());
+
+        applyReviewFields(review, request);
+        int sensitiveHitCount = countSensitiveHits(review.getContent());
+
+        applyContentSafety(review);
+
+        if (!this.updateById(review)) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "REVIEW_UPDATE_FAILED",
+                    "评价更新失败"
+            );
+        }
+
+        List<ReviewImage> activeImages = List.of();
+
+        saveVersion(review, activeImages, "EDIT");
+
+        refreshMerchantRatingStats(review.getMerchantId());
+
+        triggerAnalysisPlaceholder(review);
+
+        recordContentModerationSafely(
+                review,
+                userId,
+                "AUTO_MODERATE_REVIEW_UPDATE",
+                beforeStatus,
+                beforeModerationStatus,
+                beforeRiskLevel,
+                sensitiveHitCount
+        );
+
+        return toSubmitResponse(review, activeImages);
+    }
+
     /**
      * 删除评价 —— 逻辑删除，仅修改 status 和 deleted_at，不物理删除数据。
      * 数据仍然保留在数据库里，方便后续审计和数据分析。
@@ -424,9 +487,9 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         // 执行 UPDATE
         this.updateById(review);
 
-        // 记录版本快照，changeType = "DELETE"，方便追溯
+        // 记录版本快照，changeType = "EDIT"（数据库约束不允许DELETE）
         // List.of() 表示删除后没有保留任何图片
-        saveVersion(review, List.of(), "DELETE");
+        saveVersion(review, List.of(), "EDIT");
 
         // 删掉的评价不再计入商家评分，重新算一次
         refreshMerchantRatingStats(review.getMerchantId());
@@ -460,6 +523,247 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         wrapper.orderByDesc(Review::getUpdatedAt);
 
         return this.page(page, wrapper);
+    }
+
+    public Page<MyReviewListVO> listMyReviews(
+            Long userId,
+            int pageNum,
+            int pageSize,
+            String status,
+            Integer rating
+    ) {
+        Page<Review> page = Page.of(pageNum, pageSize);
+        LambdaQueryWrapper<Review> wrapper = new LambdaQueryWrapper<>();
+
+        wrapper.eq(Review::getUserId, userId);
+
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(Review::getStatus, status);
+        } else {
+            wrapper.ne(Review::getStatus, "DELETED");
+        }
+
+        if (rating != null && rating > 0) {
+            wrapper.eq(Review::getRating, BigDecimal.valueOf(rating));
+        }
+
+        wrapper.orderByDesc(Review::getUpdatedAt);
+
+        this.page(page, wrapper);
+
+        List<MyReviewListVO> voList = new ArrayList<>();
+        for (Review review : page.getRecords()) {
+            MyReviewListVO vo = new MyReviewListVO();
+            vo.setId(review.getId());
+            vo.setMerchantId(review.getMerchantId());
+            vo.setRating(review.getRating());
+            vo.setContent(review.getContent());
+
+            if (review.getContent() != null && review.getContent().length() > 80) {
+                vo.setContentSummary(review.getContent().substring(0, 80) + "...");
+            } else {
+                vo.setContentSummary(review.getContent());
+            }
+
+            vo.setPublishedAt(review.getPublishedAt() != null ? review.getPublishedAt() : review.getReviewTime());
+            vo.setCreatedAt(review.getCreatedAt());
+            vo.setUpdatedAt(review.getUpdatedAt());
+            vo.setStatus(review.getStatus());
+            vo.setStatusText(mapStatusText(review.getStatus()));
+            vo.setCurrentVersion(review.getCurrentVersion());
+
+            Merchant merchant = merchantMapper.selectById(review.getMerchantId());
+            if (merchant != null) {
+                vo.setMerchantName(merchant.getName());
+            }
+
+            ReviewReply reply = replyMapper.selectOne(
+                    new LambdaQueryWrapper<ReviewReply>()
+                            .eq(ReviewReply::getReviewId, review.getId())
+                            .eq(ReviewReply::getStatus, "VISIBLE")
+            );
+            vo.setHasReply(reply != null);
+
+            voList.add(vo);
+        }
+
+        Page<MyReviewListVO> resultPage = new Page<>();
+        resultPage.setRecords(voList);
+        resultPage.setTotal(page.getTotal());
+        resultPage.setCurrent(pageNum);
+        resultPage.setSize(pageSize);
+
+        return resultPage;
+    }
+
+    public MyReviewDetailVO getMyReviewDetail(Long userId, Long reviewId) {
+        Review review = this.getById(reviewId);
+        if (review == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "评价不存在");
+        }
+
+        if (!review.getUserId().equals(userId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "无权查看此评价");
+        }
+
+        MyReviewDetailVO vo = new MyReviewDetailVO();
+        vo.setId(review.getId());
+        vo.setMerchantId(review.getMerchantId());
+        vo.setRating(review.getRating());
+        vo.setTasteRating(review.getTasteRating());
+        vo.setEnvironmentRating(review.getEnvironmentRating());
+        vo.setServiceRating(review.getServiceRating());
+        vo.setAverageSpend(review.getAverageSpend());
+        vo.setConsumptionDate(review.getConsumptionDate());
+        vo.setContent(review.getContent());
+        vo.setStatus(review.getStatus());
+        vo.setStatusText(mapStatusText(review.getStatus()));
+        vo.setModerationStatus(review.getModerationStatus());
+        vo.setCurrentVersion(review.getCurrentVersion());
+        vo.setPublishedAt(review.getPublishedAt() != null ? review.getPublishedAt() : review.getReviewTime());
+        vo.setCreatedAt(review.getCreatedAt());
+        vo.setUpdatedAt(review.getUpdatedAt());
+        vo.setEditedAt(review.getEditedAt());
+
+        Merchant merchant = merchantMapper.selectById(review.getMerchantId());
+        if (merchant != null) {
+            vo.setMerchantName(merchant.getName());
+            vo.setMerchantCategory(merchant.getCategory());
+            vo.setMerchantCuisine(merchant.getCuisine());
+        }
+
+        try {
+            List<ReviewImage> images = imageMapper.selectList(
+                    new LambdaQueryWrapper<ReviewImage>()
+                            .eq(ReviewImage::getReviewId, reviewId)
+                            .orderByAsc(ReviewImage::getSortOrder)
+            );
+            List<ReviewImageVO> imageVOs = images.stream()
+                    .map(img -> {
+                        ReviewImageVO imgVO = new ReviewImageVO();
+                        imgVO.setId(img.getId());
+                        imgVO.setImageUrl(img.getImageUrl());
+                        return imgVO;
+                    })
+                    .collect(Collectors.toList());
+            vo.setImages(imageVOs);
+        } catch (Exception e) {
+            vo.setImages(new ArrayList<>());
+        }
+
+        try {
+            List<ReviewVersion> versions = versionMapper.selectList(
+                    new LambdaQueryWrapper<ReviewVersion>()
+                            .eq(ReviewVersion::getReviewId, reviewId)
+                            .orderByDesc(ReviewVersion::getVersion)
+            );
+            List<MyReviewDetailVO.ReviewVersionVO> versionVOs = versions.stream()
+                    .map(v -> {
+                        MyReviewDetailVO.ReviewVersionVO vVO = new MyReviewDetailVO.ReviewVersionVO();
+                        vVO.setVersion(v.getVersion());
+                        vVO.setRating(v.getRating());
+                        vVO.setContent(v.getContent());
+                        vVO.setChangeType(v.getChangeType());
+                        vVO.setCreatedAt(v.getCreatedAt());
+                        return vVO;
+                    })
+                    .collect(Collectors.toList());
+            vo.setVersionHistory(versionVOs);
+        } catch (Exception e) {
+            vo.setVersionHistory(new ArrayList<>());
+        }
+
+        try {
+            ReviewReply reply = replyMapper.selectOne(
+                    new LambdaQueryWrapper<ReviewReply>()
+                            .eq(ReviewReply::getReviewId, reviewId)
+                            .eq(ReviewReply::getStatus, "VISIBLE")
+            );
+            if (reply != null) {
+                ReviewReplyVO replyVO = new ReviewReplyVO();
+                replyVO.setId(reply.getId());
+                replyVO.setReviewId(reply.getReviewId());
+                replyVO.setMerchantId(reply.getMerchantId());
+                replyVO.setReplyContent(reply.getReplyContent());
+                replyVO.setReplyTime(reply.getReplyTime());
+                replyVO.setStatus(reply.getStatus());
+                if (merchant != null) {
+                    replyVO.setMerchantName(merchant.getName());
+                }
+                vo.setMerchantReply(replyVO);
+            }
+        } catch (Exception e) {
+            vo.setMerchantReply(null);
+        }
+
+        return vo;
+    }
+
+    private String mapStatusText(String status) {
+        if (status == null) return "未知";
+        return switch (status) {
+            case "PENDING" -> "待审核";
+            case "PUBLISHED" -> "正常";
+            case "HIDDEN" -> "已隐藏";
+            case "DELETED" -> "已删除";
+            default -> status;
+        };
+    }
+
+    @Transactional
+    public ReviewReplyVO replyReview(Long merchantId, Long reviewId, String replyContent) {
+        Review review = this.getById(reviewId);
+        if (review == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "REVIEW_NOT_FOUND", "评论不存在");
+        }
+
+        if (!review.getMerchantId().equals(merchantId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "只能回复自己店铺的评价");
+        }
+
+        Merchant merchant = merchantMapper.selectById(merchantId);
+        if (merchant == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "MERCHANT_NOT_FOUND", "商家不存在");
+        }
+
+        ReviewReply existingReply = replyMapper.selectOne(
+                new LambdaQueryWrapper<ReviewReply>()
+                        .eq(ReviewReply::getReviewId, reviewId)
+        );
+
+        ReviewReply reply;
+        if (existingReply != null) {
+            reply = existingReply;
+            reply.setReplyContent(replyContent);
+            reply.setReplyTime(OffsetDateTime.now());
+            reply.setUpdatedAt(OffsetDateTime.now());
+            replyMapper.updateById(reply);
+        } else {
+            reply = new ReviewReply();
+            reply.setReviewId(reviewId);
+            reply.setMerchantId(merchantId);
+            reply.setReplyContent(replyContent);
+            reply.setReplyTime(OffsetDateTime.now());
+            reply.setStatus("VISIBLE");
+            reply.setCreatedAt(OffsetDateTime.now());
+            reply.setUpdatedAt(OffsetDateTime.now());
+            replyMapper.insert(reply);
+        }
+
+        notificationService.createReplyNotification(
+                reviewId, merchantId, replyContent, merchant.getName()
+        );
+
+        ReviewReplyVO replyVO = new ReviewReplyVO();
+        replyVO.setId(reply.getId());
+        replyVO.setReviewId(reply.getReviewId());
+        replyVO.setMerchantId(reply.getMerchantId());
+        replyVO.setReplyContent(reply.getReplyContent());
+        replyVO.setReplyTime(reply.getReplyTime());
+        replyVO.setStatus(reply.getStatus());
+        replyVO.setMerchantName(merchant.getName());
+
+        return replyVO;
     }
 
 // ==================== 评论编辑与删除 结束====================
@@ -979,7 +1283,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         if (request == null) {
             throw badRequest(
                     "REVIEW_REQUEST_REQUIRED",
-                    "Review request is required"
+                    "评价请求不能为空"
             );
         }
 
@@ -991,46 +1295,46 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         if (content.length() < MIN_CONTENT_LENGTH) {
             throw badRequest(
                     "REVIEW_CONTENT_TOO_SHORT",
-                    "Review content must be at least 10 characters"
+                    "评价内容不能少于10个字符"
             );
         }
 
         if (content.length() > MAX_CONTENT_LENGTH) {
             throw badRequest(
                     "REVIEW_CONTENT_TOO_LONG",
-                    "Review content must be 2000 characters or less"
+                    "评价内容不能超过2000个字符"
             );
         }
 
         if (request.getRating() == null) {
             throw badRequest(
                     "REVIEW_RATING_REQUIRED",
-                    "Overall rating is required"
+                    "总体评分不能为空"
             );
         }
 
         validateRating(
                 "REVIEW_RATING_INVALID",
                 request.getRating(),
-                "Overall rating"
+                "总体评分"
         );
 
         validateRating(
                 "REVIEW_TASTE_RATING_INVALID",
                 request.getTasteRating(),
-                "Taste rating"
+                "口味评分"
         );
 
         validateRating(
                 "REVIEW_ENVIRONMENT_RATING_INVALID",
                 request.getEnvironmentRating(),
-                "Environment rating"
+                "环境评分"
         );
 
         validateRating(
                 "REVIEW_SERVICE_RATING_INVALID",
                 request.getServiceRating(),
-                "Service rating"
+                "服务评分"
         );
 
         if (request.getAverageSpend() != null
@@ -1038,7 +1342,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 .compareTo(BigDecimal.ZERO) < 0) {
             throw badRequest(
                     "REVIEW_AVERAGE_SPEND_INVALID",
-                    "Average spend cannot be negative"
+                    "人均消费不能为负数"
             );
         }
     }
@@ -1051,7 +1355,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         if (value != null && (value < 1 || value > 5)) {
             throw badRequest(
                     code,
-                    fieldName + " must be between 1 and 5"
+                    fieldName + "必须在1到5分之间"
             );
         }
     }
@@ -1066,7 +1370,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             throw new ApiException(
                     HttpStatus.NOT_FOUND,
                     "MERCHANT_NOT_FOUND",
-                    "Merchant not found"
+                    "商家不存在"
             );
         }
 
@@ -1086,7 +1390,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,
                     "MERCHANT_NOT_REVIEWABLE",
-                    "This merchant is disabled or closed and cannot receive new reviews"
+                    "该商家已停用或停止营业，暂时无法接收新评价"
             );
         }
 
@@ -1317,7 +1621,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             if (!existingIds.containsAll(keepIds)) {
                 throw badRequest(
                         "REVIEW_IMAGE_KEEP_INVALID",
-                        "Some retained images do not belong to this review"
+                        "部分保留图片不属于当前评价"
                 );
             }
         }
@@ -1357,7 +1661,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 > MAX_IMAGE_COUNT) {
             throw badRequest(
                     "REVIEW_IMAGE_LIMIT_EXCEEDED",
-                    "Each review can contain at most 9 images"
+                    "每条评价最多上传9张图片"
             );
         }
 
