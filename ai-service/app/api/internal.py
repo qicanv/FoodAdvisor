@@ -18,6 +18,8 @@ from app.models.schemas import (
 from app.schemas.dialogue import DialogueExtractRequest, DialogueExtractResponse
 from app.services.dialogue_extraction_service import dialogue_extraction_service
 from app.services.review_analysis_service import review_analysis_service
+from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
+from app.services.review_summary_service import review_summary_service
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +101,19 @@ async def rag_recommend(request: dict):
     raise HTTPException(status_code=501, detail="RAG推荐功能尚未实现")
 
 
-@router.post("/reviews/summary")
-async def generate_summary(merchantId: int):
-    """评价智能总结（后续实现）"""
-    raise HTTPException(status_code=501, detail="评价总结功能尚未实现")
+@router.post("/merchants/review-summary", response_model=ReviewSummaryResponse)
+async def generate_review_summary(request: ReviewSummaryRequest):
+    """
+    商家评价智能总结（EPIC-01 Story 7）
+
+    由 Spring Boot 传入评论列表，返回结构化口碑摘要。
+    评论不足时返回 summaryStatus=INSUFFICIENT_DATA，不调用大模型。
+    """
+    logger.info(
+        f"生成评价摘要 merchantId={request.merchantId}, "
+        f"reviewCount={len(request.reviews)}"
+    )
+    return await review_summary_service.summarize(request)
 
 
 @router.get("/hot-words/{region}")
