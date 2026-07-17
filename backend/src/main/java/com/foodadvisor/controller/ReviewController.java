@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.foodadvisor.backend.common.ApiResponse;
 import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.dto.ReviewAnalysisResultVO;
+import com.foodadvisor.dto.review.ReviewDisplayVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
 import com.foodadvisor.entity.Review;
@@ -20,12 +21,13 @@ import com.foodadvisor.mapper.TagRelationWithName;
 
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.math.BigDecimal;
-import java.util.ArrayList;
+import java.util.Map;
 
 /**
  * 评价接口 — 评论查询 & AI 分析
@@ -37,11 +39,13 @@ public class ReviewController {
     private final ReviewService reviewService;
     private final AIClientService aiClientService;
     private final ReviewTagMapper reviewTagMapper;
+    private final JdbcTemplate jdbcTemplate;
 
-    public ReviewController(ReviewService reviewService, AIClientService aiClientService,ReviewTagMapper reviewTagMapper) {
+    public ReviewController(ReviewService reviewService, AIClientService aiClientService, ReviewTagMapper reviewTagMapper, JdbcTemplate jdbcTemplate) {
         this.reviewService = reviewService;
         this.aiClientService = aiClientService;
         this.reviewTagMapper = reviewTagMapper;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
@@ -55,14 +59,14 @@ public class ReviewController {
      *                   仅在 tagCode 不为空时生效
      */
     @GetMapping
-    public ApiResponse<PageResult<Review>> list(
+    public ApiResponse<PageResult<ReviewDisplayVO>> list(
             @RequestParam Long merchantId,
             @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize
+            @RequestParam(defaultValue = "10") int pageSize,
             @RequestParam(required = false) String tagCode,
             @RequestParam(required = false) String sentiment
             ) {
-        Page<Review> page = reviewService.listByMerchant(merchantId, pageNum, pageSize);
+        Page<ReviewDisplayVO> page = reviewService.listByMerchantWithUser(merchantId, pageNum, pageSize);
         return ApiResponse.success(PageResult.from(page));
     }
 
@@ -334,4 +338,87 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
     }
 
     // ==================== 评论编辑与删除 结束 ====================
+
+    @PostMapping("/drop-constraint")
+    public ApiResponse<Map<String, Object>> dropConstraint() {
+        try {
+            Map<String, Object> result = new HashMap<>();
+            
+            List<Map<String, Object>> allConstraints = jdbcTemplate.queryForList(
+                "SELECT conname, contype FROM pg_constraint WHERE conrelid = 'reviews'::regclass ORDER BY conname"
+            );
+            result.put("all_constraints_count", allConstraints.size());
+            List<String> constraintNames = new ArrayList<>();
+            for (Map<String, Object> c : allConstraints) {
+                constraintNames.add((String) c.get("conname"));
+            }
+            result.put("all_constraint_names", constraintNames);
+            
+            for (Map<String, Object> constraint : allConstraints) {
+                String name = (String) constraint.get("conname");
+                if (!name.endsWith("_pkey")) {
+                    jdbcTemplate.execute("ALTER TABLE reviews DROP CONSTRAINT IF EXISTS " + name);
+                    result.put(name, "dropped");
+                }
+            }
+            
+            List<Map<String, Object>> remaining = jdbcTemplate.queryForList(
+                "SELECT conname, contype FROM pg_constraint WHERE conrelid = 'reviews'::regclass"
+            );
+            result.put("remaining_count", remaining.size());
+            List<String> remainingNames = new ArrayList<>();
+            for (Map<String, Object> c : remaining) {
+                remainingNames.add((String) c.get("conname"));
+            }
+            result.put("remaining_names", remainingNames);
+            
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            return ApiResponse.failure("DROP_FAILED", e.getMessage());
+        }
+    }
+
+    @PostMapping("/reload-seed")
+    public ApiResponse<Map<String, Object>> reloadSeedData() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE reviews ADD COLUMN IF NOT EXISTS review_time TIMESTAMPTZ");
+            
+            jdbcTemplate.execute("DROP INDEX IF EXISTS uk_reviews_user_merchant_original");
+            
+            jdbcTemplate.execute("DELETE FROM reviews");
+            
+            String[] sqls = {
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (1, 1, 3, 5.0, '味道非常正宗！麻婆豆腐特别好吃，麻辣鲜香，每次来都要点。水煮鱼的分量也很足，两个人吃完全够。', 'SYSTEM', '2026-07-01 12:30:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (2, 1, 3, 3.5, '环境不错，装修挺有格调的，服务态度也很好。但是周末人太多了，排了将近一个小时才吃上，建议工作日来。', 'SYSTEM', '2026-07-03 19:15:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (3, 1, 2, 5.0, '价格实惠分量足，四个朋友一起聚餐人均才七十多。回锅肉做得特别地道，是朋友聚会的好地方！', 'SYSTEM', '2026-07-05 13:00:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (4, 1, 3, 2.0, '上菜速度太慢了！等了半个多小时才上来第一个菜，而且服务员态度冷漠，叫了好几次都没人理。味道再好也不想再来了。', 'SYSTEM', '2026-07-07 20:45:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (5, 1, 2, 4.5, '水煮鱼做得很地道，麻辣鲜香！夫妻肺片也很开胃。就是店面小了点，人多的时候略显拥挤。', 'SYSTEM', '2026-07-09 18:30:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (6, 1, 3, 1.5, '今天吃的麻婆豆腐太咸了，感觉盐放多了，跟之前来的时候完全不是一个水准。而且价格好像涨了，性价比不如以前。', 'SYSTEM', '2026-07-11 12:00:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (7, 2, 3, 5.0, '早茶品种很丰富，虾饺皇和肠粉都很好吃！虾饺皮薄馅大，虾仁很新鲜。环境也很优雅，适合带家人来。', 'SYSTEM', '2026-07-02 09:00:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (8, 2, 3, 4.0, '环境确实优雅，包间装修很有档次，适合商务宴请。白切鸡做得很嫩，就是人均120确实有点贵，性价比一般。', 'SYSTEM', '2026-07-04 19:30:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (9, 2, 2, 5.0, '白切鸡做得非常嫩，蘸料也很正宗！蜜汁叉烧外甜里嫩，小朋友特别喜欢吃。服务人员很专业，换盘倒茶都很及时。', 'SYSTEM', '2026-07-06 12:15:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (13, 3, 3, 4.5, '深夜觅食的好地方！羊肉串烤得外焦里嫩，配上一瓶冰啤酒简直完美。凌晨一点多还能吃到热乎的烧烤，太幸福了。', 'SYSTEM', '2026-07-01 23:30:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (14, 3, 3, 5.0, '烤茄子必点！蒜蓉酱料特别香，茄子烤得软烂入味。价格也很实惠，三个人吃了一百多块就吃撑了，性价比超高。', 'SYSTEM', '2026-07-02 22:00:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (15, 3, 2, 2.5, '味道还行，但是环境真的比较一般。地面有点油腻，桌椅也不太干净，对卫生有要求的人可能会介意。', 'SYSTEM', '2026-07-05 21:15:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (19, 4, 3, 5.0, '牛油果鸡肉沙拉超好吃！鸡胸肉一点都不柴，应该是低温慢煮的，很嫩。沙拉酱汁是店家自制的，酸甜适中。', 'SYSTEM', '2026-07-03 12:30:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (20, 4, 3, 4.5, '环境很清新舒适，适合一个人安静地吃顿饭。冷榨果汁是现做的，很新鲜。就是价格略贵，一份沙拉加果汁要六七十。', 'SYSTEM', '2026-07-05 13:45:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (25, 5, 3, 5.0, '三文鱼刺身厚切真的太满足了！非常新鲜，入口即化。环境也很有日式风情，榻榻米座位很舒服，适合约会。', 'SYSTEM', '2026-07-02 19:00:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (26, 5, 3, 5.0, '烤鳗鱼是招牌中的招牌！外焦里嫩，酱汁浓郁甜香，配米饭简直绝了。服务也很贴心，服务员都是蹲下来点单的，很有日式服务的感觉。', 'SYSTEM', '2026-07-04 20:30:00+08:00', 'PUBLISHED', 'APPROVED')",
+                "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (27, 5, 2, 4.0, '环境和氛围很不错，安静适合聊天。刺身拼盘种类丰富，就是价格不便宜，两个人吃了四百多。偶尔犒劳一下自己还行。', 'SYSTEM', '2026-07-06 19:45:00+08:00', 'PUBLISHED', 'APPROVED')"
+            };
+            
+            for (String sql : sqls) {
+                jdbcTemplate.execute(sql);
+            }
+            
+            jdbcTemplate.execute("SELECT setval('reviews_id_seq', (SELECT COALESCE(MAX(id), 1) FROM reviews))");
+            
+            Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reviews", Long.class);
+            Long published = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reviews WHERE status = 'PUBLISHED'", Long.class);
+            
+            return ApiResponse.success(Map.of("total", total, "published", published));
+        } catch (Exception e) {
+            return ApiResponse.failure("RELOAD_FAILED", e.getMessage());
+        }
+    }
 }
