@@ -1,103 +1,199 @@
 <template>
-  <main class="model-config-page">
-    <nav class="admin-nav">
-      <div class="nav-container">
-        <div class="logo-section">
-          <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
-          <span class="brand-name">食尚参谋 - 管理端</span>
-        </div>
-        <div class="nav-links">
-          <a href="/admin/home" class="nav-link">餐厅管理</a>
-          <a href="/admin/model-configs" class="nav-link active">模型配置</a>
-          <button class="logout-btn" @click="handleLogout">退出登录</button>
-        </div>
-      </div>
-    </nav>
-    <section class="toolbar">
-      <div>
-        <h1>模型配置</h1>
-        <p>管理不同业务场景使用的大模型服务。</p>
-      </div>
-      <el-button type="primary" @click="openCreateDialog">新增配置</el-button>
-    </section>
-
-    <el-alert
-      v-if="errorMessage"
-      class="notice"
-      type="error"
-      :title="errorMessage"
-      show-icon
-    />
-
-    <el-table
-      v-loading="loading"
-      :data="configs"
-      class="config-table"
-      empty-text="暂无模型配置"
-    >
-      <el-table-column prop="configName" label="配置名称" min-width="140" />
-      <el-table-column prop="provider" label="服务商" width="150" />
-      <el-table-column prop="modelName" label="模型" min-width="150" />
-      <el-table-column prop="baseUrl" label="接口地址" min-width="220" />
-      <el-table-column prop="maskedApiKey" label="访问密钥" width="150" />
-      <el-table-column prop="timeoutMs" label="超时(ms)" width="110" />
-      <el-table-column prop="temperature" label="温度" width="90" />
-      <el-table-column prop="maxOutputTokens" label="最大输出" width="110" />
-      <el-table-column prop="status" label="状态" width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'">
-            {{ row.status }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="连接测试" min-width="180">
-        <template #default="{ row }">
-          <el-tag
-            v-if="row.lastTestStatus"
-            :type="row.lastTestStatus === 'SUCCESS' ? 'success' : 'danger'"
-          >
-            {{ row.lastTestStatus }}
-          </el-tag>
-          <span class="test-message">{{ row.lastTestMessage }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="190" fixed="right">
-        <template #default="{ row }">
-          <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
-          <el-button size="small" type="primary" @click="runTest(row)">
-            测试
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-
-    <section class="scene-section">
-      <h2>场景绑定</h2>
-      <div class="scene-grid">
-        <div
-          v-for="scene in scenes"
-          :key="scene.value"
-          class="scene-row"
+  <AdminLayout title="模型配置" subtitle="管理不同业务场景使用的大模型服务">
+    <template #sidebar>
+      <div class="page-sidebar-nav">
+        <span class="page-sidebar-title" style="color: #ffffff;">模型配置</span>
+        <div 
+          v-for="item in sidebarItems" 
+          :key="item.key"
+          :class="['page-sidebar-item', { active: activeTab === item.key }]"
+          @click="activeTab = item.key"
         >
-          <div>
-            <strong>{{ scene.label }}</strong>
-            <span>{{ getBindingName(scene.value) }}</span>
-          </div>
-          <el-select
-            v-model="sceneSelections[scene.value]"
-            placeholder="选择已测试成功的配置"
-            @change="value => saveSceneBinding(scene.value, value)"
-          >
-            <el-option
-              v-for="config in testedActiveConfigs"
-              :key="config.id"
-              :label="`${config.configName} / ${config.modelName}`"
-              :value="config.id"
-            />
-          </el-select>
+          <span class="menu-icon">{{ item.icon }}</span>
+          <span style="color: #ffffff;">{{ item.label }}</span>
         </div>
       </div>
-    </section>
+    </template>
+
+    <div v-if="activeTab === 'list'" class="tab-content">
+      <section class="toolbar">
+        <div>
+          <h1>模型配置列表</h1>
+          <p>管理不同业务场景使用的大模型服务。</p>
+        </div>
+        <el-button type="primary" @click="openCreateDialog">新增配置</el-button>
+      </section>
+
+      <el-alert
+        v-if="errorMessage"
+        class="notice"
+        type="error"
+        :title="errorMessage"
+        show-icon
+      />
+
+      <el-table
+        v-loading="loading"
+        :data="configs"
+        class="config-table"
+        empty-text="暂无模型配置"
+      >
+        <el-table-column prop="configName" label="配置名称" min-width="140" />
+        <el-table-column prop="provider" label="服务商" width="150" />
+        <el-table-column prop="modelName" label="模型" min-width="150" />
+        <el-table-column prop="baseUrl" label="接口地址" min-width="220" />
+        <el-table-column prop="maskedApiKey" label="访问密钥" width="150" />
+        <el-table-column prop="timeoutMs" label="超时(ms)" width="110" />
+        <el-table-column prop="temperature" label="温度" width="90" />
+        <el-table-column prop="maxOutputTokens" label="最大输出" width="110" />
+        <el-table-column prop="status" label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'">
+              {{ row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="连接测试" min-width="180">
+          <template #default="{ row }">
+            <el-tag
+              v-if="row.lastTestStatus"
+              :type="row.lastTestStatus === 'SUCCESS' ? 'success' : 'danger'"
+            >
+              {{ row.lastTestStatus }}
+            </el-tag>
+            <span class="test-message">{{ row.lastTestMessage }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="190" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
+            <el-button size="small" type="primary" @click="runTest(row)">
+              测试
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <div v-if="activeTab === 'add'" class="tab-content">
+      <section class="toolbar">
+        <div>
+          <h1>新增模型配置</h1>
+          <p>添加新的大模型服务配置。</p>
+        </div>
+      </section>
+
+      <el-alert
+        v-if="errorMessage"
+        class="notice"
+        type="error"
+        :title="errorMessage"
+        show-icon
+      />
+
+      <div class="form-container">
+        <el-form
+          ref="formRef"
+          :model="form"
+          :rules="rules"
+          label-width="120px"
+        >
+          <el-form-item label="配置名称" prop="configName">
+            <el-input v-model="form.configName" />
+          </el-form-item>
+          <el-form-item label="服务商" prop="provider">
+            <el-input v-model="form.provider" />
+          </el-form-item>
+          <el-form-item label="模型名称" prop="modelName">
+            <el-input v-model="form.modelName" />
+          </el-form-item>
+          <el-form-item label="接口地址" prop="baseUrl">
+            <el-input v-model="form.baseUrl" placeholder="https://api.example.com/v1" />
+          </el-form-item>
+          <el-form-item label="访问密钥" prop="apiKey">
+            <el-input
+              v-model="form.apiKey"
+              type="password"
+              show-password
+              placeholder="请输入访问密钥"
+            />
+          </el-form-item>
+          <el-form-item label="超时时间" prop="timeoutMs">
+            <el-input-number v-model="form.timeoutMs" :min="1000" :max="120000" />
+          </el-form-item>
+          <el-form-item label="温度参数" prop="temperature">
+            <el-input-number
+              v-model="form.temperature"
+              :min="0"
+              :max="2"
+              :step="0.1"
+            />
+          </el-form-item>
+          <el-form-item label="最大输出" prop="maxOutputTokens">
+            <el-input-number
+              v-model="form.maxOutputTokens"
+              :min="1"
+              :max="32000"
+            />
+          </el-form-item>
+          <el-form-item label="状态" prop="status">
+            <el-select v-model="form.status">
+              <el-option label="启用" value="ACTIVE" />
+              <el-option label="停用" value="DISABLED" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+
+        <div class="form-actions">
+          <el-button @click="resetForm">重置</el-button>
+          <el-button type="primary" @click="saveConfig">保存</el-button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="activeTab === 'binding'" class="tab-content">
+      <section class="toolbar">
+        <div>
+          <h1>场景绑定</h1>
+          <p>为不同业务场景绑定已测试成功的模型配置。</p>
+        </div>
+      </section>
+
+      <el-alert
+        v-if="errorMessage"
+        class="notice"
+        type="error"
+        :title="errorMessage"
+        show-icon
+      />
+
+      <div class="scene-container">
+        <div class="scene-grid">
+          <div
+            v-for="scene in scenes"
+            :key="scene.value"
+            class="scene-row"
+          >
+            <div>
+              <strong>{{ scene.label }}</strong>
+              <span>{{ getBindingName(scene.value) }}</span>
+            </div>
+            <el-select
+              v-model="sceneSelections[scene.value]"
+              placeholder="选择已测试成功的配置"
+              @change="value => saveSceneBinding(scene.value, value)"
+            >
+              <el-option
+                v-for="config in testedActiveConfigs"
+                :key="config.id"
+                :label="`${config.configName} / ${config.modelName}`"
+                :value="config.id"
+              />
+            </el-select>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <el-dialog
       v-model="dialogVisible"
@@ -161,12 +257,12 @@
         <el-button type="primary" @click="saveConfig">保存</el-button>
       </template>
     </el-dialog>
-  </main>
+  </AdminLayout>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import AdminLayout from '../../components/AdminLayout.vue'
 import {
   bindScene,
   createModelConfig,
@@ -176,14 +272,13 @@ import {
   updateModelConfig,
 } from '../../api/modelConfig'
 
-const router = useRouter()
+const activeTab = ref('list')
 
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userRole')
-  router.push('/admin')
-}
+const sidebarItems = [
+  { key: 'list', label: '配置列表', icon: '📋' },
+  { key: 'add', label: '新增配置', icon: '➕' },
+  { key: 'binding', label: '场景绑定', icon: '🔗' },
+]
 
 const scenes = [
   { label: '探店推荐', value: 'STORE_RECOMMENDATION' },
@@ -363,89 +458,8 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.model-config-page {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 90px 20px 40px;
-}
-
-.admin-nav {
-  background: #ffffff;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  padding: 16px 0;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-}
-
-.nav-container {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 0 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.logo-section {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.logo-img {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-}
-
-.brand-name {
-  font-size: 20px;
-  font-weight: 700;
-  color: #1890ff;
-}
-
-.nav-links {
-  display: flex;
-  gap: 24px;
-  align-items: center;
-}
-
-.nav-link {
-  font-size: 15px;
-  color: #666666;
-  text-decoration: none;
-  padding: 8px 16px;
-  border-radius: 8px;
-  transition: all 0.2s;
-}
-
-.nav-link:hover {
-  color: #1890ff;
-  background: rgba(24, 144, 255, 0.1);
-}
-
-.nav-link.active {
-  color: #ffffff;
-  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
-}
-
-.logout-btn {
-  padding: 8px 16px;
-  background: #f5f5f5;
-  color: #666666;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.logout-btn:hover {
-  background: #e8e8e8;
-  color: #333333;
+.tab-content {
+  width: 100%;
 }
 
 .toolbar {
@@ -456,8 +470,7 @@ onMounted(loadData)
   margin-bottom: 18px;
 }
 
-.toolbar h1,
-.scene-section h2 {
+.toolbar h1 {
   margin: 0;
   color: #1f2d3d;
 }
@@ -482,10 +495,27 @@ onMounted(loadData)
   font-size: 12px;
 }
 
-.scene-section {
-  margin-top: 28px;
-  padding-top: 22px;
-  border-top: 1px solid #dcdfe6;
+.form-container {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  padding: 24px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.scene-container {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  padding: 24px;
 }
 
 .scene-grid {
