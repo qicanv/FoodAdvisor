@@ -461,7 +461,7 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
     public ApiResponse<Map<String, Object>> dropConstraint() {
         try {
             Map<String, Object> result = new HashMap<>();
-            
+
             List<Map<String, Object>> allConstraints = jdbcTemplate.queryForList(
                 "SELECT conname, contype FROM pg_constraint WHERE conrelid = 'reviews'::regclass ORDER BY conname"
             );
@@ -471,7 +471,7 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
                 constraintNames.add((String) c.get("conname"));
             }
             result.put("all_constraint_names", constraintNames);
-            
+
             for (Map<String, Object> constraint : allConstraints) {
                 String name = (String) constraint.get("conname");
                 if (!name.endsWith("_pkey")) {
@@ -479,7 +479,7 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
                     result.put(name, "dropped");
                 }
             }
-            
+
             List<Map<String, Object>> remaining = jdbcTemplate.queryForList(
                 "SELECT conname, contype FROM pg_constraint WHERE conrelid = 'reviews'::regclass"
             );
@@ -489,7 +489,7 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
                 remainingNames.add((String) c.get("conname"));
             }
             result.put("remaining_names", remainingNames);
-            
+
             return ApiResponse.success(result);
         } catch (Exception e) {
             return ApiResponse.failure("DROP_FAILED", e.getMessage());
@@ -500,11 +500,11 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
     public ApiResponse<Map<String, Object>> reloadSeedData() {
         try {
             jdbcTemplate.execute("ALTER TABLE reviews ADD COLUMN IF NOT EXISTS review_time TIMESTAMPTZ");
-            
+
             jdbcTemplate.execute("DROP INDEX IF EXISTS uk_reviews_user_merchant_original");
-            
+
             jdbcTemplate.execute("DELETE FROM reviews");
-            
+
             String[] sqls = {
                 "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (1, 1, 3, 5.0, '味道非常正宗！麻婆豆腐特别好吃，麻辣鲜香，每次来都要点。水煮鱼的分量也很足，两个人吃完全够。', 'SYSTEM', '2026-07-01 12:30:00+08:00', 'PUBLISHED', 'APPROVED')",
                 "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (2, 1, 3, 3.5, '环境不错，装修挺有格调的，服务态度也很好。但是周末人太多了，排了将近一个小时才吃上，建议工作日来。', 'SYSTEM', '2026-07-03 19:15:00+08:00', 'PUBLISHED', 'APPROVED')",
@@ -524,13 +524,13 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
                 "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (26, 5, 3, 5.0, '烤鳗鱼是招牌中的招牌！外焦里嫩，酱汁浓郁甜香，配米饭简直绝了。服务也很贴心，服务员都是蹲下来点单的，很有日式服务的感觉。', 'SYSTEM', '2026-07-04 20:30:00+08:00', 'PUBLISHED', 'APPROVED')",
                 "INSERT INTO reviews (id, merchant_id, user_id, rating, content, source, review_time, status, moderation_status) VALUES (27, 5, 2, 4.0, '环境和氛围很不错，安静适合聊天。刺身拼盘种类丰富，就是价格不便宜，两个人吃了四百多。偶尔犒劳一下自己还行。', 'SYSTEM', '2026-07-06 19:45:00+08:00', 'PUBLISHED', 'APPROVED')"
             };
-            
+
             for (String sql : sqls) {
                 jdbcTemplate.execute(sql);
             }
-            
+
             jdbcTemplate.execute("SELECT setval('reviews_id_seq', (SELECT COALESCE(MAX(id), 1) FROM reviews))");
-            
+
             jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS review_reply (
                     id BIGSERIAL PRIMARY KEY,
@@ -546,9 +546,9 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
                     CONSTRAINT ck_review_reply_status CHECK (status IN ('VISIBLE', 'HIDDEN'))
                 )
                 """);
-            
+
             jdbcTemplate.execute("DELETE FROM review_reply");
-            
+
             String[] replySqls = {
                 "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (1, 1, 1, '非常感谢您的认可！麻婆豆腐是本店招牌，我们会持续把控麻辣口感，期待您再次光临~', '2026-07-01 14:20:00+08:00', 'VISIBLE')",
                 "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (2, 4, 1, '非常抱歉给您带来不好的用餐体验！我们已经针对上菜慢、服务问题全员培训，欢迎您下次到店监督我们的改进。', '2026-07-07 21:30:00+08:00', 'VISIBLE')",
@@ -557,13 +557,13 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
                 "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (5, 19, 4, '很高兴您喜欢我们的鸡胸沙拉！鸡胸全部低温慢煮无油，减脂人群专属搭配，欢迎常来~', '2026-07-03 13:00:00+08:00', 'VISIBLE')",
                 "INSERT INTO review_reply (id, review_id, merchant_id, reply_content, reply_time, status) VALUES (6, 26, 5, '烤鳗鱼是每日现蒲烧，酱汁独家调配，感谢喜爱！纪念日欢迎提前预约，我们免费布置桌面。', '2026-07-04 21:00:00+08:00', 'VISIBLE')"
             };
-            
+
             for (String sql : replySqls) {
                 jdbcTemplate.execute(sql);
             }
-            
+
             jdbcTemplate.execute("SELECT setval('review_reply_id_seq', (SELECT COALESCE(MAX(id), 1) FROM review_reply))");
-            
+
             jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS notifications (
                     id BIGSERIAL PRIMARY KEY,
@@ -586,15 +586,15 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
                     CONSTRAINT ck_notifications_status CHECK (status IN ('UNREAD', 'READ'))
                 )
                 """);
-            
+
             jdbcTemplate.execute("DELETE FROM notifications");
-            
+
             jdbcTemplate.execute("SELECT setval('notifications_id_seq', (SELECT COALESCE(MAX(id), 1) FROM notifications))");
-            
+
             Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reviews", Long.class);
             Long published = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reviews WHERE status = 'PUBLISHED'", Long.class);
             Long replyCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM review_reply", Long.class);
-            
+
             return ApiResponse.success(Map.of("total", total, "published", published, "replyCount", replyCount));
         } catch (Exception e) {
             return ApiResponse.failure("RELOAD_FAILED", e.getMessage());
