@@ -330,6 +330,66 @@ class DiningDialogueMessageServiceTest {
     }
 
     @Test
+    void shouldNotRecommendForGeneralChatIntent() {
+        AtomicReference<Object> token =
+                new AtomicReference<>();
+
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        when(chatMessageMapper.selectOne(any()))
+                .thenReturn(null, null, null);
+        when(valueOperations.setIfAbsent(
+                anyString(),
+                any(),
+                any()
+        )).thenAnswer(invocation -> {
+            token.set(invocation.getArgument(1));
+            return true;
+        });
+        when(valueOperations.get(anyString()))
+                .thenAnswer(invocation -> token.get());
+        when(redisTemplate.delete(anyString()))
+                .thenReturn(true);
+        when(dialogueService.continueDialogue(
+                any(),
+                any(),
+                any(),
+                any()
+        )).thenReturn(generalChatDialogue());
+        when(chatMessageMapper.insert(any(ChatMessage.class)))
+                .thenAnswer(invocation -> {
+                    ChatMessage message =
+                            invocation.getArgument(0);
+                    message.setId(13L);
+                    return 1;
+                });
+        when(chatMessageMapper.updateById(any(ChatMessage.class)))
+                .thenReturn(1);
+
+        DialogueMessageResponse response =
+                service.sendMessage(1L, request("req-general"));
+
+        assertAll(
+                () -> assertEquals(
+                        "CLARIFICATION",
+                        response.getResponseType()
+                ),
+                () -> assertEquals(
+                        "AI_MODEL",
+                        response.getExtractor()
+                ),
+                () -> assertFalse(response.getDegraded()),
+                () -> assertEquals(
+                        null,
+                        response.getRecommendation()
+                )
+        );
+
+        verify(recommendationRankingService, never())
+                .rank(any(), any());
+    }
+
+    @Test
     void shouldReturnHistoryWithRecommendationCardsFromDatabase() {
         when(chatSessionMapper.selectById(1L))
                 .thenReturn(activeSession());
@@ -526,6 +586,20 @@ class DiningDialogueMessageServiceTest {
         response.setStage("SEARCHING");
         response.setConstraints(new ConstraintState());
         response.setReadyForRecommendation(true);
+        return response;
+    }
+
+    private DialogueContinueResponse generalChatDialogue() {
+        DialogueContinueResponse response =
+                new DialogueContinueResponse();
+        response.setSessionId(1L);
+        response.setUserMessageId(10L);
+        response.setStage("COLLECTING");
+        response.setConstraints(new ConstraintState());
+        response.setReadyForRecommendation(false);
+        response.setIntent("GENERAL_CHAT");
+        response.setExtractor("AI_MODEL");
+        response.setDegraded(false);
         return response;
     }
 

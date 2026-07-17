@@ -132,7 +132,6 @@ public class DialogueService {
      * 8. 保存本轮对话状态；
      * 9. 返回本轮对话结果。
      */
-    @Transactional
     public DialogueContinueResponse continueDialogue(
             Long sessionId,
             Long userId,
@@ -146,7 +145,6 @@ public class DialogueService {
         );
     }
 
-    @Transactional
     public DialogueContinueResponse continueDialogue(
             Long sessionId,
             Long userId,
@@ -247,6 +245,11 @@ public class DialogueService {
             constraints = new ConstraintState();
         }
 
+        String intent = extractionResponse.getIntent();
+        boolean nonRecommendationIntent =
+                "GENERAL_CHAT".equals(intent)
+                        || "UNKNOWN".equals(intent);
+
         /*
          * 取得本轮新产生的冲突。
          */
@@ -291,7 +294,11 @@ public class DialogueService {
          * 3. 只返回冲突确认问题；
          * 4. 不返回普通缺失字段问题。
          */
-        if (hasConflicts(conflicts)) {
+        if (nonRecommendationIntent) {
+            stage = STAGE_COLLECTING;
+            readyForRecommendation = false;
+            questions = new ArrayList<>();
+        } else if (hasConflicts(conflicts)) {
             stage = STAGE_CONFIRMING;
             readyForRecommendation = false;
 
@@ -395,6 +402,13 @@ public class DialogueService {
                 directRecommendRequested
         );
         response.setConflicts(conflicts);
+        response.setIntent(intent);
+        response.setExtractor(
+                extractionResponse.getExtractor()
+        );
+        response.setDegraded(
+                extractionResponse.getDegraded()
+        );
 
         return response;
     }

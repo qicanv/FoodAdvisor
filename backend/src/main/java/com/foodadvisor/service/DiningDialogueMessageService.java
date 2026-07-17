@@ -193,7 +193,6 @@ public class DiningDialogueMessageService {
         return response;
     }
 
-    @Transactional
     protected DialogueMessageResponse processMessage(
             Long sessionId,
             DialogueMessageRequest request
@@ -216,7 +215,9 @@ public class DiningDialogueMessageService {
                             assistantText,
                             TYPE_CLARIFICATION,
                             "NEED_MORE_INFORMATION",
-                            null
+                            null,
+                            dialogue.getExtractor(),
+                            dialogue.getDegraded()
                     );
 
             DialogueMessageResponse response =
@@ -268,7 +269,9 @@ public class DiningDialogueMessageService {
                         assistantText,
                         responseType,
                         recommendation.getStatus(),
-                        recommendation.getRecommendationId()
+                        recommendation.getRecommendationId(),
+                        dialogue.getExtractor(),
+                        dialogue.getDegraded()
                 );
 
         attachRecommendationMessages(
@@ -528,7 +531,9 @@ public class DiningDialogueMessageService {
             String content,
             String responseType,
             String status,
-            Long recommendationId
+            Long recommendationId,
+            String extractor,
+            Boolean degraded
     ) {
         ChatMessage message = new ChatMessage();
         message.setSessionId(sessionId);
@@ -541,7 +546,9 @@ public class DiningDialogueMessageService {
                         requestId,
                         responseType,
                         status,
-                        recommendationId
+                        recommendationId,
+                        extractor,
+                        degraded
                 ))
         );
         message.setCreatedAt(OffsetDateTime.now());
@@ -589,15 +596,25 @@ public class DiningDialogueMessageService {
             String requestId,
             String responseType,
             String status,
-            Long recommendationId
+            Long recommendationId,
+            String extractor,
+            Boolean degraded
     ) {
         Map<String, Object> metadata =
                 new LinkedHashMap<>();
         metadata.put("requestId", requestId);
         metadata.put("responseType", responseType);
         metadata.put("status", status);
-        metadata.put("extractor", "RULE_FALLBACK");
-        metadata.put("degraded", true);
+        metadata.put(
+                "extractor",
+                extractor == null
+                        ? "RULE_FALLBACK"
+                        : extractor
+        );
+        metadata.put(
+                "degraded",
+                degraded == null || degraded
+        );
 
         if (recommendationId != null) {
             metadata.put("recommendationId", recommendationId);
@@ -677,14 +694,22 @@ public class DiningDialogueMessageService {
                 dialogue.getMissingFields()
         );
         response.setRecommendation(recommendation);
-        response.setExtractor("RULE_FALLBACK");
-        response.setDegraded(true);
+        response.setExtractor(dialogue.getExtractor());
+        response.setDegraded(dialogue.getDegraded());
         return response;
     }
 
     private String buildClarificationText(
             DialogueContinueResponse dialogue
     ) {
+        if ("GENERAL_CHAT".equals(dialogue.getIntent())) {
+            return "我可以根据人数、预算、菜系、距离和用餐场景为您推荐商家，请告诉我您的用餐需求。";
+        }
+
+        if ("UNKNOWN".equals(dialogue.getIntent())) {
+            return "请补充您的探店需求，例如人数、预算、菜系、距离或用餐场景。";
+        }
+
         if (dialogue.getQuestions() == null
                 || dialogue.getQuestions().isEmpty()) {
             return "还需要补充一些用餐需求后，我再为您推荐商家。";
