@@ -2,9 +2,15 @@ package com.foodadvisor.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.foodadvisor.dto.ai.DialogueExtractAiRequest;
+import com.foodadvisor.dto.ai.DialogueExtractAiResponse;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
@@ -24,9 +30,24 @@ public class AIClientService {
     @Value("${ai-service.internal-token:}")
     private String internalToken;
 
+    @Value("${ai-service.connect-timeout:5000}")
+    private int connectTimeout;
+
+    @Value("${ai-service.read-timeout:60000}")
+    private int readTimeout;
+
     public AIClientService(ObjectMapper objectMapper) {
         this.restTemplate = new RestTemplate();
         this.objectMapper = objectMapper;
+    }
+
+    @PostConstruct
+    void configureTimeouts() {
+        SimpleClientHttpRequestFactory requestFactory =
+                new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeout);
+        requestFactory.setReadTimeout(readTimeout);
+        restTemplate.setRequestFactory(requestFactory);
     }
 
     /**
@@ -61,6 +82,27 @@ public class AIClientService {
         return post(url, request);
     }
 
+    public DialogueExtractAiResponse extractDialogueConstraints(
+            DialogueExtractAiRequest request
+    ) {
+        String url =
+                aiServiceBaseUrl + "/internal/dialogue/extract";
+
+        try {
+            JsonNode response = post(url, request);
+            return objectMapper.treeToValue(
+                    response,
+                    DialogueExtractAiResponse.class
+            );
+        } catch (Exception exception) {
+            throw new RuntimeException(
+                    "AI dialogue extraction failed: "
+                            + exception.getMessage(),
+                    exception
+            );
+        }
+    }
+
     /**
      * 健康检查
      */
@@ -74,7 +116,7 @@ public class AIClientService {
         }
     }
 
-    private JsonNode post(String url, Map<String, Object> body) {
+    private JsonNode post(String url, Object body) {
         try {
             requireInternalToken();
             HttpHeaders headers = new HttpHeaders();
@@ -85,6 +127,17 @@ public class AIClientService {
 
             ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
             return objectMapper.readTree(response.getBody());
+        } catch (HttpStatusCodeException e) {
+            throw new RuntimeException(
+                    "AI service HTTP "
+                            + e.getStatusCode().value(),
+                    e
+            );
+        } catch (ResourceAccessException e) {
+            throw new RuntimeException(
+                    "AI service connection failed",
+                    e
+            );
         } catch (Exception e) {
             throw new RuntimeException("AI service call failed: " + e.getMessage(), e);
         }
