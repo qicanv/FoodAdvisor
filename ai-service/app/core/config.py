@@ -30,6 +30,10 @@ class Settings(BaseSettings):
 
     sentiment_low_confidence_threshold: float = 0.6
 
+    sentiment_analysis_mode: str = "local"  # local / llm / hybrid
+    ml_model_path: str = "../train/model/best"
+    ml_device: str = "auto"  # auto / cpu / cuda
+
     request_timeout_seconds: int = 30
 
     model_config = SettingsConfigDict(
