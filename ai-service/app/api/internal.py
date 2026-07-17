@@ -15,6 +15,8 @@ from app.models.schemas import (
     AnalyzeRequest, AnalyzeResponse,
     BatchAnalyzeRequest, BatchAnalyzeResponse
 )
+from app.schemas.dialogue import DialogueExtractRequest, DialogueExtractResponse
+from app.services.dialogue_extraction_service import dialogue_extraction_service
 from app.services.review_analysis_service import review_analysis_service
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,14 @@ async def batch_analyze_reviews(request: BatchAnalyzeRequest):
         results=results,
         errors=errors
     )
+
+
+@router.post("/dialogue/extract", response_model=DialogueExtractResponse)
+async def extract_dialogue_constraints(request: DialogueExtractRequest):
+    if not request.content or not request.content.strip():
+        raise HTTPException(status_code=422, detail="content must not be blank")
+
+    return await dialogue_extraction_service.extract(request)
 
 
 # ---- 以下为后续 Sprint 接口骨架，仅定义路由签名 ----
