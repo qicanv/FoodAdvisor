@@ -4,25 +4,41 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.foodadvisor.dto.ai.DialogueExtractAiRequest;
 import com.foodadvisor.dto.ai.DialogueExtractAiResponse;
+import com.foodadvisor.entity.AiCallLog;
+import com.foodadvisor.entity.AuditLog;
+import com.foodadvisor.util.SensitiveLogSanitizer;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
-/**
- * AI 服务调用客户端 — 通过 HTTP 调用 FastAPI
- */
 @Service
 public class AIClientService {
 
+    private static final Logger log =
+            LoggerFactory.getLogger(AIClientService.class);
+
+    private static final int MAX_ERROR_LENGTH = 300;
+
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final AiCallLogService aiCallLogService;
+    private final AuditLogService auditLogService;
+    private final SensitiveLogSanitizer sanitizer;
 
     @Value("${ai-service.base-url}")
     private String aiServiceBaseUrl;
@@ -36,9 +52,17 @@ public class AIClientService {
     @Value("${ai-service.read-timeout:60000}")
     private int readTimeout;
 
-    public AIClientService(ObjectMapper objectMapper) {
+    public AIClientService(
+            ObjectMapper objectMapper,
+            AiCallLogService aiCallLogService,
+            AuditLogService auditLogService,
+            SensitiveLogSanitizer sanitizer
+    ) {
         this.restTemplate = new RestTemplate();
         this.objectMapper = objectMapper;
+        this.aiCallLogService = aiCallLogService;
+        this.auditLogService = auditLogService;
+        this.sanitizer = sanitizer;
     }
 
     @PostConstruct
@@ -50,10 +74,12 @@ public class AIClientService {
         restTemplate.setRequestFactory(requestFactory);
     }
 
-    /**
-     * 调用评论分析接口（V0.3 — 支持 reviewVersion）
-     */
-    public JsonNode analyzeReview(Long reviewId, Long merchantId, String content, Integer reviewVersion) {
+    public JsonNode analyzeReview(
+            Long reviewId,
+            Long merchantId,
+            String content,
+            Integer reviewVersion
+    ) {
         String url = aiServiceBaseUrl + "/internal/reviews/analyze";
 
         Map<String, Object> request = Map.of(
@@ -63,33 +89,34 @@ public class AIClientService {
                 "content", content
         );
 
-        return post(url, request);
+        return post(url, request, "REVIEW_ANALYSIS");
     }
 
-    /**
-     * 调用评论分析接口（兼容旧调用）
-     */
-    public JsonNode analyzeReview(Long reviewId, Long merchantId, String content) {
+    public JsonNode analyzeReview(
+            Long reviewId,
+            Long merchantId,
+            String content
+    ) {
         return analyzeReview(reviewId, merchantId, content, 1);
     }
 
-    /**
-     * 批量分析评论
-     */
-    public JsonNode batchAnalyzeReviews(java.util.List<Map<String, Object>> reviews) {
+    public JsonNode batchAnalyzeReviews(List<Map<String, Object>> reviews) {
         String url = aiServiceBaseUrl + "/internal/reviews/batch-analyze";
         Map<String, Object> request = Map.of("reviews", reviews);
-        return post(url, request);
+        return post(url, request, "BATCH_REVIEW_ANALYSIS");
     }
 
     public DialogueExtractAiResponse extractDialogueConstraints(
             DialogueExtractAiRequest request
     ) {
-        String url =
-                aiServiceBaseUrl + "/internal/dialogue/extract";
+        String url = aiServiceBaseUrl + "/internal/dialogue/extract";
 
         try {
-            JsonNode response = post(url, request);
+            JsonNode response = post(
+                    url,
+                    request,
+                    "DIALOGUE_CONSTRAINT_EXTRACTION"
+            );
             return objectMapper.treeToValue(
                     response,
                     DialogueExtractAiResponse.class
@@ -103,43 +130,126 @@ public class AIClientService {
         }
     }
 
-    /**
-     * 健康检查
-     */
     public boolean isHealthy() {
         try {
             String url = aiServiceBaseUrl + "/health";
-            ResponseEntity<String> resp = restTemplate.getForEntity(url, String.class);
-            return resp.getStatusCode().is2xxSuccessful();
-        } catch (Exception e) {
+            ResponseEntity<String> response =
+                    restTemplate.getForEntity(url, String.class);
+            return response.getStatusCode().is2xxSuccessful();
+        } catch (Exception exception) {
             return false;
         }
     }
 
-    private JsonNode post(String url, Object body) {
+    private JsonNode post(
+            String url,
+            Object body,
+            String functionType
+    ) {
+        String traceId = "ai-" + UUID.randomUUID();
+        long startNanos = System.nanoTime();
+        OffsetDateTime startedAt = OffsetDateTime.now();
+        String requestSummary = requestSummary(body, functionType);
+        Integer inputLength = payloadLength(body);
+
         try {
             requireInternalToken();
+
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("X-Internal-Token", internalToken);
-            HttpEntity<String> entity = new HttpEntity<>(
-                    objectMapper.writeValueAsString(body), headers);
 
-            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
-            return objectMapper.readTree(response.getBody());
-        } catch (HttpStatusCodeException e) {
-            throw new RuntimeException(
+            HttpEntity<String> entity = new HttpEntity<>(
+                    objectMapper.writeValueAsString(body),
+                    headers
+            );
+
+            ResponseEntity<String> response =
+                    restTemplate.postForEntity(url, entity, String.class);
+            int latencyMs = latencyMs(startNanos);
+            String responseBody = response.getBody();
+            JsonNode result = objectMapper.readTree(responseBody);
+
+            AiCallLog aiCallLog = buildAiCallLog(
+                    traceId,
+                    functionType,
+                    "SUCCESS",
+                    latencyMs,
+                    inputLength,
+                    responseLength(responseBody),
+                    null,
+                    null,
+                    requestSummary,
+                    responseSummary(response, result),
+                    startedAt
+            );
+
+            recordLogsSafely(
+                    aiCallLog,
+                    traceId,
+                    functionType,
+                    "INFO",
+                    "SUCCESS",
+                    latencyMs,
+                    inputLength,
+                    responseLength(responseBody),
+                    response.getStatusCode().value(),
+                    null
+            );
+
+            return result;
+        } catch (HttpStatusCodeException exception) {
+            RuntimeException wrapped = new RuntimeException(
                     "AI service HTTP "
-                            + e.getStatusCode().value(),
-                    e
+                            + exception.getStatusCode().value(),
+                    exception
             );
-        } catch (ResourceAccessException e) {
-            throw new RuntimeException(
+            recordFailure(
+                    traceId,
+                    functionType,
+                    startNanos,
+                    inputLength,
+                    requestSummary,
+                    startedAt,
+                    classifyHttpError(exception),
+                    wrapped,
+                    exception.getStatusCode().value()
+            );
+            throw wrapped;
+        } catch (ResourceAccessException exception) {
+            RuntimeException wrapped = new RuntimeException(
                     "AI service connection failed",
-                    e
+                    exception
             );
-        } catch (Exception e) {
-            throw new RuntimeException("AI service call failed: " + e.getMessage(), e);
+            recordFailure(
+                    traceId,
+                    functionType,
+                    startNanos,
+                    inputLength,
+                    requestSummary,
+                    startedAt,
+                    "CONNECTION_FAILED",
+                    wrapped,
+                    null
+            );
+            throw wrapped;
+        } catch (Exception exception) {
+            RuntimeException wrapped = new RuntimeException(
+                    "AI service call failed: " + exception.getMessage(),
+                    exception
+            );
+            recordFailure(
+                    traceId,
+                    functionType,
+                    startNanos,
+                    inputLength,
+                    requestSummary,
+                    startedAt,
+                    classifyUnexpected(exception),
+                    wrapped,
+                    null
+            );
+            throw wrapped;
         }
     }
 
@@ -149,5 +259,293 @@ public class AIClientService {
                     "INTERNAL_API_TOKEN is required for AI service calls"
             );
         }
+    }
+
+    private void recordFailure(
+            String traceId,
+            String functionType,
+            long startNanos,
+            Integer inputLength,
+            String requestSummary,
+            OffsetDateTime startedAt,
+            String errorType,
+            RuntimeException exception,
+            Integer httpStatus
+    ) {
+        int latencyMs = latencyMs(startNanos);
+        String status = "TIMEOUT".equals(errorType)
+                || "CONNECTION_FAILED".equals(errorType)
+                ? "TIMEOUT"
+                : "FAILED";
+
+        AiCallLog aiCallLog = buildAiCallLog(
+                traceId,
+                functionType,
+                status,
+                latencyMs,
+                inputLength,
+                null,
+                errorType,
+                errorSummary(exception),
+                requestSummary,
+                "{\"errorType\":\"" + jsonEscape(errorType) + "\"}",
+                startedAt
+        );
+
+        recordLogsSafely(
+                aiCallLog,
+                traceId,
+                functionType,
+                auditLevel(errorType),
+                "FAILURE",
+                latencyMs,
+                inputLength,
+                null,
+                httpStatus,
+                errorType
+        );
+    }
+
+    private void recordLogsSafely(
+            AiCallLog aiCallLog,
+            String traceId,
+            String functionType,
+            String level,
+            String result,
+            Integer latencyMs,
+            Integer inputLength,
+            Integer outputLength,
+            Integer httpStatus,
+            String errorType
+    ) {
+        try {
+            aiCallLogService.recordSafely(aiCallLog);
+        } catch (Exception exception) {
+            log.warn(
+                    "AI call log write failed outside safe writer. traceId={}, error={}",
+                    sanitizer.sanitize(traceId),
+                    sanitizer.sanitize(exception.getMessage())
+            );
+        }
+
+        AuditLog auditLog = new AuditLog();
+        auditLog.setOperationType("AI_CALL");
+        auditLog.setModule("AI");
+        auditLog.setLevel(level);
+        auditLog.setResult(result);
+        auditLog.setObjectType("AI_CALL");
+        auditLog.setObjectId(
+                aiCallLog.getId() == null
+                        ? traceId
+                        : String.valueOf(aiCallLog.getId())
+        );
+        auditLog.setBusinessTraceId(traceId);
+        auditLog.setErrorCode(errorType);
+        auditLog.setErrorMessage(aiCallLog.getErrorMessage());
+        auditLog.setMetadata(auditMetadata(
+                functionType,
+                latencyMs,
+                inputLength,
+                outputLength,
+                httpStatus,
+                aiCallLog.getId()
+        ));
+
+        try {
+            auditLogService.recordSafely(auditLog);
+        } catch (Exception exception) {
+            log.warn(
+                    "AI audit log write failed outside safe writer. traceId={}, error={}",
+                    sanitizer.sanitize(traceId),
+                    sanitizer.sanitize(exception.getMessage())
+            );
+        }
+    }
+
+    private AiCallLog buildAiCallLog(
+            String traceId,
+            String functionType,
+            String status,
+            Integer latencyMs,
+            Integer inputLength,
+            Integer outputLength,
+            String errorType,
+            String errorMessage,
+            String requestSummary,
+            String responseSummary,
+            OffsetDateTime createdAt
+    ) {
+        AiCallLog aiCallLog = new AiCallLog();
+        aiCallLog.setTraceId(traceId);
+        aiCallLog.setFunctionType(functionType);
+        aiCallLog.setProvider("FASTAPI");
+        aiCallLog.setModelName("foodadvisor-ai-service");
+        aiCallLog.setStatus(status);
+        aiCallLog.setLatencyMs(latencyMs);
+        aiCallLog.setInputTokens(inputLength);
+        aiCallLog.setOutputTokens(outputLength);
+        aiCallLog.setTotalTokens(sum(inputLength, outputLength));
+        aiCallLog.setErrorType(errorType);
+        aiCallLog.setErrorMessage(errorMessage);
+        aiCallLog.setRequestSummary(requestSummary);
+        aiCallLog.setResponseSummary(responseSummary);
+        aiCallLog.setCreatedAt(createdAt);
+        return aiCallLog;
+    }
+
+    private String requestSummary(Object body, String functionType) {
+        try {
+            JsonNode node = objectMapper.valueToTree(body);
+            StringBuilder summary = new StringBuilder();
+            summary.append("{\"scene\":\"")
+                    .append(jsonEscape(functionType))
+                    .append("\",\"inputLength\":")
+                    .append(payloadLength(body));
+
+            appendLongField(summary, node, "reviewId");
+            appendLongField(summary, node, "merchantId");
+            appendLongField(summary, node, "sessionId");
+            appendLongField(summary, node, "messageId");
+
+            if (node.has("reviews") && node.get("reviews").isArray()) {
+                summary.append(",\"batchSize\":")
+                        .append(node.get("reviews").size());
+            }
+
+            summary.append("}");
+            return sanitizer.sanitize(summary.toString());
+        } catch (Exception exception) {
+            return "{\"scene\":\""
+                    + jsonEscape(functionType)
+                    + "\"}";
+        }
+    }
+
+    private void appendLongField(
+            StringBuilder summary,
+            JsonNode node,
+            String field
+    ) {
+        if (node.has(field) && node.get(field).canConvertToLong()) {
+            summary.append(",\"")
+                    .append(field)
+                    .append("\":")
+                    .append(node.get(field).asLong());
+        }
+    }
+
+    private String responseSummary(
+            ResponseEntity<String> response,
+            JsonNode body
+    ) {
+        String modelName = body != null
+                && body.has("modelName")
+                && !body.get("modelName").isNull()
+                ? body.get("modelName").asText()
+                : null;
+
+        return "{\"httpStatus\":"
+                + response.getStatusCode().value()
+                + ",\"outputLength\":"
+                + responseLength(response.getBody())
+                + (modelName == null
+                ? ""
+                : ",\"modelName\":\"" + jsonEscape(modelName) + "\"")
+                + "}";
+    }
+
+    private String auditMetadata(
+            String functionType,
+            Integer latencyMs,
+            Integer inputLength,
+            Integer outputLength,
+            Integer httpStatus,
+            Long aiCallLogId
+    ) {
+        return "{\"scene\":\"" + jsonEscape(functionType) + "\","
+                + "\"modelName\":\"foodadvisor-ai-service\","
+                + "\"latencyMs\":" + latencyMs + ","
+                + "\"inputLength\":" + nullNumber(inputLength) + ","
+                + "\"outputLength\":" + nullNumber(outputLength) + ","
+                + "\"httpStatus\":" + nullNumber(httpStatus) + ","
+                + "\"aiCallLogId\":" + nullNumber(aiCallLogId)
+                + "}";
+    }
+
+    private String classifyHttpError(HttpStatusCodeException exception) {
+        int status = exception.getStatusCode().value();
+        if (status == 408) {
+            return "TIMEOUT";
+        }
+        if (status == 429) {
+            return "RATE_LIMITED";
+        }
+        if (status >= 500) {
+            return "AI_SERVICE_UNAVAILABLE";
+        }
+        return "AI_SERVICE_HTTP_ERROR";
+    }
+
+    private String classifyUnexpected(Exception exception) {
+        if (exception instanceof IllegalStateException) {
+            return "CONFIGURATION_ERROR";
+        }
+        return "PROTOCOL_ERROR";
+    }
+
+    private String auditLevel(String errorType) {
+        if ("TIMEOUT".equals(errorType)
+                || "RATE_LIMITED".equals(errorType)) {
+            return "WARN";
+        }
+        return "ERROR";
+    }
+
+    private String errorSummary(Exception exception) {
+        String message = exception.getMessage();
+        String summary = exception.getClass().getSimpleName()
+                + (message == null ? "" : ": " + message);
+        summary = sanitizer.sanitize(summary);
+        return summary.length() > MAX_ERROR_LENGTH
+                ? summary.substring(0, MAX_ERROR_LENGTH)
+                : summary;
+    }
+
+    private int latencyMs(long startNanos) {
+        long elapsed = System.nanoTime() - startNanos;
+        return (int) Math.max(0L, elapsed / 1_000_000L);
+    }
+
+    private Integer payloadLength(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value).length();
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private Integer responseLength(String value) {
+        return value == null ? 0 : value.length();
+    }
+
+    private Integer sum(Integer first, Integer second) {
+        if (first == null && second == null) {
+            return null;
+        }
+        return (first == null ? 0 : first)
+                + (second == null ? 0 : second);
+    }
+
+    private String nullNumber(Number value) {
+        return value == null ? "null" : value.toString();
+    }
+
+    private String jsonEscape(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
     }
 }
