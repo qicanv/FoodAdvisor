@@ -29,14 +29,11 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-<<<<<<< HEAD
 import java.util.Map;
-=======
-import java.time.LocalDate;
->>>>>>> aa4db35f698a23171b66f4426e733badad59cf33
 
 /**
  * 评价接口 — 评论查询 & AI 分析
@@ -48,28 +45,21 @@ public class ReviewController {
     private final ReviewService reviewService;
     private final AIClientService aiClientService;
     private final ReviewTagMapper reviewTagMapper;
-<<<<<<< HEAD
     private final JdbcTemplate jdbcTemplate;
-
-    public ReviewController(ReviewService reviewService, AIClientService aiClientService, ReviewTagMapper reviewTagMapper, JdbcTemplate jdbcTemplate) {
-        this.reviewService = reviewService;
-        this.aiClientService = aiClientService;
-        this.reviewTagMapper = reviewTagMapper;
-        this.jdbcTemplate = jdbcTemplate;
-=======
     private final ReviewIssueCategoryMapper issueCategoryMapper;
 
     public ReviewController(
             ReviewService reviewService,
             AIClientService aiClientService,
             ReviewTagMapper reviewTagMapper,
+            JdbcTemplate jdbcTemplate,
             ReviewIssueCategoryMapper issueCategoryMapper
     ) {
         this.reviewService = reviewService;
         this.aiClientService = aiClientService;
         this.reviewTagMapper = reviewTagMapper;
+        this.jdbcTemplate = jdbcTemplate;
         this.issueCategoryMapper = issueCategoryMapper;
->>>>>>> aa4db35f698a23171b66f4426e733badad59cf33
     }
 
 
@@ -91,11 +81,7 @@ public class ReviewController {
             @RequestParam(required = false) String tagCode,
             @RequestParam(required = false) String sentiment
             ) {
-<<<<<<< HEAD
         Page<ReviewDisplayVO> page = reviewService.listByMerchantWithUser(merchantId, pageNum, pageSize);
-=======
-        Page<Review> page = reviewService.listByMerchant(merchantId, pageNum, pageSize, tagCode, sentiment);
->>>>>>> aa4db35f698a23171b66f4426e733badad59cf33
         return ApiResponse.success(PageResult.from(page));
     }
 
