@@ -9,6 +9,7 @@ import com.foodadvisor.dto.review.MerchantRatingSummaryVO;
 import com.foodadvisor.dto.review.ReviewImageVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
+import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewAnalysis;
@@ -81,6 +82,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final com.foodadvisor.mapper.UserMapper userMapper;
     private final ReviewIssueRelationMapper issueRelationMapper;
     private final ReviewIssueCategoryMapper issueCategoryMapper;
+    private final AuditLogService auditLogService;
 
     public ReviewService(
             ReviewAnalysisMapper analysisMapper,
@@ -93,7 +95,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             JdbcTemplate jdbcTemplate,
             com.foodadvisor.mapper.UserMapper userMapper,
             ReviewIssueRelationMapper issueRelationMapper,
-            ReviewIssueCategoryMapper issueCategoryMapper
+            ReviewIssueCategoryMapper issueCategoryMapper,
+            AuditLogService auditLogService
     ) {
         this.analysisMapper = analysisMapper;
         this.tagRelationMapper = tagRelationMapper;
@@ -106,6 +109,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         this.userMapper = userMapper;
         this.issueRelationMapper = issueRelationMapper;
         this.issueCategoryMapper = issueCategoryMapper;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -213,6 +217,11 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         );
 
         boolean creating = review == null;
+        String beforeStatus = review == null ? null : review.getStatus();
+        String beforeModerationStatus =
+                review == null ? null : review.getModerationStatus();
+        String beforeRiskLevel =
+                review == null ? null : review.getRiskLevel();
 
         if (creating) {
             review = new Review();
@@ -233,12 +242,18 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         }
 
         applyReviewFields(review, request);
+        int sensitiveHitCount = countSensitiveHits(review.getContent());
         applyContentSafety(review);
 
-        if (creating) {
-            this.save(review);
-        } else {
-            this.updateById(review);
+        boolean saved = creating
+                ? this.save(review)
+                : this.updateById(review);
+        if (!saved) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "REVIEW_SAVE_FAILED",
+                    "Review save failed"
+            );
         }
 
         List<ReviewImage> activeImages = replaceImages(
@@ -255,6 +270,18 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         refreshMerchantRatingStats(merchant.getId());
         triggerAnalysisPlaceholder(review);
+
+        recordContentModerationSafely(
+                review,
+                userId,
+                creating
+                        ? "AUTO_MODERATE_REVIEW_CREATE"
+                        : "AUTO_MODERATE_REVIEW_UPDATE",
+                beforeStatus,
+                beforeModerationStatus,
+                beforeRiskLevel,
+                sensitiveHitCount
+        );
 
         return toSubmitResponse(review, activeImages);
     }
@@ -314,6 +341,9 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 前置校验：存在性 + 归属 + 未删除（公共方法，编辑和删除共用）
         Review review = requireOwnedActiveReview(userId, reviewId);
+        String beforeStatus = review.getStatus();
+        String beforeModerationStatus = review.getModerationStatus();
+        String beforeRiskLevel = review.getRiskLevel();
 
         // 版本号 +1，记录这是第几次修改
         int currentVersion = review.getCurrentVersion() == null
@@ -326,12 +356,19 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 用前端传来的新内容覆盖旧字段（content、rating、tasteRating 等）
         applyReviewFields(review, request);
+        int sensitiveHitCount = countSensitiveHits(review.getContent());
 
         // 内容安全审核：如果新内容包含敏感词，状态会变成 PENDING 待审核
         applyContentSafety(review);
 
         // 执行 UPDATE SQL，把改动持久化到 reviews 表
-        this.updateById(review);
+        if (!this.updateById(review)) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "REVIEW_UPDATE_FAILED",
+                    "Review update failed"
+            );
+        }
 
         // 处理图片：保留 keepImageIds 中的旧图 + 上传新图，其余标记删除
         List<ReviewImage> activeImages = replaceImages(
@@ -348,6 +385,16 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 插入一条 PENDING 状态的分析占位记录，等 AI 服务来重新分析
         triggerAnalysisPlaceholder(review);
+
+        recordContentModerationSafely(
+                review,
+                userId,
+                "AUTO_MODERATE_REVIEW_UPDATE",
+                beforeStatus,
+                beforeModerationStatus,
+                beforeRiskLevel,
+                sensitiveHitCount
+        );
 
         // 把最终的 Review 对象 + 图片列表转成前端要的 JSON 格式
         return toSubmitResponse(review, activeImages);
@@ -1087,12 +1134,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
     private void applyContentSafety(Review review) {
         boolean highRisk =
-                HIGH_RISK_WORDS.stream()
-                        .anyMatch(
-                                word ->
-                                        review.getContent()
-                                                .contains(word)
-                        );
+                countSensitiveHits(review.getContent()) > 0;
 
         if (highRisk) {
             review.setStatus("PENDING");
@@ -1110,6 +1152,132 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 );
             }
         }
+    }
+
+    private int countSensitiveHits(String content) {
+        if (content == null || content.isBlank()) {
+            return 0;
+        }
+
+        return (int) HIGH_RISK_WORDS.stream()
+                .filter(content::contains)
+                .count();
+    }
+
+    private void recordContentModerationSafely(
+            Review review,
+            Long submitterUserId,
+            String operation,
+            String beforeStatus,
+            String beforeModerationStatus,
+            String beforeRiskLevel,
+            int sensitiveHitCount
+    ) {
+        if (review == null || review.getId() == null) {
+            return;
+        }
+
+        AuditLog auditLog = new AuditLog();
+        auditLog.setOperationType("CONTENT_MODERATION");
+        auditLog.setOperatorUserId(submitterUserId);
+        auditLog.setOperatorRole("USER");
+        auditLog.setModule("REVIEW_MODERATION");
+        auditLog.setLevel(moderationLevel(review, sensitiveHitCount));
+        auditLog.setResult("SUCCESS");
+        auditLog.setObjectType("REVIEW");
+        auditLog.setObjectId(String.valueOf(review.getId()));
+        auditLog.setMetadata(
+                buildContentModerationMetadata(
+                        review,
+                        submitterUserId,
+                        operation,
+                        beforeStatus,
+                        beforeModerationStatus,
+                        beforeRiskLevel,
+                        sensitiveHitCount
+                )
+        );
+
+        auditLogService.recordSafely(auditLog);
+    }
+
+    private String moderationLevel(
+            Review review,
+            int sensitiveHitCount
+    ) {
+        if (sensitiveHitCount > 0
+                || "PENDING".equals(review.getStatus())
+                || "PENDING".equals(review.getModerationStatus())
+                || !"LOW".equals(review.getRiskLevel())) {
+            return "WARN";
+        }
+        return "INFO";
+    }
+
+    private String buildContentModerationMetadata(
+            Review review,
+            Long submitterUserId,
+            String operation,
+            String beforeStatus,
+            String beforeModerationStatus,
+            String beforeRiskLevel,
+            int sensitiveHitCount
+    ) {
+        StringBuilder metadata = new StringBuilder("{");
+        appendJsonField(metadata, "operation", operation);
+        appendJsonField(metadata, "reviewId", review.getId());
+        appendJsonField(metadata, "merchantId", review.getMerchantId());
+        appendJsonField(metadata, "submitterUserId", submitterUserId);
+        appendJsonField(metadata, "beforeStatus", beforeStatus);
+        appendJsonField(metadata, "beforeModerationStatus", beforeModerationStatus);
+        appendJsonField(metadata, "beforeRiskLevel", beforeRiskLevel);
+        appendJsonField(metadata, "afterStatus", review.getStatus());
+        appendJsonField(metadata, "afterModerationStatus", review.getModerationStatus());
+        appendJsonField(metadata, "riskLevel", review.getRiskLevel());
+        appendJsonField(metadata, "sensitiveHit", sensitiveHitCount > 0);
+        appendJsonField(metadata, "sensitiveHitCount", sensitiveHitCount);
+        appendJsonField(metadata, "moderationMode", "AUTO_RULE");
+        appendJsonField(metadata, "executor", "AUTO_RULE");
+        appendJsonField(
+                metadata,
+                "textLength",
+                review.getContent() == null
+                        ? 0
+                        : review.getContent().length()
+        );
+        appendJsonField(metadata, "occurredAt", OffsetDateTime.now().toString());
+        metadata.append("}");
+        return metadata.toString();
+    }
+
+    private void appendJsonField(
+            StringBuilder metadata,
+            String field,
+            Object value
+    ) {
+        if (metadata.length() > 1) {
+            metadata.append(",");
+        }
+
+        metadata.append("\"")
+                .append(jsonEscape(field))
+                .append("\":");
+
+        if (value == null) {
+            metadata.append("null");
+        } else if (value instanceof Number || value instanceof Boolean) {
+            metadata.append(value);
+        } else {
+            metadata.append("\"")
+                    .append(jsonEscape(String.valueOf(value)))
+                    .append("\"");
+        }
+    }
+
+    private String jsonEscape(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
     }
 
     private List<ReviewImage> replaceImages(
