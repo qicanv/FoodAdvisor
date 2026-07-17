@@ -128,3 +128,56 @@ class HealthResponse(BaseModel):
         "modelApi": "UNKNOWN"
     })
     timestamp: str = Field(default="")
+
+# ============================================
+# 评价智能总结（EPIC-01 Story 7）
+# ============================================
+class SummaryReviewItem(BaseModel):
+    """送入摘要生成的单条评价"""
+    reviewId: int
+    rating: int = Field(ge=1, le=5)
+    content: str = Field(..., min_length=1)
+    reviewTime: Optional[str] = Field(default=None, description="ISO 时间字符串")
+
+
+class ReviewSummaryRequest(BaseModel):
+    """摘要生成请求 — 由 Spring Boot 传入评论列表"""
+    requestId: Optional[str] = None
+    merchantId: int
+    version: int = Field(default=1, ge=1)
+    reviews: List[SummaryReviewItem] = Field(default_factory=list)
+    minimumReviewCount: int = Field(default=5, ge=1)
+
+
+class SummaryPoint(BaseModel):
+    """摘要要点（优点/不足/推荐菜）"""
+    name: str
+    mentionCount: int = Field(default=0, ge=0)
+    reviewIds: List[int] = Field(default_factory=list)
+
+
+class SummaryEvidence(BaseModel):
+    """摘要依据 — 关联原始评价"""
+    reviewId: int
+    evidenceType: str = Field(description="ADVANTAGE/DISADVANTAGE/DISH/ENVIRONMENT/SERVICE/RECENT_CHANGE")
+    evidenceExcerpt: Optional[str] = None
+
+
+class ReviewSummaryResponse(BaseModel):
+    """摘要生成结果（扁平结构，与 AnalyzeResponse 风格一致）"""
+    merchantId: int
+    version: int = 1
+    summaryStatus: str = Field(default="SUCCESS", description="SUCCESS/INSUFFICIENT_DATA/FAILED")
+    summaryText: Optional[str] = None
+    advantages: List[SummaryPoint] = Field(default_factory=list)
+    disadvantages: List[SummaryPoint] = Field(default_factory=list)
+    recommendedDishes: List[SummaryPoint] = Field(default_factory=list)
+    environmentSummary: dict = Field(default_factory=dict)
+    serviceSummary: dict = Field(default_factory=dict)
+    recentChanges: List[dict] = Field(default_factory=list)
+    reviewCount: int = 0
+    minimumReviewCount: int = 5
+    evidences: List[SummaryEvidence] = Field(default_factory=list)
+    modelName: Optional[str] = None
+    businessTraceId: Optional[str] = None
+    errorMessage: Optional[str] = None
