@@ -35,17 +35,4 @@ CREATE TABLE IF NOT EXISTS review_images (
         CHECK (status IN ('ACTIVE', 'DELETED'))
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uk_review_images_review_sort_active
-    ON review_images(review_id, sort_order)
-    WHERE status = 'ACTIVE';
-
-CREATE INDEX IF NOT EXISTS idx_review_images_review
-    ON review_images(review_id, status, sort_order);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_user_merchant_original
-    ON reviews(user_id, merchant_id)
-    WHERE user_id IS NOT NULL
-      AND review_type = 'ORIGINAL'
-      AND status <> 'DELETED';
-
 COMMIT;

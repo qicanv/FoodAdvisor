@@ -44,24 +44,3 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     CONSTRAINT ck_audit_result
         CHECK (result IN ('SUCCESS', 'FAILURE'))
 );
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at
-    ON audit_logs(created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_operator_user_id
-    ON audit_logs(operator_user_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_operator_username
-    ON audit_logs(operator_username, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_module
-    ON audit_logs(module, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_level
-    ON audit_logs(level, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_operation_type
-    ON audit_logs(operation_type, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_object
-    ON audit_logs(object_type, object_id, created_at DESC);

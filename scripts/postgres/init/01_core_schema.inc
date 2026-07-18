@@ -1,11 +1,11 @@
 -- ============================================
--- FoodAdvisor 数据库建表脚本（V0.3）
--- 注：users / merchants / merchant_members / merchant_business_hours
---     已移至 01_identity_and_merchant.sql，此处不再重复定义
+-- FoodAdvisor 閺佺増宓佹惔鎾崇紦鐞涖劏鍓奸張顒婄礄V0.3閿?
+-- 濞夘煉绱皍sers / merchants / merchant_members / merchant_business_hours
+--     瀹歌尙些閼?01_identity_and_merchant.sql閿涘本顒濇径鍕瑝閸愬秹鍣告径宥呯暰娑?
 -- ============================================
 
 -- ============================================
--- 5.5 菜品表 dishes
+-- 5.5 閼挎粌鎼х悰?dishes
 -- ============================================
 CREATE TABLE IF NOT EXISTS dishes (
     id BIGSERIAL PRIMARY KEY,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS dishes (
 );
 
 -- ============================================
--- 5.6 评论表 reviews（V0.3 更新）
+-- 5.6 鐠囧嫯顔戠悰?reviews閿涘湸0.3 閺囧瓨鏌婇敍?
 -- ============================================
 CREATE TABLE IF NOT EXISTS reviews (
     id BIGSERIAL PRIMARY KEY,
@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     consumption_date DATE,
     content TEXT NOT NULL,
     source VARCHAR(30) NOT NULL DEFAULT 'SYSTEM',
+    review_time TIMESTAMPTZ,
     external_id VARCHAR(200),
     source_user_key VARCHAR(200),
     idempotency_key VARCHAR(100),
@@ -117,28 +118,11 @@ CREATE TABLE IF NOT EXISTS reviews (
         CHECK (risk_level IS NULL OR risk_level IN ('LOW', 'MEDIUM', 'HIGH'))
 );
 
--- 唯一索引：每用户每商家只有一条有效原评价
-CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_user_merchant_original
-ON reviews(user_id, merchant_id)
-WHERE user_id IS NOT NULL
-  AND review_type = 'ORIGINAL'
-  AND status <> 'DELETED';
-
--- 唯一索引：每条原评价最多一条有效追评
-CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_parent_follow_up
-ON reviews(parent_review_id)
-WHERE parent_review_id IS NOT NULL
-  AND review_type = 'FOLLOW_UP'
-  AND status <> 'DELETED';
-
--- 唯一索引：幂等键
-CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_user_idempotency
-ON reviews(user_id, idempotency_key)
-WHERE user_id IS NOT NULL
-  AND idempotency_key IS NOT NULL;
-
+-- 閸烆垯绔寸槐銏犵穿閿涙碍鐦￠悽銊﹀煕濮ｅ繐鏅㈢€硅泛褰ч張澶夌閺夆剝婀侀弫鍫濆斧鐠囧嫪鐜?
+-- 閸烆垯绔寸槐銏犵穿閿涙碍鐦￠弶鈥冲斧鐠囧嫪鐜張鈧径姘閺夆剝婀侀弫鍫ｆ嫹鐠?
+-- 閸烆垯绔寸槐銏犵穿閿涙艾绠撶粵澶愭暛
 -- ============================================
--- 5.7 评论分析表 review_analysis（V0.3 更新 — 支持版本化分析）
+-- 5.7 鐠囧嫯顔戦崚鍡樼€界悰?review_analysis閿涘湸0.3 閺囧瓨鏌?閳?閺€顖涘瘮閻楀牊婀伴崠鏍у瀻閺嬫劧绱?
 -- ============================================
 CREATE TABLE IF NOT EXISTS review_analysis (
     id BIGSERIAL PRIMARY KEY,
@@ -182,7 +166,7 @@ CREATE TABLE IF NOT EXISTS review_analysis (
 );
 
 -- ============================================
--- 5.8 评论标签字典表 review_tags
+-- 5.8 鐠囧嫯顔戦弽鍥╊劮鐎涙鍚€鐞?review_tags
 -- ============================================
 CREATE TABLE IF NOT EXISTS review_tags (
     id BIGSERIAL PRIMARY KEY,
@@ -200,7 +184,7 @@ CREATE TABLE IF NOT EXISTS review_tags (
 );
 
 -- ============================================
--- 5.9 评论标签关联表 review_tag_relations（V0.3 更新）
+-- 5.9 鐠囧嫯顔戦弽鍥╊劮閸忓疇浠堢悰?review_tag_relations閿涘湸0.3 閺囧瓨鏌婇敍?
 -- ============================================
 CREATE TABLE IF NOT EXISTS review_tag_relations (
     id BIGSERIAL PRIMARY KEY,
@@ -233,7 +217,7 @@ CREATE TABLE IF NOT EXISTS review_tag_relations (
 );
 
 -- ============================================
--- 5.10 对话会话表 chat_sessions
+-- 5.10 鐎电鐦芥导姘崇樈鐞?chat_sessions
 -- ============================================
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id BIGSERIAL PRIMARY KEY,
@@ -253,7 +237,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
 );
 
 -- ============================================
--- 5.11 对话消息表 chat_messages
+-- 5.11 鐎电鐦藉☉鍫熶紖鐞?chat_messages
 -- ============================================
 CREATE TABLE IF NOT EXISTS chat_messages (
     id BIGSERIAL PRIMARY KEY,
@@ -279,7 +263,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 
 -- ============================================
--- 5.12 会话状态表 chat_session_states
+-- 5.12 娴兼俺鐦介悩鑸碘偓浣姐€?chat_session_states
 -- ============================================
 CREATE TABLE IF NOT EXISTS chat_session_states (
     id BIGSERIAL PRIMARY KEY,
@@ -308,7 +292,7 @@ CREATE TABLE IF NOT EXISTS chat_session_states (
 );
 
 -- ============================================
--- 5.13 条件提取历史表 constraint_extractions
+-- 5.13 閺夆€叉閹绘劕褰囬崢鍡楀蕉鐞?constraint_extractions
 -- ============================================
 CREATE TABLE IF NOT EXISTS constraint_extractions (
     id BIGSERIAL PRIMARY KEY,
@@ -334,7 +318,7 @@ CREATE TABLE IF NOT EXISTS constraint_extractions (
 );
 
 -- ============================================
--- 5.14 推荐记录表 recommendations
+-- 5.14 閹恒劏宕樼拋鏉跨秿鐞?recommendations
 -- ============================================
 CREATE TABLE IF NOT EXISTS recommendations (
     id BIGSERIAL PRIMARY KEY,
@@ -382,7 +366,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
 );
 
 -- ============================================
--- 5.15 推荐商家明细表 recommendation_items
+-- 5.15 閹恒劏宕橀崯鍡楊啀閺勫海绮忕悰?recommendation_items
 -- ============================================
 CREATE TABLE IF NOT EXISTS recommendation_items (
     id BIGSERIAL PRIMARY KEY,
@@ -418,7 +402,7 @@ CREATE TABLE IF NOT EXISTS recommendation_items (
 );
 
 -- ============================================
--- 5.16 推荐依据表 recommendation_evidences
+-- 5.16 閹恒劏宕樻笟婵囧祦鐞?recommendation_evidences
 -- ============================================
 CREATE TABLE IF NOT EXISTS recommendation_evidences (
     id BIGSERIAL PRIMARY KEY,
@@ -458,7 +442,7 @@ CREATE TABLE IF NOT EXISTS recommendation_evidences (
 );
 
 -- ============================================
--- 5.17 推荐反馈表 recommendation_feedback
+-- 5.17 閹恒劏宕橀崣宥夘洯鐞?recommendation_feedback
 -- ============================================
 CREATE TABLE IF NOT EXISTS recommendation_feedback (
     id BIGSERIAL PRIMARY KEY,
@@ -480,7 +464,7 @@ CREATE TABLE IF NOT EXISTS recommendation_feedback (
 );
 
 -- ============================================
--- 5.18 商家评论摘要表 merchant_review_summaries
+-- 5.18 閸熷棗顔嶇拠鍕啈閹芥顩︾悰?merchant_review_summaries
 -- ============================================
 CREATE TABLE IF NOT EXISTS merchant_review_summaries (
     id BIGSERIAL PRIMARY KEY,
@@ -520,7 +504,7 @@ CREATE TABLE IF NOT EXISTS merchant_review_summaries (
 );
 
 -- ============================================
--- 5.19 评论摘要依据表 merchant_summary_evidences
+-- 5.19 鐠囧嫯顔戦幗妯款洣娓氭繃宓佺悰?merchant_summary_evidences
 -- ============================================
 CREATE TABLE IF NOT EXISTS merchant_summary_evidences (
     id BIGSERIAL PRIMARY KEY,
@@ -543,7 +527,7 @@ CREATE TABLE IF NOT EXISTS merchant_summary_evidences (
 );
 
 -- ============================================
--- 5.20 导入任务表 import_tasks
+-- 5.20 鐎电厧鍙嗘禒璇插鐞?import_tasks
 -- ============================================
 CREATE TABLE IF NOT EXISTS import_tasks (
     id BIGSERIAL PRIMARY KEY,
@@ -580,7 +564,7 @@ CREATE TABLE IF NOT EXISTS import_tasks (
 );
 
 -- ============================================
--- 5.21 导入任务明细表 import_task_items
+-- 5.21 鐎电厧鍙嗘禒璇插閺勫海绮忕悰?import_task_items
 -- ============================================
 CREATE TABLE IF NOT EXISTS import_task_items (
     id BIGSERIAL PRIMARY KEY,
@@ -609,7 +593,7 @@ CREATE TABLE IF NOT EXISTS import_task_items (
 );
 
 -- ============================================
--- 5.22 AI 调用日志表 ai_call_logs
+-- 5.22 AI 鐠嬪啰鏁ら弮銉ョ箶鐞?ai_call_logs
 -- ============================================
 CREATE TABLE IF NOT EXISTS ai_call_logs (
     id BIGSERIAL PRIMARY KEY,
@@ -660,7 +644,7 @@ CREATE TABLE IF NOT EXISTS ai_call_logs (
 );
 
 -- ============================================
--- 5.23 评价版本历史表 review_versions（V0.3 新增）
+-- 5.23 鐠囧嫪鐜悧鍫熸拱閸樺棗褰剁悰?review_versions閿涘湸0.3 閺傛澘顤冮敍?
 -- ============================================
 CREATE TABLE IF NOT EXISTS review_versions (
     id BIGSERIAL PRIMARY KEY,
@@ -695,7 +679,7 @@ CREATE TABLE IF NOT EXISTS review_versions (
 );
 
 -- ============================================
--- 5.24 差评归因类别表 review_issue_categories（V0.3 新增）
+-- 5.24 瀹割喛鐦庤ぐ鎺戞礈缁鍩嗙悰?review_issue_categories閿涘湸0.3 閺傛澘顤冮敍?
 -- ============================================
 CREATE TABLE IF NOT EXISTS review_issue_categories (
     id BIGSERIAL PRIMARY KEY,
@@ -712,21 +696,9 @@ CREATE TABLE IF NOT EXISTS review_issue_categories (
         CHECK (status IN ('ACTIVE', 'DISABLED'))
 );
 
--- 内置归因类别种子数据
-INSERT INTO review_issue_categories (code, name, description) VALUES
-    ('HYGIENE', '卫生问题', '环境卫生、餐具清洁、食材新鲜度等'),
-    ('SERVICE_ATTITUDE', '服务态度', '服务员态度冷漠、不耐烦、态度恶劣等'),
-    ('SERVING_SPEED', '上菜速度', '上菜慢、催菜无果、出餐效率低等'),
-    ('TASTE', '菜品口味', '菜品味道差、不符合预期、口味过重/过淡等'),
-    ('PRICE', '价格问题', '价格偏高、性价比低、隐性消费等'),
-    ('PORTION', '分量问题', '份量太少、与描述不符等'),
-    ('QUEUE', '排队时间', '排队过久、预约形同虚设等'),
-    ('ENVIRONMENT', '环境问题', '环境嘈杂、装修老旧、座位拥挤等'),
-    ('OTHER', '其他问题', '无法归入上述类别的其他问题')
-ON CONFLICT (code) DO NOTHING;
-
+-- 閸愬懐鐤嗚ぐ鎺戞礈缁鍩嗙粔宥呯摍閺佺増宓?
 -- ============================================
--- 5.25 差评归因关联表 review_issue_relations（V0.3 新增）
+-- 5.25 瀹割喛鐦庤ぐ鎺戞礈閸忓疇浠堢悰?review_issue_relations閿涘湸0.3 閺傛澘顤冮敍?
 -- ============================================
 CREATE TABLE IF NOT EXISTS review_issue_relations (
     id BIGSERIAL PRIMARY KEY,
@@ -753,7 +725,7 @@ CREATE TABLE IF NOT EXISTS review_issue_relations (
 );
 
 -- ============================================
--- 5.26 商家亮点表 merchant_highlights（V0.3 新增）
+-- 5.26 閸熷棗顔嶆禍顔惧仯鐞?merchant_highlights閿涘湸0.3 閺傛澘顤冮敍?
 -- ============================================
 CREATE TABLE IF NOT EXISTS merchant_highlights (
     id BIGSERIAL PRIMARY KEY,
@@ -782,7 +754,7 @@ CREATE TABLE IF NOT EXISTS merchant_highlights (
 );
 
 -- ============================================
--- 5.27 商家亮点依据表 merchant_highlight_evidences（V0.3 新增）
+-- 5.27 閸熷棗顔嶆禍顔惧仯娓氭繃宓佺悰?merchant_highlight_evidences閿涘湸0.3 閺傛澘顤冮敍?
 -- ============================================
 CREATE TABLE IF NOT EXISTS merchant_highlight_evidences (
     id BIGSERIAL PRIMARY KEY,
@@ -805,7 +777,7 @@ CREATE TABLE IF NOT EXISTS merchant_highlight_evidences (
 );
 
 -- ============================================
--- 5.28 商家口碑统计表 merchant_reputation_statistics（V0.3 新增）
+-- 5.28 閸熷棗顔嶉崣锝囶暥缂佺喕顓哥悰?merchant_reputation_statistics閿涘湸0.3 閺傛澘顤冮敍?
 -- ============================================
 CREATE TABLE IF NOT EXISTS merchant_reputation_statistics (
     id BIGSERIAL PRIMARY KEY,

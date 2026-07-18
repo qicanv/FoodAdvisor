@@ -65,7 +65,7 @@ class RegionHotWordServiceIntegrationTest {
                     merchant_code, name, category, region_code, address,
                     platform_status, operation_status
                 )
-                VALUES (?, ?, '川菜', ?, '测试地址', 'ACTIVE', 'OPEN')
+                VALUES (?, ?, '川菜', ?, '测试地址', 'ACTIVE', 'OPERATING')
                 RETURNING id
                 """, Long.class,
                 "HW-" + suffix,

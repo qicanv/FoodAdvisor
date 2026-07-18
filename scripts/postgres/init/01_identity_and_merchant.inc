@@ -1,7 +1,7 @@
 BEGIN;
 
 -- =========================================================
--- 1. 用户表
+-- 1. 鐢ㄦ埛琛?
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS users (
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 
 -- =========================================================
--- 2. 登录会话表
+-- 2. 鐧诲綍浼氳瘽琛?
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 
 
 -- =========================================================
--- 3. 登录尝试表
+-- 3. 鐧诲綍灏濊瘯琛?
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS login_attempts (
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 
 
 -- =========================================================
--- 4. 商家表
+-- 4. 鍟嗗琛?
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS merchants (
@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS merchants (
 
 
 -- =========================================================
--- 5. 商家成员关系表
+-- 5. 鍟嗗鎴愬憳鍏崇郴琛?
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS merchant_members (
@@ -257,7 +257,7 @@ CREATE TABLE IF NOT EXISTS merchant_members (
 
 
 -- =========================================================
--- 6. 商家营业时间表
+-- 6. 鍟嗗钀ヤ笟鏃堕棿琛?
 -- =========================================================
 
 CREATE TABLE IF NOT EXISTS merchant_business_hours (
@@ -301,71 +301,7 @@ CREATE TABLE IF NOT EXISTS merchant_business_hours (
 
 
 -- =========================================================
--- 7. 当前模块索引
+-- 7. 褰撳墠妯″潡绱㈠紩
 -- =========================================================
-
-CREATE INDEX IF NOT EXISTS idx_users_role_status
-    ON users(role, status);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uk_users_email_active
-    ON users(lower(email))
-    WHERE email IS NOT NULL
-      AND deleted_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_status
-    ON auth_sessions(user_id, status);
-
-CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at
-    ON auth_sessions(expires_at);
-
-CREATE INDEX IF NOT EXISTS idx_login_attempts_username_created
-    ON login_attempts(username, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_created
-    ON login_attempts(ip_address, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_merchants_name
-    ON merchants(name);
-
-CREATE INDEX IF NOT EXISTS idx_merchants_region
-    ON merchants(region_code);
-
-CREATE INDEX IF NOT EXISTS idx_merchants_category
-    ON merchants(category);
-
-CREATE INDEX IF NOT EXISTS idx_merchants_cuisine
-    ON merchants(cuisine);
-
-CREATE INDEX IF NOT EXISTS idx_merchants_status_category_rating
-    ON merchants(
-        platform_status,
-        operation_status,
-        category,
-        rating DESC
-    );
-
-CREATE INDEX IF NOT EXISTS idx_merchant_members_user
-    ON merchant_members(user_id, status);
-
-CREATE INDEX IF NOT EXISTS idx_merchant_members_merchant
-    ON merchant_members(merchant_id, status);
-
-CREATE INDEX IF NOT EXISTS idx_business_hours_merchant_day
-    ON merchant_business_hours(merchant_id, day_of_week);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uk_business_hours_open_period
-    ON merchant_business_hours(
-        merchant_id,
-        day_of_week,
-        open_time
-    )
-    WHERE is_closed = FALSE;
-
-CREATE UNIQUE INDEX IF NOT EXISTS uk_business_hours_closed_day
-    ON merchant_business_hours(
-        merchant_id,
-        day_of_week
-    )
-    WHERE is_closed = TRUE;
 
 COMMIT;
