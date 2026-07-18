@@ -189,10 +189,10 @@ public class OperationsDashboardService {
     private Map<String, Long> getMerchantActions(OffsetDateTime startTime, OffsetDateTime endTime) {
         Map<String, Long> actions = new LinkedHashMap<>();
         try {
-            actions.put("loginCount", auditLogMapper.countByActorRoleAndAction("MERCHANT", "LOGIN", startTime, endTime));
-            actions.put("replyCount", auditLogMapper.countByActorRoleAndAction("MERCHANT", "REPLY_REVIEW", startTime, endTime));
-            actions.put("updateCount", auditLogMapper.countByActorRoleAndAction("MERCHANT", "UPDATE_PROFILE", startTime, endTime));
-            actions.put("viewStatsCount", auditLogMapper.countByActorRoleAndAction("MERCHANT", "VIEW_STATS", startTime, endTime));
+            actions.put("loginCount", auditLogMapper.countByOperatorRoleAndOperationType("MERCHANT", "LOGIN", startTime, endTime));
+            actions.put("replyCount", auditLogMapper.countByOperatorRoleAndOperationType("MERCHANT", "REPLY_REVIEW", startTime, endTime));
+            actions.put("updateCount", auditLogMapper.countByOperatorRoleAndOperationType("MERCHANT", "UPDATE_PROFILE", startTime, endTime));
+            actions.put("viewStatsCount", auditLogMapper.countByOperatorRoleAndOperationType("MERCHANT", "VIEW_STATS", startTime, endTime));
         } catch (Exception e) {
             actions.put("loginCount", 0L);
             actions.put("replyCount", 0L);
