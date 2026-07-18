@@ -8,6 +8,8 @@ import com.foodadvisor.backend.exception.ApiException;
 import com.foodadvisor.dto.review.MerchantRatingSummaryVO;
 import com.foodadvisor.dto.review.MyReviewDetailVO;
 import com.foodadvisor.dto.review.MyReviewListVO;
+import com.foodadvisor.dto.review.ReviewFollowUpRequest;
+import com.foodadvisor.dto.review.ReviewFollowUpVO;
 import com.foodadvisor.dto.review.ReviewImageVO;
 import com.foodadvisor.dto.review.ReviewReplyVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
@@ -193,6 +195,13 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     vo.setUsername(user.getUsername());
                     vo.setNickname(user.getNickname());
                 }
+            }
+
+            // 仅对原评价查询其追评（追评本身不显示追评入口）
+            if ("ORIGINAL".equals(review.getReviewType())
+                    && !"DELETED".equals(review.getStatus())) {
+                ReviewFollowUpVO followUpVO = getFollowUpByParentId(review.getId());
+                vo.setFollowUp(followUpVO);
             }
 
             displayVOs.add(vo);
@@ -466,6 +475,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     /**
      * 删除评价 —— 逻辑删除，仅修改 status 和 deleted_at，不物理删除数据。
      * 数据仍然保留在数据库里，方便后续审计和数据分析。
+     *
+     * 如果被删除的是原评价（ORIGINAL），则同步级联删除其追评（FOLLOW_UP）。
      */
     @Transactional
     public void deleteReview(Long userId, Long reviewId) {
@@ -491,8 +502,44 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         // List.of() 表示删除后没有保留任何图片
         saveVersion(review, List.of(), "EDIT");
 
+        // 如果删除的是原评价，级联标记追评为已删除
+        if ("ORIGINAL".equals(review.getReviewType())) {
+            cascadeDeleteFollowUp(review.getId());
+        }
+
         // 删掉的评价不再计入商家评分，重新算一次
         refreshMerchantRatingStats(review.getMerchantId());
+    }
+
+    /**
+     * 级联删除追评 —— 当原评价被删除时，同步将追评标记为已删除。
+     *
+     * 根据 Jira EPIC-08 故事2 验收准则5：
+     * "原评价删除后追评同步标记已删除；追评单独删除后原评价仍正常展示"
+     */
+    private void cascadeDeleteFollowUp(Long parentReviewId) {
+        Review followUp = this.getOne(
+                new LambdaQueryWrapper<Review>()
+                        .eq(Review::getParentReviewId, parentReviewId)
+                        .eq(Review::getReviewType, "FOLLOW_UP")
+                        .ne(Review::getStatus, "DELETED")
+                        .last("LIMIT 1")
+        );
+
+        if (followUp == null) {
+            return; // 没有追评，无需处理
+        }
+
+        int currentVersion = followUp.getCurrentVersion() == null
+                ? 1
+                : followUp.getCurrentVersion();
+        followUp.setCurrentVersion(currentVersion + 1);
+        followUp.setStatus("DELETED");
+        followUp.setDeletedAt(OffsetDateTime.now());
+        followUp.setUpdatedAt(OffsetDateTime.now());
+
+        this.updateById(followUp);
+        saveVersion(followUp, List.of(), "EDIT");
     }
 
     /**
@@ -765,6 +812,320 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         return replyVO;
     }
+
+    // ==================== 追评（追加评价） ====================
+
+    /**
+     * 提交追评（追加评价）。
+     *
+     * 业务规则（来自 Jira EPIC-08 故事2）：
+     * - 只有已发表（PUBLISHED）的原评价才能被追评
+     * - 每条原评价最多追加一条追评
+     * - 追评正文 10-2000 字符，消费日期必填，综合评分选填
+     * - 追评同样经过内容安全检测
+     *
+     * @param userId  当前登录用户 ID
+     * @param parentReviewId 要追评的原评价 ID
+     * @param request 追评请求体
+     * @return 创建结果
+     */
+    @Transactional
+    public ReviewSubmitResponse submitFollowUpReview(
+            Long userId,
+            Long parentReviewId,
+            ReviewFollowUpRequest request
+    ) {
+        // 1. 校验请求参数
+        validateFollowUpRequest(request);
+
+        // 2. 校验原评价必须存在、属于当前用户、状态为 PUBLISHED
+        Review parentReview = requirePublishableReview(userId, parentReviewId);
+
+        // 3. 每条原评价最多一条有效追评
+        Review existingFollowUp = findActiveFollowUp(parentReviewId);
+        if (existingFollowUp != null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "FOLLOW_UP_ALREADY_EXISTS",
+                    "每条评价最多追加一次追评，您可以编辑已有追评"
+            );
+        }
+
+        // 4. 构建追评实体
+        Review followUp = new Review();
+        followUp.setUserId(userId);
+        followUp.setMerchantId(parentReview.getMerchantId());
+        followUp.setReviewType("FOLLOW_UP");
+        followUp.setParentReviewId(parentReviewId);
+        followUp.setSource("SYSTEM");
+        followUp.setCurrentVersion(1);
+        followUp.setCreatedAt(OffsetDateTime.now());
+        followUp.setUpdatedAt(OffsetDateTime.now());
+
+        // 写入追评专有字段
+        followUp.setContent(request.getContent().trim());
+        followUp.setConsumptionDate(request.getConsumptionDate());
+        if (request.getRating() != null) {
+            followUp.setRating(BigDecimal.valueOf(request.getRating()));
+        }
+        if (request.getAverageSpend() != null) {
+            followUp.setAverageSpend(request.getAverageSpend());
+        }
+
+        // 5. 内容安全检测
+        int sensitiveHitCount = countSensitiveHits(followUp.getContent());
+        applyContentSafety(followUp);
+
+        // 6. 持久化
+        if (!this.save(followUp)) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "FOLLOW_UP_SAVE_FAILED",
+                    "追评保存失败"
+            );
+        }
+
+        // 7. 记录版本快照
+        saveVersion(followUp, List.of(), "CREATE");
+
+        // 8. 记录审核日志
+        recordContentModerationSafely(
+                followUp, userId,
+                "AUTO_MODERATE_FOLLOW_UP_CREATE",
+                null, null, null, sensitiveHitCount
+        );
+
+        return toSubmitResponse(followUp, List.of());
+    }
+
+    /**
+     * 编辑追评。
+     *
+     * 规则：
+     * - 只能编辑自己写的追评
+     * - 编辑保留历史版本
+     * - 编辑后重新执行内容安全检测
+     *
+     * @param userId   当前用户 ID
+     * @param followUpId 追评记录 ID
+     * @param request  修改后的追评内容
+     * @return 更新后的追评信息
+     */
+    @Transactional
+    public ReviewSubmitResponse editFollowUpReview(
+            Long userId,
+            Long followUpId,
+            ReviewFollowUpRequest request
+    ) {
+        // 1. 参数校验
+        validateFollowUpRequest(request);
+
+        // 2. 校验追评存在、属于当前用户、未删除
+        Review followUp = requireOwnedActiveReview(userId, followUpId);
+
+        // 3. 必须是 FOLLOW_UP 类型
+        if (!"FOLLOW_UP".equals(followUp.getReviewType())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "NOT_FOLLOW_UP",
+                    "该评价不是追评，无法通过追评接口编辑"
+            );
+        }
+
+        String beforeStatus = followUp.getStatus();
+        String beforeModerationStatus = followUp.getModerationStatus();
+        String beforeRiskLevel = followUp.getRiskLevel();
+
+        // 4. 版本号 +1
+        int currentVersion = followUp.getCurrentVersion() == null
+                ? 1
+                : followUp.getCurrentVersion();
+        followUp.setCurrentVersion(currentVersion + 1);
+        followUp.setEditedAt(OffsetDateTime.now());
+        followUp.setUpdatedAt(OffsetDateTime.now());
+
+        // 5. 覆盖内容
+        followUp.setContent(request.getContent().trim());
+        followUp.setConsumptionDate(request.getConsumptionDate());
+        followUp.setRating(request.getRating() != null
+                ? BigDecimal.valueOf(request.getRating()) : null);
+        followUp.setAverageSpend(request.getAverageSpend());
+
+        int sensitiveHitCount = countSensitiveHits(followUp.getContent());
+        applyContentSafety(followUp);
+
+        // 6. 保存
+        if (!this.updateById(followUp)) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "FOLLOW_UP_UPDATE_FAILED",
+                    "追评更新失败"
+            );
+        }
+
+        // 7. 版本快照 + 审计日志
+        saveVersion(followUp, List.of(), "EDIT");
+
+        recordContentModerationSafely(
+                followUp, userId,
+                "AUTO_MODERATE_FOLLOW_UP_UPDATE",
+                beforeStatus, beforeModerationStatus, beforeRiskLevel,
+                sensitiveHitCount
+        );
+
+        return toSubmitResponse(followUp, List.of());
+    }
+
+    /**
+     * 删除追评 —— 逻辑删除。
+     *
+     * 根据 Jira EPIC-08 故事2 验收准则5：
+     * "追评单独删除后原评价仍正常展示"
+     *
+     * 只删除追评本身，不影响原评价。
+     */
+    @Transactional
+    public void deleteFollowUpReview(Long userId, Long followUpId) {
+        // 校验追评存在、属于当前用户、未删除
+        Review followUp = requireOwnedActiveReview(userId, followUpId);
+
+        // 必须是 FOLLOW_UP 类型
+        if (!"FOLLOW_UP".equals(followUp.getReviewType())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "NOT_FOLLOW_UP",
+                    "该评价不是追评，无法通过追评接口删除"
+            );
+        }
+
+        int currentVersion = followUp.getCurrentVersion() == null
+                ? 1
+                : followUp.getCurrentVersion();
+        followUp.setCurrentVersion(currentVersion + 1);
+
+        // 逻辑删除
+        followUp.setStatus("DELETED");
+        followUp.setDeletedAt(OffsetDateTime.now());
+        followUp.setUpdatedAt(OffsetDateTime.now());
+
+        this.updateById(followUp);
+        saveVersion(followUp, List.of(), "EDIT");
+    }
+
+    /**
+     * 查询原评价关联的追评。
+     *
+     * @param parentReviewId 原评价 ID
+     * @return 追评展示 VO，如果没有追评则返回 null
+     */
+    public ReviewFollowUpVO getFollowUpByParentId(Long parentReviewId) {
+        Review followUp = findActiveFollowUp(parentReviewId);
+        return ReviewFollowUpVO.from(followUp);
+    }
+
+    /**
+     * 查找原评价的有效追评（未删除的）。
+     */
+    private Review findActiveFollowUp(Long parentReviewId) {
+        return this.getOne(
+                new LambdaQueryWrapper<Review>()
+                        .eq(Review::getParentReviewId, parentReviewId)
+                        .eq(Review::getReviewType, "FOLLOW_UP")
+                        .ne(Review::getStatus, "DELETED")
+                        .last("LIMIT 1")
+        );
+    }
+
+    /**
+     * 校验追评请求参数。
+     *
+     * 与首次评价不同，追评的 rating 选填，但 consumptionDate 必填。
+     */
+    private void validateFollowUpRequest(ReviewFollowUpRequest request) {
+        if (request == null) {
+            throw badRequest(
+                    "FOLLOW_UP_REQUEST_REQUIRED",
+                    "追评请求不能为空"
+            );
+        }
+
+        String content = request.getContent() == null ? "" : request.getContent().trim();
+
+        if (content.length() < MIN_CONTENT_LENGTH) {
+            throw badRequest(
+                    "FOLLOW_UP_CONTENT_TOO_SHORT",
+                    "追评内容不能少于10个字符"
+            );
+        }
+
+        if (content.length() > MAX_CONTENT_LENGTH) {
+            throw badRequest(
+                    "FOLLOW_UP_CONTENT_TOO_LONG",
+                    "追评内容不能超过2000个字符"
+            );
+        }
+
+        // 追评的评分选填，但如果填了必须在 1-5 范围内
+        if (request.getRating() != null
+                && (request.getRating() < 1 || request.getRating() > 5)) {
+            throw badRequest(
+                    "FOLLOW_UP_RATING_INVALID",
+                    "评分必须在1到5分之间"
+            );
+        }
+
+        // 消费日期必填
+        if (request.getConsumptionDate() == null) {
+            throw badRequest(
+                    "FOLLOW_UP_CONSUMPTION_DATE_REQUIRED",
+                    "追评必须填写消费日期"
+            );
+        }
+    }
+
+    /**
+     * 校验原评价必须存在、属于当前用户，且状态为 PUBLISHED。
+     *
+     * 只有正常展示的评价才允许被追加。
+     */
+    private Review requirePublishableReview(Long userId, Long reviewId) {
+        Review review = this.getById(reviewId);
+        if (review == null) {
+            throw new ApiException(
+                    HttpStatus.NOT_FOUND,
+                    "REVIEW_NOT_FOUND",
+                    "原评价不存在"
+            );
+        }
+
+        if (!review.getUserId().equals(userId)) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "REVIEW_NOT_OWNED",
+                    "只能追评自己发表的评价"
+            );
+        }
+
+        if (!"ORIGINAL".equals(review.getReviewType())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "NOT_ORIGINAL_REVIEW",
+                    "只能追评原评价，不能对追评再次追评"
+            );
+        }
+
+        if (!"PUBLISHED".equals(review.getStatus())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "REVIEW_NOT_PUBLISHED",
+                    "只有已发布的评价才能追加追评"
+            );
+        }
+
+        return review;
+    }
+
+    // ==================== 追评（追加评价）结束 ====================
 
 // ==================== 评论编辑与删除 结束====================
 
