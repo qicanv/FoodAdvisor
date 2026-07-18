@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.service;
+package com.foodadvisor.service;
 
 import com.foodadvisor.exception.ApiException;
 import org.springframework.beans.factory.annotation.Value;

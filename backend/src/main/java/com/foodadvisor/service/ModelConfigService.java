@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.service;
+package com.foodadvisor.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.foodadvisor.dto.modelconfig.ConnectionTestResponse;
