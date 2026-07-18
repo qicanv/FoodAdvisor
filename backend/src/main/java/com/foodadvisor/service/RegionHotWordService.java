@@ -315,7 +315,7 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
                     AND rv.status = 'PUBLISHED'
                 JOIN merchants m ON rv.merchant_id = m.id
                     AND m.platform_status = 'ACTIVE'
-                    AND m.operation_status IN ('OPERATING', 'OPEN')
+                    AND m.operation_status = 'OPEN'
                 WHERE m.region_code = ?
                   AND rv.created_at >= ?
                   AND rv.created_at <  (?::DATE + INTERVAL '1 day')
@@ -365,7 +365,7 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
                         AND rv.status = 'PUBLISHED'
                     JOIN merchants m ON rv.merchant_id = m.id
                         AND m.platform_status = 'ACTIVE'
-                        AND m.operation_status IN ('OPERATING', 'OPEN')
+                        AND m.operation_status = 'OPEN'
                     WHERE m.region_code = ?
                       AND ra.status = 'SUCCESS'
                       AND ra.keywords IS NOT NULL
@@ -606,7 +606,7 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
                 JOIN reviews rv ON m.id = rv.merchant_id
                     AND rv.status = 'PUBLISHED'
                 WHERE m.platform_status = 'ACTIVE'
-                  AND m.operation_status IN ('OPERATING', 'OPEN')
+                  AND m.operation_status = 'OPEN'
                   AND m.region_code IS NOT NULL
                   AND trim(m.region_code) <> ''
                 ORDER BY m.region_code
