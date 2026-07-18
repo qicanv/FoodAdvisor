@@ -1,538 +1,626 @@
 <template>
-  <div class="audit-log-page">
-    <div class="page-header">
-      <div>
-        <h1>系统审计日志</h1>
-        <p>查询用户登录、管理员操作、AI 调用、接口异常等系统日志。</p>
+  <AdminLayout title="审计日志" subtitle="查看系统操作记录和安全审计信息">
+    <div class="logs-container">
+      <div class="search-bar">
+        <div class="search-item">
+          <input 
+            type="text" 
+            v-model="searchKeyword" 
+            placeholder="搜索用户名、操作或资源..."
+            class="search-input"
+            @keyup.enter="loadLogs"
+          />
+        </div>
+        <div class="search-item">
+          <select v-model="searchActorRole" class="search-select" @change="loadLogs">
+            <option value="">全部角色</option>
+            <option value="ADMIN">管理员</option>
+            <option value="DINER">食客</option>
+            <option value="MERCHANT">商家</option>
+          </select>
+        </div>
+        <div class="search-item">
+          <select v-model="searchAction" class="search-select" @change="loadLogs">
+            <option value="">全部操作</option>
+            <option value="LOGIN">登录</option>
+            <option value="LOGOUT">登出</option>
+            <option value="CREATE">创建</option>
+            <option value="UPDATE">更新</option>
+            <option value="DELETE">删除</option>
+            <option value="REPLY_REVIEW">回复评价</option>
+          </select>
+        </div>
+        <button class="search-btn" @click="loadLogs">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="M21 21l-4.35-4.35"></path>
+          </svg>
+          <span>搜索</span>
+        </button>
       </div>
 
-      <el-button type="primary" :loading="loading" @click="loadAuditLogs">
-        刷新
-      </el-button>
+      <div class="table-container">
+        <table class="logs-table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>操作人</th>
+              <th>角色</th>
+              <th>操作</th>
+              <th>资源类型</th>
+              <th>资源ID</th>
+              <th>客户端IP</th>
+              <th>详情</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="log in logs" :key="log.id">
+              <td>{{ formatTime(log.createdAt) }}</td>
+              <td>{{ log.actorName || '-' }}</td>
+              <td><span :class="['role-tag', log.actorRole?.toLowerCase()]">{{ getRoleText(log.actorRole) }}</span></td>
+              <td><span :class="['action-tag', log.action?.toLowerCase()]">{{ getActionText(log.action) }}</span></td>
+              <td>{{ log.resourceType || '-' }}</td>
+              <td>{{ log.resourceId || '-' }}</td>
+              <td>{{ log.clientIp || '-' }}</td>
+              <td class="detail-cell">
+                <button class="detail-btn" @click="showDetail(log)">查看</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="logs.length === 0" class="empty-state">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#ccc" stroke-width="1.5">
+            <path d="M4 4h16v16H4z"></path>
+            <path d="M8 9h8"></path>
+            <path d="M8 13h8"></path>
+            <path d="M8 17h5"></path>
+          </svg>
+          <p>暂无审计日志数据</p>
+        </div>
+      </div>
+
+      <div class="pagination">
+        <button 
+          class="pagination-btn" 
+          :disabled="currentPage <= 1"
+          @click="prevPage"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 19l-7-7 7-7"></path>
+          </svg>
+        </button>
+        <span class="pagination-info">第 {{ currentPage }} 页 / 共 {{ totalPages }} 页</span>
+        <button 
+          class="pagination-btn" 
+          :disabled="currentPage >= totalPages"
+          @click="nextPage"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 5l7 7-7 7"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>日志详情</h3>
+            <button class="close-btn" @click="showModal = false">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 6L6 18M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body" v-if="selectedLog">
+            <div class="detail-row">
+              <span class="detail-label">日志ID</span>
+              <span class="detail-value">{{ selectedLog.id }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">操作人ID</span>
+              <span class="detail-value">{{ selectedLog.actorId || '-' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">操作人名称</span>
+              <span class="detail-value">{{ selectedLog.actorName || '-' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">角色</span>
+              <span class="detail-value">{{ getRoleText(selectedLog.actorRole) }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">操作</span>
+              <span class="detail-value">{{ getActionText(selectedLog.action) }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">资源类型</span>
+              <span class="detail-value">{{ selectedLog.resourceType || '-' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">资源ID</span>
+              <span class="detail-value">{{ selectedLog.resourceId || '-' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">资源名称</span>
+              <span class="detail-value">{{ selectedLog.resourceName || '-' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">客户端IP</span>
+              <span class="detail-value">{{ selectedLog.clientIp || '-' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">用户代理</span>
+              <span class="detail-value">{{ selectedLog.userAgent || '-' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">操作结果</span>
+              <span :class="['result-tag', selectedLog.success ? 'success' : 'failed']">{{ selectedLog.success ? '成功' : '失败' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">错误信息</span>
+              <span class="detail-value">{{ selectedLog.errorMessage || '-' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">创建时间</span>
+              <span class="detail-value">{{ formatTime(selectedLog.createdAt) }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">变更内容</span>
+              <pre class="detail-json">{{ selectedLog.changes || '-' }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-
-    <el-card shadow="never" class="filter-card">
-      <el-form :inline="true" :model="queryForm">
-        <el-form-item label="操作类型">
-          <el-select
-            v-model="queryForm.operationType"
-            placeholder="全部类型"
-            clearable
-            style="width: 200px"
-          >
-            <el-option label="登录审计" value="LOGIN" />
-            <el-option label="管理员操作" value="ADMIN_OPERATION" />
-            <el-option label="AI 调用" value="AI_CALL" />
-            <el-option label="接口异常" value="API_EXCEPTION" />
-            <el-option label="数据导入" value="DATA_IMPORT" />
-            <el-option label="内容审核" value="CONTENT_MODERATION" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="模块">
-          <el-input
-            v-model.trim="queryForm.module"
-            placeholder="例如 AUTH、AI"
-            clearable
-            style="width: 180px"
-            @keyup.enter="loadAuditLogs"
-          />
-        </el-form-item>
-
-        <el-form-item label="日志级别">
-          <el-select
-            v-model="queryForm.level"
-            placeholder="全部级别"
-            clearable
-            style="width: 150px"
-          >
-            <el-option label="信息" value="INFO" />
-            <el-option label="警告" value="WARN" />
-            <el-option label="错误" value="ERROR" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="操作人">
-          <el-input
-            v-model.trim="queryForm.operatorUsername"
-            placeholder="请输入用户名"
-            clearable
-            style="width: 180px"
-            @keyup.enter="loadAuditLogs"
-          />
-        </el-form-item>
-
-        <el-form-item label="发生时间">
-          <el-date-picker
-            v-model="queryForm.timeRange"
-            type="datetimerange"
-            range-separator="至"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
-            clearable
-            style="width: 390px"
-          />
-        </el-form-item>
-
-        <el-form-item>
-          <el-button
-            type="primary"
-            :loading="loading"
-            @click="loadAuditLogs"
-          >
-            查询
-          </el-button>
-
-          <el-button @click="resetQuery">
-            重置
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
-
-    <el-alert
-      v-if="errorMessage"
-      :title="errorMessage"
-      type="error"
-      show-icon
-      :closable="false"
-      class="error-alert"
-    />
-
-    <el-table
-      v-loading="loading"
-      :data="records"
-      border
-      stripe
-      empty-text="暂无审计日志"
-    >
-      <el-table-column
-        prop="createdAt"
-        label="发生时间"
-        min-width="190"
-      />
-
-      <el-table-column
-        prop="operationType"
-        label="操作类型"
-        min-width="150"
-      >
-        <template #default="{ row }">
-          <el-tag>
-            {{ getOperationTypeText(row.operationType) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-
-      <el-table-column
-        prop="module"
-        label="模块"
-        min-width="120"
-      />
-
-      <el-table-column
-        prop="operatorUsername"
-        label="操作人"
-        min-width="130"
-      >
-        <template #default="{ row }">
-          {{ row.operatorUsername || '系统' }}
-        </template>
-      </el-table-column>
-
-      <el-table-column
-        prop="level"
-        label="日志级别"
-        width="110"
-      >
-        <template #default="{ row }">
-          <el-tag :type="getLevelTagType(row.level)">
-            {{ getLevelText(row.level) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-
-      <el-table-column
-        prop="result"
-        label="处理结果"
-        width="110"
-      >
-        <template #default="{ row }">
-          <el-tag :type="row.result === 'SUCCESS' ? 'success' : 'danger'">
-            {{ getResultText(row.result) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-
-      <el-table-column
-        prop="objectType"
-        label="对象类型"
-        min-width="130"
-      />
-
-      <el-table-column
-        prop="objectId"
-        label="对象 ID"
-        min-width="110"
-      />
-
-      <el-table-column
-        prop="errorMessage"
-        label="错误信息"
-        min-width="180"
-      >
-        <template #default="{ row }">
-          {{ getErrorMessageText(row) }}
-        </template>
-      </el-table-column>
-
-      <el-table-column
-        label="操作"
-        width="90"
-        fixed="right"
-      >
-        <template #default="{ row }">
-          <el-button
-            type="primary"
-            link
-            @click="openDetail(row)"
-          >
-            详情
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-
-    <el-dialog
-      v-model="detailVisible"
-      title="审计日志详情"
-      width="760px"
-    >
-      <el-descriptions
-        v-if="selectedLog"
-        :column="2"
-        border
-      >
-        <el-descriptions-item label="日志 ID">
-          {{ selectedLog.id ?? '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="发生时间">
-          {{ selectedLog.createdAt || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="操作类型">
-          {{ getOperationTypeText(selectedLog.operationType) }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="模块">
-          {{ selectedLog.module || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="日志级别">
-          {{ getLevelText(selectedLog.level) }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="处理结果">
-          {{ getResultText(selectedLog.result) }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="操作人 ID">
-          {{ selectedLog.operatorUserId ?? '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="操作人">
-          {{ selectedLog.operatorUsername || '系统' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="操作人角色">
-          {{ selectedLog.operatorRole || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="对象类型">
-          {{ selectedLog.objectType || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="对象 ID">
-          {{ selectedLog.objectId || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="业务追踪 ID">
-          {{ selectedLog.businessTraceId || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="请求方法">
-          {{ selectedLog.requestMethod || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="请求地址">
-          {{ selectedLog.requestUri || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="错误代码">
-          {{ selectedLog.errorCode || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="客户端 IP">
-          {{ selectedLog.ipAddress || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="错误信息" :span="2">
-          {{ getErrorMessageText(selectedLog) }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="用户代理" :span="2">
-          {{ selectedLog.userAgent || '-' }}
-        </el-descriptions-item>
-
-        <el-descriptions-item label="元数据" :span="2">
-          <pre class="metadata-content">{{ formatMetadata(selectedLog.metadata) }}</pre>
-        </el-descriptions-item>
-      </el-descriptions>
-
-      <template #footer>
-        <el-button @click="detailVisible = false">
-          关闭
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <div class="page-summary">
-      当前显示 {{ records.length }} 条，共 {{ total }} 条
-    </div>
-  </div>
+  </AdminLayout>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
-import { getAuditLogs } from '../../api/auditLog'
+import { ref, computed, onMounted } from 'vue'
+import AdminLayout from '../../components/AdminLayout.vue'
+import { getAdminLogs } from '../../api/adminLogs'
 
+const logs = ref([])
 const loading = ref(false)
-const errorMessage = ref('')
-const records = ref([])
+const currentPage = ref(1)
+const pageSize = ref(20)
 const total = ref(0)
-const detailVisible = ref(false)
+
+const searchKeyword = ref('')
+const searchActorRole = ref('')
+const searchAction = ref('')
+
+const showModal = ref(false)
 const selectedLog = ref(null)
 
-const queryForm = ref({
-  operationType: 'LOGIN',
-  module: '',
-  level: '',
-  operatorUsername: '',
-  timeRange: [],
-})
+const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
 
-const operationTypeTextMap = {
-  LOGIN: '登录审计',
-  ADMIN_OPERATION: '管理员操作',
-  AI_CALL: 'AI 调用',
-  API_EXCEPTION: '接口异常',
-  DATA_IMPORT: '数据导入',
-  CONTENT_MODERATION: '内容审核',
+const getRoleText = (role) => {
+  const map = { ADMIN: '管理员', DINER: '食客', MERCHANT: '商家' }
+  return map[role] || role || '-'
 }
 
-const levelTextMap = {
-  INFO: '信息',
-  WARN: '警告',
-  ERROR: '错误',
-}
-
-const resultTextMap = {
-  SUCCESS: '成功',
-  FAILURE: '失败',
-}
-
-const errorMessageTextMap = {
-  LOGIN_INVALID_CREDENTIALS: '用户名、密码或角色不正确',
-  LOGIN_USER_DISABLED: '账号已被禁用',
-  LOGIN_USER_LOCKED: '账号暂时被锁定',
-  UNAUTHORIZED: '未登录或登录状态已失效',
-  FORBIDDEN: '当前账号没有访问权限',
-}
-
-function getErrorMessageText(row) {
-  if (!row) {
-    return '-'
+const getActionText = (action) => {
+  const map = {
+    LOGIN: '登录',
+    LOGOUT: '登出',
+    CREATE: '创建',
+    UPDATE: '更新',
+    DELETE: '删除',
+    REPLY_REVIEW: '回复评价',
+    UPDATE_PROFILE: '更新资料',
+    VIEW_STATS: '查看统计',
   }
-
-  if (row.errorCode && errorMessageTextMap[row.errorCode]) {
-    return errorMessageTextMap[row.errorCode]
-  }
-
-  return row.errorMessage || '-'
+  return map[action] || action || '-'
 }
 
-function getOperationTypeText(value) {
-  return operationTypeTextMap[value] || value || '-'
+const formatTime = (dateString) => {
+  if (!dateString) return '-'
+  const date = new Date(dateString)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
-function getLevelText(value) {
-  return levelTextMap[value] || value || '-'
-}
-
-function getResultText(value) {
-  return resultTextMap[value] || value || '-'
-}
-
-function getLevelTagType(level) {
-  const tagTypeMap = {
-    INFO: 'success',
-    WARN: 'warning',
-    ERROR: 'danger',
-  }
-
-  return tagTypeMap[level] || 'info'
-}
-
-async function loadAuditLogs() {
+const loadLogs = async () => {
   loading.value = true
-  errorMessage.value = ''
-
   try {
-    const params = {
-      pageNum: 1,
-      pageSize: 10,
+    const response = await getAdminLogs({
+      pageNum: currentPage.value,
+      pageSize: pageSize.value,
+      keyword: searchKeyword.value || undefined,
+      actorRole: searchActorRole.value || undefined,
+      action: searchAction.value || undefined,
+    })
+
+    if (response.success) {
+      logs.value = response.data?.value || response.data?.records || []
+      total.value = response.data?.total || 0
     }
-
-    if (queryForm.value.operationType) {
-      params.operationType = queryForm.value.operationType
-    }
-
-    if (queryForm.value.module) {
-      params.module = queryForm.value.module
-    }
-
-    if (queryForm.value.level) {
-      params.level = queryForm.value.level
-    }
-
-    if (queryForm.value.operatorUsername) {
-      params.operatorUsername = queryForm.value.operatorUsername
-    }
-
-    if (
-      Array.isArray(queryForm.value.timeRange) &&
-      queryForm.value.timeRange.length === 2
-    ) {
-      params.startTime =
-        new Date(queryForm.value.timeRange[0]).toISOString()
-
-      params.endTime =
-        new Date(queryForm.value.timeRange[1]).toISOString()
-    }
-
-    const result = await getAuditLogs(params)
-
-    if (!result.success) {
-      records.value = []
-      total.value = 0
-      errorMessage.value = result.message || '审计日志查询失败'
-      return
-    }
-
-    records.value = result.data?.records || []
-    total.value = result.data?.total || 0
   } catch (error) {
-    records.value = []
-    total.value = 0
-    errorMessage.value = '加载审计日志时发生异常'
-    console.error('加载审计日志失败：', error)
+    console.error('加载审计日志失败:', error)
   } finally {
     loading.value = false
   }
 }
 
-function resetQuery() {
-  queryForm.value = {
-    operationType: '',
-    module: '',
-    level: '',
-    operatorUsername: '',
-    timeRange: [],
+const prevPage = () => {
+  if (currentPage.value > 1) {
+    currentPage.value--
+    loadLogs()
   }
-
-  loadAuditLogs()
 }
 
-function openDetail(row) {
-  selectedLog.value = row
-  detailVisible.value = true
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) {
+    currentPage.value++
+    loadLogs()
+  }
 }
 
-function formatMetadata(metadata) {
-  if (!metadata) {
-    return '-'
-  }
-
-  try {
-    const parsed =
-      typeof metadata === 'string'
-        ? JSON.parse(metadata)
-        : metadata
-
-    return JSON.stringify(parsed, null, 2)
-  } catch (error) {
-    return String(metadata)
-  }
+const showDetail = (log) => {
+  selectedLog.value = log
+  showModal.value = true
 }
 
 onMounted(() => {
-  loadAuditLogs()
+  loadLogs()
 })
 </script>
 
 <style scoped>
-.audit-log-page {
-  min-height: 100vh;
-  padding: 32px;
-  background: #f5f7fa;
+.logs-container {
+  padding: 24px;
 }
 
-.page-header {
+.search-bar {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.search-item {
+  flex: 1;
+  min-width: 150px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e8e8e8;
+  border-radius: 12px;
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #1890ff;
+  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.1);
+}
+
+.search-select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e8e8e8;
+  border-radius: 12px;
+  font-size: 14px;
+  background: #fff;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' width='14' height='14' fill='none' stroke='%23909399' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+
+.search-select:focus {
+  outline: none;
+  border-color: #1890ff;
+}
+
+.search-btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
+  gap: 8px;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
 }
 
-.page-header h1 {
-  margin: 0 0 8px;
-  color: #303133;
+.search-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
 }
 
-.page-header p {
-  margin: 0;
+.table-container {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.logs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.logs-table th,
+.logs-table td {
+  padding: 16px 20px;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.logs-table th {
+  background: linear-gradient(135deg, #f8f9fa 0%, #f0f2f5 100%);
+  font-weight: 600;
+  color: #5a6a7a;
+  font-size: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.logs-table tr:hover {
+  background: #fafafa;
+}
+
+.role-tag {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.role-tag.admin {
+  background: rgba(255, 77, 79, 0.1);
+  color: #ff4d4f;
+}
+
+.role-tag.diner {
+  background: rgba(24, 144, 255, 0.1);
+  color: #1890ff;
+}
+
+.role-tag.merchant {
+  background: rgba(82, 196, 26, 0.1);
+  color: #52c41a;
+}
+
+.action-tag {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.action-tag.login {
+  background: rgba(82, 196, 26, 0.1);
+  color: #52c41a;
+}
+
+.action-tag.logout {
+  background: rgba(255, 177, 0, 0.1);
+  color: #ffb100;
+}
+
+.action-tag.create {
+  background: rgba(24, 144, 255, 0.1);
+  color: #1890ff;
+}
+
+.action-tag.update {
+  background: rgba(114, 46, 209, 0.1);
+  color: #722ed1;
+}
+
+.action-tag.delete {
+  background: rgba(255, 77, 79, 0.1);
+  color: #ff4d4f;
+}
+
+.action-tag.reply_review {
+  background: rgba(255, 103, 0, 0.1);
+  color: #ff6700;
+}
+
+.detail-cell {
+  text-align: center;
+}
+
+.detail-btn {
+  padding: 6px 16px;
+  background: rgba(24, 144, 255, 0.1);
+  color: #1890ff;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.detail-btn:hover {
+  background: rgba(24, 144, 255, 0.2);
+}
+
+.empty-state {
+  padding: 60px;
+  text-align: center;
   color: #909399;
 }
 
-.error-alert {
-  margin-bottom: 20px;
+.empty-state p {
+  margin-top: 12px;
 }
 
-.page-summary {
-  margin-top: 16px;
-  text-align: right;
-  color: #606266;
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  padding: 24px;
+  border-top: 1px solid #f0f0f0;
+  background: #fafafa;
 }
 
-.filter-card {
-  margin-bottom: 20px;
+.pagination-btn {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #e8e8e8;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #667085;
+  transition: all 0.3s;
 }
 
-.filter-card :deep(.el-form-item) {
-  margin-bottom: 0;
+.pagination-btn:hover:not(:disabled) {
+  border-color: #1890ff;
+  color: #1890ff;
 }
 
-.metadata-content {
-  max-height: 260px;
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  font-size: 14px;
+  color: #667085;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.modal-header h3 {
   margin: 0;
-  padding: 12px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
+  font-size: 18px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #909399;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.close-btn:hover {
+  color: #667085;
+}
+
+.modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+.detail-row {
+  display: flex;
+  padding: 12px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.detail-label {
+  width: 120px;
+  font-weight: 600;
+  color: #667085;
+  font-size: 14px;
+}
+
+.detail-value {
+  flex: 1;
+  color: #1f2d3d;
+  font-size: 14px;
+}
+
+.detail-json {
+  flex: 1;
   background: #f5f7fa;
-  border-radius: 4px;
-  font-family: Consolas, Monaco, monospace;
-  line-height: 1.6;
+  padding: 12px;
+  border-radius: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  color: #667085;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.result-tag {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.result-tag.success {
+  background: rgba(82, 196, 26, 0.1);
+  color: #52c41a;
+}
+
+.result-tag.failed {
+  background: rgba(255, 77, 79, 0.1);
+  color: #ff4d4f;
+}
+
+@media (max-width: 768px) {
+  .search-bar {
+    flex-direction: column;
+  }
+
+  .logs-table {
+    font-size: 12px;
+  }
+
+  .logs-table th,
+  .logs-table td {
+    padding: 12px 8px;
+  }
 }
 </style>

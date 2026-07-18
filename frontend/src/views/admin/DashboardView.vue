@@ -31,7 +31,16 @@
     </section>
 
     <section class="quick-actions">
-      <h2 class="section-title">快捷操作</h2>
+      <div class="section-header">
+        <h2 class="section-title">快捷操作</h2>
+        <button class="edit-btn" @click="showEditModal = true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+          </svg>
+          <span>编辑</span>
+        </button>
+      </div>
 
       <div class="action-cards">
         <div
@@ -40,16 +49,7 @@
           :class="['action-card', action.bgClass]"
           @click="navigateTo(action.path)"
         >
-          <svg
-            :viewBox="action.iconViewBox"
-            width="40"
-            height="40"
-            fill="none"
-            stroke="#fff"
-            stroke-width="2"
-          >
-            <path :d="action.iconPath" />
-          </svg>
+          <span class="action-emoji">{{ action.emoji }}</span>
 
           <div class="action-info">
             <h3>{{ action.label }}</h3>
@@ -68,6 +68,14 @@
             <path d="M5 12h14M12 5l7 7-7 7"></path>
           </svg>
         </div>
+      </div>
+
+      <div v-if="quickActions.length === 0" class="empty-actions">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#ccc" stroke-width="1.5">
+          <path d="M12 20v-6M12 4v6M4 12h6M14 12h6"></path>
+        </svg>
+        <p>暂无快捷操作</p>
+        <button class="add-action-btn" @click="showEditModal = true">添加快捷操作</button>
       </div>
     </section>
 
@@ -134,11 +142,66 @@
         <p>暂无商家数据</p>
       </div>
     </section>
+
+    <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>编辑快捷操作</h3>
+          <button class="modal-close" @click="showEditModal = false">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="current-actions">
+            <h4>当前快捷操作</h4>
+            <div v-if="quickActions.length === 0" class="empty-tip">
+              暂无快捷操作，点击下方添加
+            </div>
+            <div v-else class="action-list">
+              <div v-for="action in quickActions" :key="action.label" class="action-item">
+                <span class="action-emoji-small">{{ action.emoji }}</span>
+                <span class="action-label">{{ action.label }}</span>
+                <button class="remove-btn" @click="removeAction(action.label)">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="available-actions">
+            <h4>可添加的操作</h4>
+            <div v-if="availableActions.length === 0" class="empty-tip">
+              所有操作已添加
+            </div>
+            <div v-else class="action-list">
+              <div v-for="action in availableActions" :key="action.label" class="action-item">
+                <span class="action-emoji-small">{{ action.emoji }}</span>
+                <span class="action-label">{{ action.label }}</span>
+                <button class="add-btn" @click="addAction(action)">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="showEditModal = false">关闭</button>
+        </div>
+      </div>
+    </div>
   </AdminLayout>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import AdminLayout from '../../components/AdminLayout.vue'
 import { getAdminMerchants } from '../../api/adminMerchant'
@@ -182,33 +245,78 @@ const stats = ref([
   },
 ])
 
-const quickActions = [
+const defaultQuickActions = [
   {
     label: '新增商家',
     description: '添加新的合作商家信息',
     path: '/admin/restaurants',
-    iconViewBox: '0 0 24 24',
-    iconPath: 'M12 20v-6M12 4v6M4 12h6M14 12h6',
+    emoji: '🏪',
     bgClass: 'action-card-green',
   },
   {
     label: '模型配置',
     description: '管理 AI 模型服务配置',
     path: '/admin/model-configs',
-    iconViewBox: '0 0 24 24',
-    iconPath:
-      'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M9 12l2 2 4-4',
+    emoji: '🤖',
     bgClass: 'action-card-blue',
+  },
+  {
+    label: '运营数据',
+    description: '查看平台核心运营数据',
+    path: '/admin/dashboard',
+    emoji: '📊',
+    bgClass: 'action-card-orange',
   },
   {
     label: '系统审计日志',
     description: '查询系统和重要操作的审计日志',
     path: '/admin/logs',
-    iconViewBox: '0 0 24 24',
-    iconPath: 'M4 4h16v16H4z M8 9h8 M8 13h8 M8 17h5',
+    emoji: '📋',
     bgClass: 'action-card-purple',
   },
 ]
+
+const quickActions = ref([])
+const showEditModal = ref(false)
+
+const loadQuickActions = () => {
+  const saved = localStorage.getItem('adminQuickActions')
+  if (saved) {
+    try {
+      quickActions.value = JSON.parse(saved)
+    } catch {
+      quickActions.value = [...defaultQuickActions]
+    }
+  } else {
+    quickActions.value = [...defaultQuickActions]
+  }
+}
+
+const saveQuickActions = () => {
+  localStorage.setItem('adminQuickActions', JSON.stringify(quickActions.value))
+}
+
+const removeAction = (label) => {
+  quickActions.value = quickActions.value.filter(a => a.label !== label)
+  saveQuickActions()
+}
+
+const addAction = (action) => {
+  quickActions.value.push(action)
+  saveQuickActions()
+}
+
+const availableActions = computed(() => {
+  const usedLabels = quickActions.value.map(a => a.label)
+  return [
+    { label: '系统首页', description: '返回系统首页', path: '/admin/home', emoji: '🏠', bgClass: 'action-card-blue' },
+    { label: '商家管理', description: '管理商家信息', path: '/admin/restaurants', emoji: '🏪', bgClass: 'action-card-green' },
+    { label: '新增商家', description: '添加新的合作商家信息', path: '/admin/restaurants', emoji: '✨', bgClass: 'action-card-green' },
+    { label: '模型配置', description: '管理 AI 模型服务配置', path: '/admin/model-configs', emoji: '🤖', bgClass: 'action-card-blue' },
+    { label: '运营数据', description: '查看平台核心运营数据', path: '/admin/dashboard', emoji: '📊', bgClass: 'action-card-orange' },
+    { label: '审计日志', description: '查询系统和重要操作的审计日志', path: '/admin/logs', emoji: '📋', bgClass: 'action-card-purple' },
+  ].filter(a => !usedLabels.includes(a.label))
+})
 
 const loadData = async () => {
   try {
@@ -289,6 +397,7 @@ const formatTime = dateString => {
 }
 
 onMounted(() => {
+  loadQuickActions()
   loadData()
 })
 </script>
@@ -547,5 +656,223 @@ onMounted(() => {
     gap: 12px;
     flex-direction: column;
   }
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.edit-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #f5f5f5;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  color: #666;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.edit-btn:hover {
+  background: #e8e8e8;
+  border-color: #bfbfbf;
+}
+
+.action-emoji {
+  font-size: 32px;
+}
+
+.action-card-orange {
+  background: linear-gradient(135deg, #fa8c16 0%, #ffa940 100%);
+}
+
+.empty-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: #fafafa;
+  border-radius: 16px;
+  border: 1px dashed #d9d9d9;
+}
+
+.empty-actions p {
+  margin: 16px 0 20px;
+  color: #999;
+}
+
+.add-action-btn {
+  padding: 10px 24px;
+  background: #1890ff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-action-btn:hover {
+  background: #40a9ff;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  width: 500px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  color: #666;
+  background: #f5f5f5;
+}
+
+.modal-body {
+  padding: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.modal-body h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.current-actions {
+  margin-bottom: 24px;
+}
+
+.action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #fafafa;
+  border-radius: 8px;
+}
+
+.action-emoji-small {
+  font-size: 20px;
+}
+
+.action-label {
+  flex: 1;
+  font-size: 14px;
+  color: #333;
+}
+
+.remove-btn, .add-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.remove-btn {
+  color: #ff4d4f;
+}
+
+.remove-btn:hover {
+  background: #fff2f0;
+}
+
+.add-btn {
+  color: #52c41a;
+}
+
+.add-btn:hover {
+  background: #f6ffed;
+}
+
+.empty-tip {
+  padding: 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  color: #999;
+  font-size: 13px;
+  text-align: center;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 20px;
+  border-top: 1px solid #f0f0f0;
+  gap: 10px;
+}
+
+.btn {
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-secondary {
+  background: #f5f5f5;
+  color: #666;
+  border: 1px solid #d9d9d9;
+}
+
+.btn-secondary:hover {
+  background: #e8e8e8;
 }
 </style>
