@@ -5,7 +5,7 @@
     python scripts/convert_osm.py <geojson文件路径>
 
 输出:
-    - scripts/postgres/07_osm_merchants.sql  (可直接被 Docker PostgreSQL 自动执行)
+    - scripts/postgres/imports/07_osm_merchants.sql  (仅供手动导入，不参与数据库初始化)
     - scripts/postgres/07_osm_import_items.sql  (导入明细，同样自动执行)
 
 生成的文件提交到 git 后，队友只需 docker-compose up 即可自动导入数据。
@@ -17,7 +17,7 @@ import os
 from datetime import datetime
 
 # ── 配置 ──────────────────────────────────────────────────
-OUTPUT_SQL = "scripts/postgres/07_osm_merchants.sql"
+OUTPUT_SQL = "scripts/postgres/imports/07_osm_merchants.sql"
 OSM_TIMESTAMP = None  # 从 GeoJSON 中读取
 
 AMENITY_CN = {

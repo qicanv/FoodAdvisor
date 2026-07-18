@@ -75,10 +75,4 @@ CREATE TABLE IF NOT EXISTS model_scene_bindings (
         CHECK (status IN ('ACTIVE', 'DISABLED'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_model_configs_status
-    ON model_configs(status);
-
-CREATE INDEX IF NOT EXISTS idx_model_scene_bindings_config
-    ON model_scene_bindings(model_config_id, status);
-
 COMMIT;
