@@ -1,10 +1,12 @@
-package com.foodadvisor.backend.controller;
+package com.foodadvisor.controller;
 
+import com.foodadvisor.backend.BackendApplication;
 import com.foodadvisor.service.AuditLogService;
 import com.foodadvisor.util.SensitiveLogSanitizer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -13,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(HealthController.class)
+@ContextConfiguration(classes = BackendApplication.class)
 class HealthControllerTest {
 
     @Autowired
