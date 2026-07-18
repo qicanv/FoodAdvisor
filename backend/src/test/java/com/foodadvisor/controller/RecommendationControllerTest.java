@@ -26,7 +26,9 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -51,6 +53,9 @@ class RecommendationControllerTest {
                 )
                 .setControllerAdvice(
                         new GlobalExceptionHandler()
+                )
+                .defaultRequest(
+                        get("/").requestAttr("userId", 1L)
                 )
                 .build();
     }
@@ -208,6 +213,65 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.data.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.results[0].merchantId")
                         .value(701));
+    }
+
+    @Test
+    void shouldUseJwtUserIdForRankAndIgnoreBodyUserId()
+            throws Exception {
+        when(recommendationRankingService.rank(
+                eq(1L),
+                any(RecommendationRankRequest.class)
+        )).thenReturn(successResponse());
+
+        RecommendationRankRequest request = rankRequest();
+        request.setUserId(999L);
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/recommendations/rank"
+                )
+                        .requestAttr("userId", 7)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk());
+
+        verify(recommendationRankingService).rank(
+                eq(1L),
+                org.mockito.ArgumentMatchers.argThat(
+                        value -> Long.valueOf(7L)
+                                .equals(value.getUserId())
+                )
+        );
+    }
+
+    @Test
+    void shouldUseJwtUserIdForAdjustAndIgnoreBodyUserId()
+            throws Exception {
+        when(recommendationRankingService.adjustAndRank(
+                eq(1L),
+                any()
+        )).thenReturn(successResponse());
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/recommendations/adjust"
+                )
+                        .requestAttr("userId", 7L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of(
+                                        "userId", 999,
+                                        "field", "perCapitaBudget",
+                                        "value", 120
+                                )
+                        )))
+                .andExpect(status().isOk());
+
+        verify(recommendationRankingService).adjustAndRank(
+                eq(1L),
+                org.mockito.ArgumentMatchers.argThat(
+                        value -> Long.valueOf(7L)
+                                .equals(value.getUserId())
+                )
+        );
     }
 
     private RecommendationRankRequest rankRequest() {

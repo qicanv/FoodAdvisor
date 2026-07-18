@@ -5,6 +5,8 @@ import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.service.RecommendationRankingService;
+import com.foodadvisor.util.AuthenticatedUserId;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,8 +46,12 @@ public class RecommendationController {
             @PathVariable Long sessionId,
             @Valid
             @RequestBody
-            RecommendationRankRequest request
+            RecommendationRankRequest request,
+            HttpServletRequest httpRequest
     ) {
+        request.setUserId(
+                AuthenticatedUserId.require(httpRequest)
+        );
         RecommendationRankResponse response =
                 recommendationRankingService.rank(
                         sessionId,
@@ -63,8 +69,12 @@ public class RecommendationController {
             @PathVariable Long sessionId,
             @Valid
             @RequestBody
-            RecommendationAdjustRequest request
+            RecommendationAdjustRequest request,
+            HttpServletRequest httpRequest
     ) {
+        request.setUserId(
+                AuthenticatedUserId.require(httpRequest)
+        );
         RecommendationRankResponse response =
                 recommendationRankingService
                         .adjustAndRank(
