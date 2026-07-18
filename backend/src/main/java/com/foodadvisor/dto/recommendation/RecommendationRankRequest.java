@@ -22,7 +22,6 @@ public class RecommendationRankRequest {
     /**
      * 当前操作用户，用于校验会话归属。
      */
-    @NotNull(message = "userId不能为空")
     private Long userId;
 
     /**
