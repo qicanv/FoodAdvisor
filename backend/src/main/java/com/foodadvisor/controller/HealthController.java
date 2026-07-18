@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.controller;
+package com.foodadvisor.controller;
 
 import com.foodadvisor.common.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
