@@ -23,6 +23,12 @@ foodadvisor:
     model-key-secret: ${MODEL_KEY_SECRET:foodadvisor-secret-key-2024}
   upload:
     review-image-dir: ${REVIEW_IMAGE_UPLOAD_DIR:uploads/reviews}
+  hot-words:
+    scheduled:
+      # 是否启用热词定时生成任务，默认 true
+      enabled: true
+    # 单区域最多保留的热词数量，默认 100
+    max-words-per-region: 100
 
 management:
   endpoints:
