@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.controller;
+package com.foodadvisor.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.foodadvisor.dto.modelconfig.ConnectionTestResponse;
@@ -8,7 +8,7 @@ import com.foodadvisor.dto.modelconfig.SceneBindingRequest;
 import com.foodadvisor.dto.modelconfig.SceneBindingResponse;
 import com.foodadvisor.exception.GlobalExceptionHandler;
 import com.foodadvisor.security.AdminAccessGuard;
-import com.foodadvisor.backend.service.ModelConfigService;
+import com.foodadvisor.service.ModelConfigService;
 import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.service.AuditLogService;
 import com.foodadvisor.util.SensitiveLogSanitizer;

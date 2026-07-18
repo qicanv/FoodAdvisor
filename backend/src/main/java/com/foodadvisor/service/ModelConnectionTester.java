@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.service;
+package com.foodadvisor.service;
 
 import com.foodadvisor.dto.modelconfig.ConnectionTestResponse;
 import com.foodadvisor.entity.ModelConfig;
