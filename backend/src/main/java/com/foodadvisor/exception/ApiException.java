@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.exception;
+package com.foodadvisor.exception;
 
 import org.springframework.http.HttpStatus;
 

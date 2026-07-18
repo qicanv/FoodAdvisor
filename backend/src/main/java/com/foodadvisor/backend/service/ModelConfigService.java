@@ -8,7 +8,7 @@ import com.foodadvisor.backend.dto.modelconfig.SceneBindingRequest;
 import com.foodadvisor.backend.dto.modelconfig.SceneBindingResponse;
 import com.foodadvisor.backend.entity.ModelConfig;
 import com.foodadvisor.backend.entity.ModelSceneBinding;
-import com.foodadvisor.backend.exception.ApiException;
+import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.backend.mapper.ModelConfigMapper;
 import com.foodadvisor.backend.mapper.ModelSceneBindingMapper;
 import org.springframework.http.HttpStatus;
