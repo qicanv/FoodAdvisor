@@ -1,6 +1,6 @@
 package com.foodadvisor.backend.controller;
 
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.backend.dto.modelconfig.ConnectionTestResponse;
 import com.foodadvisor.backend.dto.modelconfig.ModelConfigRequest;
 import com.foodadvisor.backend.dto.modelconfig.ModelConfigResponse;

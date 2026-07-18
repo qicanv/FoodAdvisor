@@ -1,6 +1,6 @@
 package com.foodadvisor.backend.exception;
 
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.service.AuditLogService;
 import com.foodadvisor.util.SensitiveLogSanitizer;

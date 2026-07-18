@@ -1,6 +1,6 @@
 package com.foodadvisor.controller;
 
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.dialogue.DialogueContinueRequest;
 import com.foodadvisor.dto.dialogue.DialogueContinueResponse;
 import com.foodadvisor.dto.dialogue.DialogueHistoryResponse;
