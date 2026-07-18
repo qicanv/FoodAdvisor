@@ -92,6 +92,10 @@ class MatchScoreCalculatorTest {
                 ),
                 () -> assertTrue(
                         result.getRiskNotes().isEmpty()
+                ),
+                () -> assertEquals(
+                        "OPERATING",
+                        result.getOperationStatus()
                 )
         );
     }

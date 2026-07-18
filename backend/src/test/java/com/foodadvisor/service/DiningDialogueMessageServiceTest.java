@@ -400,11 +400,17 @@ class DiningDialogueMessageServiceTest {
                 message(
                         21L,
                         "ASSISTANT",
-                        "req-6",
-                        "{\"recommendationId\":100,"
-                                + "\"responseType\":\"RECOMMENDATION\","
-                                + "\"status\":\"SUCCESS\"}"
-                );
+                         "req-6",
+                         "{\"recommendationId\":100,"
+                                 + "\"responseType\":\"RECOMMENDATION\","
+                                 + "\"status\":\"SUCCESS\","
+                                 + "\"responseSnapshot\":{"
+                                 + "\"recommendation\":{"
+                                 + "\"adjustmentSuggestions\":[{"
+                                 + "\"id\":\"expand-distance\","
+                                 + "\"displayText\":\"放宽距离\""
+                                 + "}]}}}"
+                 );
 
         when(chatMessageMapper.selectList(any()))
                 .thenReturn(List.of(user, assistant));
@@ -458,15 +464,31 @@ class DiningDialogueMessageServiceTest {
                                 .get(0)
                                 .getReason()
                 ),
+                 () -> assertEquals(
+                         null,
+                         history.getMessages()
+                                .get(1)
+                                .getRecommendations()
+                                 .get(0)
+                                 .getAveragePrice()
+                ),
                 () -> assertEquals(
-                        null,
+                        "OPERATING",
                         history.getMessages()
                                 .get(1)
                                 .getRecommendations()
                                 .get(0)
-                                .getAveragePrice()
-                )
-        );
+                                .getOperationStatus()
+                ),
+                () -> assertEquals(
+                        "放宽距离",
+                        history.getMessages()
+                                .get(1)
+                                .getAdjustmentSuggestions()
+                                .get(0)
+                                .getDisplayText()
+                 )
+         );
     }
 
     private void assertEmptyMessage(String content) {
