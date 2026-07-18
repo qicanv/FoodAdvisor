@@ -1,6 +1,7 @@
 package com.foodadvisor.dto.dialogue;
 
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
+import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
 import lombok.Data;
 
 import java.time.OffsetDateTime;
@@ -25,6 +26,9 @@ public class DialogueMessageVO {
     private String status;
 
     private List<RecommendationItemVO> recommendations =
+            new ArrayList<>();
+
+    private List<AdjustmentSuggestionVO> adjustmentSuggestions =
             new ArrayList<>();
 
     private OffsetDateTime createdAt;

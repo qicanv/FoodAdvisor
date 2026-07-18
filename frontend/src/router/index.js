@@ -55,6 +55,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'diner' },
   },
   {
+    path: '/diner/ai-dining',
+    name: 'diner-ai-dining',
+    component: () => import('../views/diner/AiDiningView.vue'),
+    meta: { requiresAuth: true, role: 'diner' },
+  },
+  {
     path: '/diner/merchant/:id',
     name: 'diner-merchant-detail',
     component: () => import('../views/diner/MerchantDetailView.vue'),
