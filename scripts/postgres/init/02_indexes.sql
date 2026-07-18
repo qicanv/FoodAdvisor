@@ -1,6 +1,6 @@
 -- ============================================
--- FoodAdvisor 索引创建脚本 V0.3
--- 复合索引 + 部分唯一索引
+-- FoodAdvisor 绱㈠紩鍒涘缓鑴氭湰 V0.3
+-- 澶嶅悎绱㈠紩 + 閮ㄥ垎鍞竴绱㈠紩
 -- ============================================
 
 -- === users ===
@@ -48,7 +48,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_dishes_merchant_name_active
     ON dishes(merchant_id, name)
     WHERE status <> 'ARCHIVED';
 
--- === reviews (V0.3 更新) ===
+-- === reviews (V0.3 鏇存柊) ===
 CREATE INDEX IF NOT EXISTS idx_reviews_merchant_created
     ON reviews(merchant_id, created_at DESC);
 
@@ -64,7 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_reviews_status
 CREATE INDEX IF NOT EXISTS idx_reviews_review_type
     ON reviews(review_type, status);
 
--- === review_analysis (V0.3 更新) ===
+-- === review_analysis (V0.3 鏇存柊) ===
 CREATE INDEX IF NOT EXISTS idx_review_analysis_review_version
     ON review_analysis(review_id, review_version DESC, analysis_version DESC);
 
@@ -74,26 +74,26 @@ CREATE INDEX IF NOT EXISTS idx_review_analysis_sentiment
 CREATE INDEX IF NOT EXISTS idx_review_analysis_created_at
     ON review_analysis(created_at DESC);
 
--- === review_versions (V0.3 新增) ===
+-- === review_versions (V0.3 鏂板) ===
 CREATE INDEX IF NOT EXISTS idx_review_versions_review
     ON review_versions(review_id, version DESC);
 
--- === review_issue_relations (V0.3 新增) ===
+-- === review_issue_relations (V0.3 鏂板) ===
 CREATE INDEX IF NOT EXISTS idx_issue_relations_review
     ON review_issue_relations(review_id, review_version);
 
 CREATE INDEX IF NOT EXISTS idx_issue_relations_category
     ON review_issue_relations(issue_category_id);
 
--- === merchant_highlights (V0.3 新增) ===
+-- === merchant_highlights (V0.3 鏂板) ===
 CREATE INDEX IF NOT EXISTS idx_highlights_merchant_status
     ON merchant_highlights(merchant_id, status, mention_count DESC);
 
--- === merchant_highlight_evidences (V0.3 新增) ===
+-- === merchant_highlight_evidences (V0.3 鏂板) ===
 CREATE INDEX IF NOT EXISTS idx_highlight_evidences_highlight
     ON merchant_highlight_evidences(highlight_id);
 
--- === merchant_reputation_statistics (V0.3 新增) ===
+-- === merchant_reputation_statistics (V0.3 鏂板) ===
 CREATE INDEX IF NOT EXISTS idx_reputation_stats_merchant_period
     ON merchant_reputation_statistics(merchant_id, period_type, period_start DESC);
 
@@ -196,3 +196,141 @@ CREATE INDEX IF NOT EXISTS idx_ai_call_logs_status_created
 
 CREATE INDEX IF NOT EXISTS idx_ai_call_logs_model
     ON ai_call_logs(model_name, created_at DESC);
+-- Merchant reply lookup and one-visible-reply invariant.
+CREATE UNIQUE INDEX IF NOT EXISTS uk_review_reply_visible
+    ON review_reply(review_id)
+    WHERE status = 'VISIBLE';
+
+CREATE INDEX IF NOT EXISTS idx_review_reply_merchant_time
+    ON review_reply(merchant_id, reply_time DESC);
+
+-- User notification inbox and unread count.
+CREATE INDEX IF NOT EXISTS idx_notifications_user_status_created
+    ON notifications(user_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_review
+    ON notifications(review_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at
+    ON audit_logs(created_at DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_operator_user_id
+    ON audit_logs(operator_user_id, created_at DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_operator_username
+    ON audit_logs(operator_username, created_at DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_module
+    ON audit_logs(module, created_at DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_level
+    ON audit_logs(level, created_at DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_operation_type
+    ON audit_logs(operation_type, created_at DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_object
+    ON audit_logs(object_type, object_id, created_at DESC);
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_user_merchant_original
+ON reviews(user_id, merchant_id)
+WHERE user_id IS NOT NULL
+  AND review_type = 'ORIGINAL'
+  AND status <> 'DELETED';
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_parent_follow_up
+ON reviews(parent_review_id)
+WHERE parent_review_id IS NOT NULL
+  AND review_type = 'FOLLOW_UP'
+  AND status <> 'DELETED';
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_user_idempotency
+ON reviews(user_id, idempotency_key)
+WHERE user_id IS NOT NULL
+  AND idempotency_key IS NOT NULL;
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_users_email_active
+    ON users(lower(email))
+    WHERE email IS NOT NULL
+      AND deleted_at IS NULL;
+
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_status
+    ON auth_sessions(user_id, status);
+
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at
+    ON auth_sessions(expires_at);
+
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_username_created
+    ON login_attempts(username, created_at DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_created
+    ON login_attempts(ip_address, created_at DESC);
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_business_hours_open_period
+    ON merchant_business_hours(
+        merchant_id,
+        day_of_week,
+        open_time
+    )
+    WHERE is_closed = FALSE;
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_business_hours_closed_day
+    ON merchant_business_hours(
+        merchant_id,
+        day_of_week
+    )
+    WHERE is_closed = TRUE;
+
+
+CREATE INDEX IF NOT EXISTS idx_model_configs_status
+    ON model_configs(status);
+
+
+CREATE INDEX IF NOT EXISTS idx_model_scene_bindings_config
+    ON model_scene_bindings(model_config_id, status);
+
+
+CREATE INDEX IF NOT EXISTS idx_hot_words_region_heat
+    ON region_hot_words(region_code, status, heat_score DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_hot_words_region_category
+    ON region_hot_words(region_code, category, status, heat_score DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_hot_words_period
+    ON region_hot_words(period_type, period_end, status);
+
+
+CREATE INDEX IF NOT EXISTS idx_hot_words_version
+    ON region_hot_words(version, status);
+
+
+CREATE INDEX IF NOT EXISTS idx_hot_words_created
+    ON region_hot_words(created_at DESC);
+
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_review_images_review_sort_active
+    ON review_images(review_id, sort_order)
+    WHERE status = 'ACTIVE';
+
+
+CREATE INDEX IF NOT EXISTS idx_review_images_review
+    ON review_images(review_id, status, sort_order);
