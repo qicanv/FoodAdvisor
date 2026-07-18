@@ -1,8 +1,8 @@
 package com.foodadvisor.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foodadvisor.backend.exception.ApiException;
-import com.foodadvisor.backend.exception.GlobalExceptionHandler;
+import com.foodadvisor.exception.ApiException;
+import com.foodadvisor.exception.GlobalExceptionHandler;
 import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;

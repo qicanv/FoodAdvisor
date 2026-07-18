@@ -8,7 +8,7 @@ import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewVersion;
-import com.foodadvisor.backend.exception.ApiException;
+import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.mapper.AuditLogMapper;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.ReviewAnalysisMapper;
