@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.security;
+package com.foodadvisor.security;
 
 import com.foodadvisor.exception.ApiException;
 import jakarta.servlet.http.HttpServletRequest;

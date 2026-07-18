@@ -7,7 +7,7 @@ import com.foodadvisor.backend.dto.modelconfig.ModelConfigResponse;
 import com.foodadvisor.backend.dto.modelconfig.SceneBindingRequest;
 import com.foodadvisor.backend.dto.modelconfig.SceneBindingResponse;
 import com.foodadvisor.exception.GlobalExceptionHandler;
-import com.foodadvisor.backend.security.AdminAccessGuard;
+import com.foodadvisor.security.AdminAccessGuard;
 import com.foodadvisor.backend.service.ModelConfigService;
 import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.service.AuditLogService;
