@@ -106,6 +106,12 @@ const routes = [
     component: () => import('../views/admin/AuditLogView.vue'),
     meta: { requiresAuth: true, role: 'admin' },
   },
+  {
+    path: '/admin/merchant-statistics',
+    name: 'admin-merchant-statistics',
+    component: () => import('../views/admin/MerchantStatistics.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
 ]
 
 const router = createRouter({

@@ -12,7 +12,6 @@ import java.math.BigDecimal;
 @Data
 public class RecommendationAdjustRequest {
 
-    @NotNull(message = "userId不能为空")
     private Long userId;
 
     @NotBlank(message = "field不能为空")
