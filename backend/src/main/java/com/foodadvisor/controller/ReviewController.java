@@ -28,8 +28,11 @@ import com.foodadvisor.entity.ReviewIssueRelation;
 import com.foodadvisor.mapper.ReviewIssueCategoryMapper;
 import com.foodadvisor.dto.IssueStatVO;
 import com.foodadvisor.dto.IssueReviewVO;
+import com.foodadvisor.exception.ApiException;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.Map;
@@ -69,6 +72,36 @@ public class ReviewController {
         this.issueCategoryMapper = issueCategoryMapper;
     }
 
+    @PostMapping("/merchants/{merchantId}")
+    public ApiResponse<ReviewSubmitResponse> submit(
+            @PathVariable Long merchantId,
+            @ModelAttribute ReviewSubmitRequest request,
+            @RequestPart(value = "images", required = false)
+            List<MultipartFile> images,
+            HttpServletRequest servletRequest
+    ) {
+        ReviewSubmitResponse response =
+                reviewService.submitOriginalReview(
+                        requireUserId(servletRequest),
+                        merchantId,
+                        request,
+                        images == null ? List.of() : images
+                );
+        return ApiResponse.success(response);
+    }
+
+    private Long requireUserId(HttpServletRequest request) {
+        Object userId = request.getAttribute("userId");
+        if (userId instanceof Number number) {
+            return number.longValue();
+        }
+
+        throw new ApiException(
+                HttpStatus.UNAUTHORIZED,
+                "UNAUTHORIZED",
+                "Authentication required"
+        );
+    }
 
     /**
      * 按商家分页查询评价
