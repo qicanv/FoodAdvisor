@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.common;
+package com.foodadvisor.common;
 
 public record ApiResponse<T>(
         String code,
