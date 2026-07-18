@@ -245,14 +245,9 @@ const stats = ref([
   },
 ])
 
+const QUICK_ACTIONS_VERSION = '2'
+
 const defaultQuickActions = [
-  {
-    label: '新增商家',
-    description: '添加新的合作商家信息',
-    path: '/admin/restaurants',
-    emoji: '🏪',
-    bgClass: 'action-card-green',
-  },
   {
     label: '模型配置',
     description: '管理 AI 模型服务配置',
@@ -268,6 +263,13 @@ const defaultQuickActions = [
     bgClass: 'action-card-orange',
   },
   {
+    label: '商家统计',
+    description: '查看商家使用平台功能情况',
+    path: '/admin/merchant-statistics',
+    emoji: '📈',
+    bgClass: 'action-card-purple',
+  },
+  {
     label: '系统审计日志',
     description: '查询系统和重要操作的审计日志',
     path: '/admin/logs',
@@ -280,8 +282,10 @@ const quickActions = ref([])
 const showEditModal = ref(false)
 
 const loadQuickActions = () => {
+  const savedVersion = localStorage.getItem('adminQuickActionsVersion')
   const saved = localStorage.getItem('adminQuickActions')
-  if (saved) {
+  
+  if (saved && savedVersion === QUICK_ACTIONS_VERSION) {
     try {
       quickActions.value = JSON.parse(saved)
     } catch {
@@ -289,11 +293,13 @@ const loadQuickActions = () => {
     }
   } else {
     quickActions.value = [...defaultQuickActions]
+    saveQuickActions()
   }
 }
 
 const saveQuickActions = () => {
   localStorage.setItem('adminQuickActions', JSON.stringify(quickActions.value))
+  localStorage.setItem('adminQuickActionsVersion', QUICK_ACTIONS_VERSION)
 }
 
 const removeAction = (label) => {
@@ -309,11 +315,10 @@ const addAction = (action) => {
 const availableActions = computed(() => {
   const usedLabels = quickActions.value.map(a => a.label)
   return [
-    { label: '系统首页', description: '返回系统首页', path: '/admin/home', emoji: '🏠', bgClass: 'action-card-blue' },
     { label: '商家管理', description: '管理商家信息', path: '/admin/restaurants', emoji: '🏪', bgClass: 'action-card-green' },
-    { label: '新增商家', description: '添加新的合作商家信息', path: '/admin/restaurants', emoji: '✨', bgClass: 'action-card-green' },
     { label: '模型配置', description: '管理 AI 模型服务配置', path: '/admin/model-configs', emoji: '🤖', bgClass: 'action-card-blue' },
     { label: '运营数据', description: '查看平台核心运营数据', path: '/admin/dashboard', emoji: '📊', bgClass: 'action-card-orange' },
+    { label: '商家统计', description: '查看商家使用平台功能情况', path: '/admin/merchant-statistics', emoji: '📈', bgClass: 'action-card-purple' },
     { label: '审计日志', description: '查询系统和重要操作的审计日志', path: '/admin/logs', emoji: '📋', bgClass: 'action-card-purple' },
   ].filter(a => !usedLabels.includes(a.label))
 })
