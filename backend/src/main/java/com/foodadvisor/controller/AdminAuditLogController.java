@@ -1,7 +1,7 @@
 package com.foodadvisor.controller;
 
-import com.foodadvisor.backend.common.ApiResponse;
-import com.foodadvisor.backend.security.AdminAccessGuard;
+import com.foodadvisor.common.ApiResponse;
+import com.foodadvisor.security.AdminAccessGuard;
 import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.dto.audit.AuditLogQueryRequest;
 import com.foodadvisor.dto.audit.AuditLogVO;
