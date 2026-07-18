@@ -8,6 +8,8 @@ import com.foodadvisor.dto.ReviewAnalysisResultVO;
 import com.foodadvisor.dto.review.MyReviewDetailVO;
 import com.foodadvisor.dto.review.MyReviewListVO;
 import com.foodadvisor.dto.review.ReviewDisplayVO;
+import com.foodadvisor.dto.review.ReviewFollowUpRequest;
+import com.foodadvisor.dto.review.ReviewFollowUpVO;
 import com.foodadvisor.dto.review.ReviewReplyVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
@@ -26,7 +28,11 @@ import com.foodadvisor.entity.ReviewIssueRelation;
 import com.foodadvisor.mapper.ReviewIssueCategoryMapper;
 import com.foodadvisor.dto.IssueStatVO;
 import com.foodadvisor.dto.IssueReviewVO;
+import com.foodadvisor.exception.ApiException;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.Map;
@@ -66,6 +72,36 @@ public class ReviewController {
         this.issueCategoryMapper = issueCategoryMapper;
     }
 
+    @PostMapping("/merchants/{merchantId}")
+    public ApiResponse<ReviewSubmitResponse> submit(
+            @PathVariable Long merchantId,
+            @ModelAttribute ReviewSubmitRequest request,
+            @RequestPart(value = "images", required = false)
+            List<MultipartFile> images,
+            HttpServletRequest servletRequest
+    ) {
+        ReviewSubmitResponse response =
+                reviewService.submitOriginalReview(
+                        requireUserId(servletRequest),
+                        merchantId,
+                        request,
+                        images == null ? List.of() : images
+                );
+        return ApiResponse.success(response);
+    }
+
+    private Long requireUserId(HttpServletRequest request) {
+        Object userId = request.getAttribute("userId");
+        if (userId instanceof Number number) {
+            return number.longValue();
+        }
+
+        throw new ApiException(
+                HttpStatus.UNAUTHORIZED,
+                "UNAUTHORIZED",
+                "Authentication required"
+        );
+    }
 
     /**
      * 按商家分页查询评价
@@ -456,6 +492,94 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
     }
 
     // ==================== 评论编辑与删除 结束 ====================
+
+    // ==================== 追评（追加评价）EPIC-08 故事2 ====================
+
+    /**
+     * 提交追评（追加评价）。
+     *
+     * 业务规则：
+     * - 只能追评自己发表的、已发布的原评价
+     * - 每条原评价最多追加一条追评
+     * - 追评正文 10-2000 字符，消费日期必填，评分选填
+     * - 不涉及图片上传
+     *
+     * 请求示例：
+     *   POST /api/reviews/1/follow-up
+     *   Body: { "content": "第二次来...", "rating": 5, "consumptionDate": "2026-07-18" }
+     */
+    @PostMapping("/{reviewId}/follow-up")
+    public ApiResponse<ReviewSubmitResponse> submitFollowUp(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long userId,
+            @Valid @RequestBody ReviewFollowUpRequest request
+    ) {
+        ReviewSubmitResponse response = reviewService.submitFollowUpReview(
+                userId, reviewId, request
+        );
+        return ApiResponse.success(response);
+    }
+
+    /**
+     * 编辑追评。
+     *
+     * 规则：
+     * - 只能编辑自己写的追评
+     * - 编辑保留历史版本
+     * - 编辑后重新执行内容安全检测
+     *
+     * 请求示例：
+     *   PUT /api/reviews/30/follow-up
+     *   Body: { "content": "第三次来，体验更好了...", "rating": 5, "consumptionDate": "2026-07-20" }
+     */
+    @PutMapping("/{reviewId}/follow-up")
+    public ApiResponse<ReviewSubmitResponse> editFollowUp(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long userId,
+            @Valid @RequestBody ReviewFollowUpRequest request
+    ) {
+        ReviewSubmitResponse response = reviewService.editFollowUpReview(
+                userId, reviewId, request
+        );
+        return ApiResponse.success(response);
+    }
+
+    /**
+     * 删除追评 —— 逻辑删除。
+     *
+     * 根据 Jira EPIC-08 故事2 验收准则5：
+     * "追评单独删除后原评价仍正常展示"
+     *
+     * 请求示例：
+     *   DELETE /api/reviews/30/follow-up
+     */
+    @DeleteMapping("/{reviewId}/follow-up")
+    public ApiResponse<Void> deleteFollowUp(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long userId
+    ) {
+        reviewService.deleteFollowUpReview(userId, reviewId);
+        return ApiResponse.success("追评已删除", null);
+    }
+
+    /**
+     * 查询某条原评价的追评详情。
+     *
+     * 如果原评价存在有效追评，返回追评数据；否则返回 null。
+     * 前端可通过此接口判断是否展示"追加评价"入口和追评内容。
+     *
+     * 请求示例：
+     *   GET /api/reviews/1/follow-up
+     */
+    @GetMapping("/{reviewId}/follow-up")
+    public ApiResponse<ReviewFollowUpVO> getFollowUp(
+            @PathVariable Long reviewId
+    ) {
+        ReviewFollowUpVO followUp = reviewService.getFollowUpByParentId(reviewId);
+        return ApiResponse.success(followUp);
+    }
+
+    // ==================== 追评（追加评价）结束 ====================
 
     @PostMapping("/drop-constraint")
     public ApiResponse<Map<String, Object>> dropConstraint() {

@@ -337,7 +337,7 @@ const submitReview = async () => {
     existingImages.value.forEach(image => data.append('keepImageIds', image.id))
     newImages.value.forEach(image => data.append('images', image.file))
 
-    const response = await submitMerchantReview(route.params.id, data, currentUserId.value)
+    const response = await submitMerchantReview(route.params.id, data)
     if (!response.success) {
       throw new Error(response.message || '评价提交失败')
     }
