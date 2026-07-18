@@ -12,6 +12,7 @@ import com.foodadvisor.dto.dialogue.DialogueMessageResponse;
 import com.foodadvisor.dto.dialogue.DialogueMessageVO;
 import com.foodadvisor.dto.dialogue.FollowUpQuestionVO;
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
+import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.entity.ChatMessage;
@@ -781,8 +782,43 @@ public class DiningDialogueMessageService {
                     )
             );
         }
+        vo.setAdjustmentSuggestions(
+                readAdjustmentSuggestions(metadata)
+        );
 
         return vo;
+    }
+
+    private List<AdjustmentSuggestionVO>
+            readAdjustmentSuggestions(
+            Map<String, Object> metadata
+    ) {
+        Object snapshot = metadata.get("responseSnapshot");
+        if (!(snapshot instanceof Map<?, ?> snapshotMap)) {
+            return new ArrayList<>();
+        }
+
+        Object recommendation =
+                snapshotMap.get("recommendation");
+        if (!(recommendation
+                instanceof Map<?, ?> recommendationMap)) {
+            return new ArrayList<>();
+        }
+
+        Object suggestions =
+                recommendationMap.get(
+                        "adjustmentSuggestions"
+                );
+        if (!(suggestions instanceof List<?> list)) {
+            return new ArrayList<>();
+        }
+
+        return objectMapper.convertValue(
+                list,
+                new TypeReference<
+                        List<AdjustmentSuggestionVO>>() {
+                }
+        );
     }
 
     private List<RecommendationItemVO> loadRecommendationItems(
@@ -831,6 +867,9 @@ public class DiningDialogueMessageService {
                     merchant.getAveragePrice()
             );
             vo.setReviewCount(merchant.getReviewCount());
+            vo.setOperationStatus(
+                    merchant.getOperationStatus()
+            );
             vo.setFinalScore(
                     item.getScore() == null
                             ? null
