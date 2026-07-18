@@ -1,9 +1,5 @@
 import request from './request'
 
-export const getRestaurants = () => {
-  return request.get('/api/restaurants')
-}
-
 export const getMerchants = params => {
   return request.get('/api/merchants', { params })
 }

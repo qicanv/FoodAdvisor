@@ -88,12 +88,6 @@ GET /actuator/health
 GET /api/health
 ```
 
-### 查询餐厅列表
-
-```http
-GET /api/restaurants
-```
-
 ## 运行测试
 
 ```cmd
