@@ -20,6 +20,13 @@ public class ReviewDisplayVO {
     private OffsetDateTime publishedAt;
     private OffsetDateTime createdAt;
 
+    /**
+     * 该评价关联的追评（追加评价）。
+     * 每条原评价最多关联一条追评，没有追评时为 null。
+     * 前端通过此字段判断是否需要展示"追加评价"入口和追评内容。
+     */
+    private ReviewFollowUpVO followUp;
+
     public static ReviewDisplayVO from(Review review) {
         ReviewDisplayVO vo = new ReviewDisplayVO();
         vo.setId(review.getId());
