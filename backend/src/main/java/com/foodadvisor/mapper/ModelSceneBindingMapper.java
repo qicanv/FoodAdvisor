@@ -1,7 +1,7 @@
-package com.foodadvisor.backend.mapper;
+package com.foodadvisor.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.foodadvisor.backend.entity.ModelSceneBinding;
+import com.foodadvisor.entity.ModelSceneBinding;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper

@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.dto.modelconfig;
+package com.foodadvisor.dto.modelconfig;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
