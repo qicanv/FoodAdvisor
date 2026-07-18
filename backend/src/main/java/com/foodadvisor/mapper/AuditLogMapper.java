@@ -10,6 +10,18 @@ import java.time.OffsetDateTime;
 
 @Mapper
 public interface AuditLogMapper extends BaseMapper<AuditLog> {
-    @Select("SELECT COUNT(*) FROM audit_logs WHERE actor_role = #{actorRole} AND action = #{action} AND created_at >= #{startTime} AND created_at <= #{endTime}")
-    Long countByActorRoleAndAction(@Param("actorRole") String actorRole, @Param("action") String action, @Param("startTime") OffsetDateTime startTime, @Param("endTime") OffsetDateTime endTime);
+    @Select("""
+            SELECT COUNT(*)
+            FROM audit_logs
+            WHERE operator_role = #{operatorRole}
+              AND operation_type = #{operationType}
+              AND created_at >= #{startTime}
+              AND created_at <= #{endTime}
+            """)
+    Long countByOperatorRoleAndOperationType(
+            @Param("operatorRole") String operatorRole,
+            @Param("operationType") String operationType,
+            @Param("startTime") OffsetDateTime startTime,
+            @Param("endTime") OffsetDateTime endTime
+    );
 }

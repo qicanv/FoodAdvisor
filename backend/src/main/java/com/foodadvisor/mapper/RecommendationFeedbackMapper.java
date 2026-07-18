@@ -10,6 +10,11 @@ import java.time.OffsetDateTime;
 
 @Mapper
 public interface RecommendationFeedbackMapper extends BaseMapper<RecommendationFeedback> {
-    @Select("SELECT COUNT(*) FROM recommendation_feedbacks WHERE created_at >= #{startTime} AND created_at <= #{endTime}")
+    @Select("""
+            SELECT COUNT(*)
+            FROM recommendation_feedback
+            WHERE created_at >= #{startTime}
+              AND created_at <= #{endTime}
+            """)
     Long countByTimeRange(@Param("startTime") OffsetDateTime startTime, @Param("endTime") OffsetDateTime endTime);
 }

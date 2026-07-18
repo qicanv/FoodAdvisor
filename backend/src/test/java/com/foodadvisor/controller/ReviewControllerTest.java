@@ -15,19 +15,22 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -48,8 +51,6 @@ class ReviewControllerTest {
     @Mock
     private ReviewTagMapper reviewTagMapper;
     @Mock
-    private JdbcTemplate jdbcTemplate;
-    @Mock
     private ReviewIssueCategoryMapper issueCategoryMapper;
 
     private MockMvc mockMvc;
@@ -60,7 +61,6 @@ class ReviewControllerTest {
                 reviewService,
                 aiClientService,
                 reviewTagMapper,
-                jdbcTemplate,
                 issueCategoryMapper
         );
         mockMvc = MockMvcBuilders
@@ -235,6 +235,24 @@ class ReviewControllerTest {
                         .value("MERCHANT_NOT_REVIEWABLE"))
                 .andExpect(jsonPath("$.message")
                         .value("Merchant cannot receive reviews"));
+    }
+
+    @Test
+    void shouldNotExposeDropConstraintRoute() {
+        assertFalse(hasPostMapping("/drop-constraint"));
+    }
+
+    @Test
+    void shouldNotExposeReloadSeedRoute() {
+        assertFalse(hasPostMapping("/reload-seed"));
+    }
+
+    private boolean hasPostMapping(String path) {
+        return Arrays.stream(ReviewController.class.getDeclaredMethods())
+                .map(method -> method.getAnnotation(PostMapping.class))
+                .filter(Objects::nonNull)
+                .flatMap(mapping -> Arrays.stream(mapping.value()))
+                .anyMatch(path::equals);
     }
 
     private ReviewSubmitResponse response(Long id) {
