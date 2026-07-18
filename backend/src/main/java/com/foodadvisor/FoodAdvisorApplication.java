@@ -1,27 +1,27 @@
-package com.foodadvisor.backend;
+package com.foodadvisor;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication(scanBasePackages = "com.foodadvisor")
-public class BackendApplication {
+@SpringBootApplication
+public class FoodAdvisorApplication {
 
     public static void main(String[] args) {
-        // mvn 从 backend/ 运行时，"../" 是项目根目录；
-        // IDE 从项目根目录运行时，"./" 是项目根目录。
+        // Load .env when running from the project root directory.
         Dotenv.configure()
                 .directory("./")
                 .ignoreIfMissing()
                 .systemProperties()
                 .load();
 
+        // Load the root .env when Maven runs from the backend directory.
         Dotenv.configure()
                 .directory("../")
                 .ignoreIfMissing()
                 .systemProperties()
                 .load();
 
-        SpringApplication.run(BackendApplication.class, args);
+        SpringApplication.run(FoodAdvisorApplication.class, args);
     }
 }
