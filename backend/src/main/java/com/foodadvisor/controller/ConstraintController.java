@@ -1,6 +1,6 @@
 package com.foodadvisor.controller;
 
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.constraint.ConstraintExtractRequest;
 import com.foodadvisor.dto.constraint.ConstraintExtractResponse;
 import com.foodadvisor.service.ConstraintExtractionService;

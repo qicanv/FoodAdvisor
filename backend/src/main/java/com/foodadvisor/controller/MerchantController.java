@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.BusinessHourVO;
 import com.foodadvisor.dto.MerchantDetailVO;
 import com.foodadvisor.dto.PageResult;

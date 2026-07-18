@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foodadvisor.backend.exception.ApiException;
+import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.dto.dialogue.DialogueContinueResponse;
 import com.foodadvisor.dto.dialogue.DialogueHistoryResponse;
 import com.foodadvisor.dto.dialogue.DialogueMessageRequest;

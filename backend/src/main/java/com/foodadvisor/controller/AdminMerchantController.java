@@ -2,7 +2,7 @@ package com.foodadvisor.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.mapper.MerchantMapper;

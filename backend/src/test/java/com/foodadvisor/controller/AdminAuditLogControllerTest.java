@@ -1,8 +1,8 @@
 package com.foodadvisor.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.foodadvisor.backend.exception.GlobalExceptionHandler;
-import com.foodadvisor.backend.security.AdminAccessGuard;
+import com.foodadvisor.exception.GlobalExceptionHandler;
+import com.foodadvisor.security.AdminAccessGuard;
 import com.foodadvisor.dto.audit.AuditLogQueryRequest;
 import com.foodadvisor.dto.audit.AuditLogVO;
 import com.foodadvisor.service.AuditLogService;

@@ -1,7 +1,7 @@
 package com.foodadvisor.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.entity.User;
 import com.foodadvisor.mapper.UserMapper;
 import org.mindrot.jbcrypt.BCrypt;

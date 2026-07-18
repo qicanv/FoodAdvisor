@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.foodadvisor.backend.exception.ApiException;
+import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.dto.review.MerchantRatingSummaryVO;
 import com.foodadvisor.dto.review.MyReviewDetailVO;
 import com.foodadvisor.dto.review.MyReviewListVO;

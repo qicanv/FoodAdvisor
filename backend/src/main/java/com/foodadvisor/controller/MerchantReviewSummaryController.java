@@ -1,6 +1,6 @@
 package com.foodadvisor.controller;
 
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.summary.MerchantReviewSummaryVO;
 import com.foodadvisor.dto.summary.SummaryEvidenceVO;
 import com.foodadvisor.service.MerchantReviewSummaryService;

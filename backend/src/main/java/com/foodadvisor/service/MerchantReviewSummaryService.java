@@ -3,7 +3,7 @@ package com.foodadvisor.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foodadvisor.backend.exception.ApiException;
+import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.dto.summary.MerchantReviewSummaryVO;
 import com.foodadvisor.dto.summary.SummaryEvidenceVO;
 import com.foodadvisor.dto.summary.SummaryPointVO;

@@ -1,8 +1,8 @@
 package com.foodadvisor.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foodadvisor.backend.exception.ApiException;
-import com.foodadvisor.backend.exception.GlobalExceptionHandler;
+import com.foodadvisor.exception.ApiException;
+import com.foodadvisor.exception.GlobalExceptionHandler;
 import com.foodadvisor.dto.dialogue.DialogueHistoryResponse;
 import com.foodadvisor.dto.dialogue.DialogueMessageResponse;
 import com.foodadvisor.dto.dialogue.DialogueMessageVO;
