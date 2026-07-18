@@ -95,10 +95,16 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin' },
   },
   {
-  path: '/admin/logs',
-  name: 'admin-audit-logs',
-  component: () => import('../views/admin/AuditLogView.vue'),
-  meta: { requiresAuth: true, role: 'admin' },
+    path: '/admin/dashboard',
+    name: 'admin-dashboard',
+    component: () => import('../views/admin/OperationsDashboard.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
+  {
+    path: '/admin/logs',
+    name: 'admin-logs',
+    component: () => import('../views/admin/AuditLogView.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
   },
 ]
 
