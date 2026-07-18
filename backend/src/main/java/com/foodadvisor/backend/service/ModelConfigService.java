@@ -1,16 +1,16 @@
 package com.foodadvisor.backend.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.foodadvisor.backend.dto.modelconfig.ConnectionTestResponse;
-import com.foodadvisor.backend.dto.modelconfig.ModelConfigRequest;
-import com.foodadvisor.backend.dto.modelconfig.ModelConfigResponse;
-import com.foodadvisor.backend.dto.modelconfig.SceneBindingRequest;
-import com.foodadvisor.backend.dto.modelconfig.SceneBindingResponse;
-import com.foodadvisor.backend.entity.ModelConfig;
-import com.foodadvisor.backend.entity.ModelSceneBinding;
+import com.foodadvisor.dto.modelconfig.ConnectionTestResponse;
+import com.foodadvisor.dto.modelconfig.ModelConfigRequest;
+import com.foodadvisor.dto.modelconfig.ModelConfigResponse;
+import com.foodadvisor.dto.modelconfig.SceneBindingRequest;
+import com.foodadvisor.dto.modelconfig.SceneBindingResponse;
+import com.foodadvisor.entity.ModelConfig;
+import com.foodadvisor.entity.ModelSceneBinding;
 import com.foodadvisor.exception.ApiException;
-import com.foodadvisor.backend.mapper.ModelConfigMapper;
-import com.foodadvisor.backend.mapper.ModelSceneBindingMapper;
+import com.foodadvisor.mapper.ModelConfigMapper;
+import com.foodadvisor.mapper.ModelSceneBindingMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

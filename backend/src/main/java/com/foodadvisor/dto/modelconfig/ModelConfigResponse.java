@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.dto.modelconfig;
+package com.foodadvisor.dto.modelconfig;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;

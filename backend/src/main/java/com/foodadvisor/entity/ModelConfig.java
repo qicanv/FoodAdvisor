@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.entity;
+package com.foodadvisor.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;

@@ -1,4 +1,4 @@
-package com.foodadvisor.backend.dto.modelconfig;
+package com.foodadvisor.dto.modelconfig;
 
 public record ConnectionTestResponse(
         boolean success,

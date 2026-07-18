@@ -1,11 +1,11 @@
 package com.foodadvisor.backend.controller;
 
 import com.foodadvisor.common.ApiResponse;
-import com.foodadvisor.backend.dto.modelconfig.ConnectionTestResponse;
-import com.foodadvisor.backend.dto.modelconfig.ModelConfigRequest;
-import com.foodadvisor.backend.dto.modelconfig.ModelConfigResponse;
-import com.foodadvisor.backend.dto.modelconfig.SceneBindingRequest;
-import com.foodadvisor.backend.dto.modelconfig.SceneBindingResponse;
+import com.foodadvisor.dto.modelconfig.ConnectionTestResponse;
+import com.foodadvisor.dto.modelconfig.ModelConfigRequest;
+import com.foodadvisor.dto.modelconfig.ModelConfigResponse;
+import com.foodadvisor.dto.modelconfig.SceneBindingRequest;
+import com.foodadvisor.dto.modelconfig.SceneBindingResponse;
 import com.foodadvisor.security.AdminAccessGuard;
 import com.foodadvisor.backend.service.ModelConfigService;
 import com.foodadvisor.entity.AuditLog;

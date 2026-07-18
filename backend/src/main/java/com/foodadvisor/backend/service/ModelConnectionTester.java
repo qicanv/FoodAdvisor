@@ -1,7 +1,7 @@
 package com.foodadvisor.backend.service;
 
-import com.foodadvisor.backend.dto.modelconfig.ConnectionTestResponse;
-import com.foodadvisor.backend.entity.ModelConfig;
+import com.foodadvisor.dto.modelconfig.ConnectionTestResponse;
+import com.foodadvisor.entity.ModelConfig;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
