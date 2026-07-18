@@ -387,6 +387,7 @@ public class MatchScoreCalculator {
         result.setMerchantRating(merchant.getRating());
         result.setAveragePrice(merchant.getAveragePrice());
         result.setReviewCount(merchant.getReviewCount());
+        result.setOperationStatus(merchant.getOperationStatus());
 
         return result;
     }
