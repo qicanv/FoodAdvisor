@@ -106,6 +106,129 @@
         </div>
       </section>
 
+      <section class="review-submit-section">
+        <div class="container">
+          <div class="review-submit-card">
+            <h2 class="section-title">发表评价</h2>
+
+            <div v-if="!isLoggedIn" class="review-message warning">
+              请先登录后再发表评价。
+            </div>
+            <div v-else-if="!canReview" class="review-message">
+              商家停业或禁用后不可新增评价。
+            </div>
+
+            <form class="review-form" @submit.prevent="submitReview">
+              <div class="review-field">
+                <label for="review-rating">评分 <span class="required">*</span></label>
+                <select
+                  id="review-rating"
+                  v-model.number="reviewForm.rating"
+                  :disabled="!formEnabled"
+                >
+                  <option :value="0">请选择评分</option>
+                  <option v-for="score in 5" :key="score" :value="score">
+                    {{ score }} 星
+                  </option>
+                </select>
+              </div>
+
+              <div class="review-field">
+                <label for="review-content">评价内容 <span class="required">*</span></label>
+                <textarea
+                  id="review-content"
+                  v-model="reviewForm.content"
+                  :disabled="!formEnabled"
+                  minlength="10"
+                  maxlength="2000"
+                  rows="6"
+                  placeholder="写下真实的消费体验，至少 10 个字符"
+                ></textarea>
+                <span class="field-hint">
+                  {{ reviewForm.content.length }}/2000
+                </span>
+              </div>
+
+              <div class="review-meta-grid">
+                <div class="review-field">
+                  <label for="review-spend">人均消费</label>
+                  <input
+                    id="review-spend"
+                    v-model.number="reviewForm.averageSpend"
+                    :disabled="!formEnabled"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="可选"
+                  />
+                </div>
+
+                <div class="review-field">
+                  <label for="review-date">到店日期</label>
+                  <input
+                    id="review-date"
+                    v-model="reviewForm.consumptionDate"
+                    :disabled="!formEnabled"
+                    type="date"
+                  />
+                </div>
+              </div>
+
+              <div class="review-field">
+                <label for="review-images">评价图片</label>
+                <input
+                  id="review-images"
+                  ref="imageInput"
+                  :disabled="!formEnabled || selectedImages.length >= 9"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  @change="selectImages"
+                />
+                <span class="field-hint">
+                  最多 9 张，支持 JPEG、PNG、WebP，单张不超过 10MB
+                </span>
+              </div>
+
+              <div v-if="selectedImages.length" class="selected-image-grid">
+                <div
+                  v-for="(image, index) in selectedImages"
+                  :key="image.key"
+                  class="selected-image"
+                >
+                  <img :src="image.previewUrl" :alt="`评价图片 ${index + 1}`" />
+                  <button
+                    type="button"
+                    class="remove-image-btn"
+                    :disabled="submitting"
+                    @click="removeSelectedImage(index)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="submitError" class="review-message error">
+                {{ submitError }}
+              </div>
+              <div v-if="submitSuccess" class="review-message success">
+                {{ submitSuccess }}
+              </div>
+
+              <div class="review-submit-actions">
+                <button
+                  type="submit"
+                  class="action-btn primary"
+                  :disabled="!formEnabled"
+                >
+                  {{ submitting ? '提交中...' : '提交评价' }}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
       <section class="reviews-section">
         <div class="container">
           <h2 class="section-title">💬 用户评价</h2>
@@ -166,9 +289,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import request from '../../api/request'
+import { submitMerchantReview } from '../../api/review'
 
 const router = useRouter()
 const route = useRoute()
@@ -176,6 +300,36 @@ const merchant = ref(null)
 const reviews = ref([])
 const dishes = ref([])
 const loading = ref(true)
+const submitting = ref(false)
+const submitError = ref('')
+const submitSuccess = ref('')
+const imageInput = ref(null)
+const selectedImages = ref([])
+
+const reviewForm = reactive({
+  rating: 0,
+  content: '',
+  averageSpend: null,
+  consumptionDate: '',
+})
+
+const currentUser = computed(() => {
+  const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+})
+
+const isLoggedIn = computed(() => Boolean(
+  localStorage.getItem('token') ||
+  localStorage.getItem('accessToken') ||
+  currentUser.value
+))
+const canReview = computed(() => merchant.value?.isOpen && merchant.value?.platformStatus === 'ACTIVE')
+const formEnabled = computed(() => isLoggedIn.value && canReview.value && !submitting.value)
 
 const userInfo = ref({
   username: localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')).username : ''
@@ -287,6 +441,7 @@ const loadMerchant = async () => {
         description: data.description,
         address: data.address,
         phone: data.phone,
+        platformStatus: data.platformStatus,
         businessHoursList: data.businessHours || [],
         highlights: environmentTags.map(tag => ({
           icon: ['朋友聚会', '家庭聚餐', '情侣约会'].includes(tag) ? '👥' :
@@ -341,6 +496,108 @@ const loadMerchant = async () => {
   }
 }
 
+const validateReview = () => {
+  const contentLength = reviewForm.content.trim().length
+  if (!reviewForm.rating || reviewForm.rating < 1 || reviewForm.rating > 5) {
+    return '请选择 1～5 星评分'
+  }
+  if (contentLength < 10) {
+    return '评价内容至少需要 10 个字符'
+  }
+  if (contentLength > 2000) {
+    return '评价内容不能超过 2000 个字符'
+  }
+  if (reviewForm.averageSpend !== null && reviewForm.averageSpend < 0) {
+    return '人均消费不能为负数'
+  }
+  return ''
+}
+
+const selectImages = event => {
+  submitError.value = ''
+  const files = Array.from(event.target.files || [])
+
+  for (const file of files) {
+    if (selectedImages.value.length >= 9) {
+      submitError.value = '最多只能上传 9 张图片'
+      break
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      submitError.value = '图片仅支持 JPEG、PNG 和 WebP 格式'
+      continue
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      submitError.value = '单张图片不能超过 10MB'
+      continue
+    }
+
+    selectedImages.value.push({
+      key: `${file.name}-${file.lastModified}-${Math.random()}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    })
+  }
+
+  event.target.value = ''
+}
+
+const removeSelectedImage = index => {
+  const [removed] = selectedImages.value.splice(index, 1)
+  if (removed) {
+    URL.revokeObjectURL(removed.previewUrl)
+  }
+}
+
+const clearReviewForm = () => {
+  reviewForm.rating = 0
+  reviewForm.content = ''
+  reviewForm.averageSpend = null
+  reviewForm.consumptionDate = ''
+  selectedImages.value.forEach(image => URL.revokeObjectURL(image.previewUrl))
+  selectedImages.value = []
+  if (imageInput.value) {
+    imageInput.value.value = ''
+  }
+}
+
+const submitReview = async () => {
+  submitError.value = validateReview()
+  submitSuccess.value = ''
+  if (submitError.value || !formEnabled.value) return
+
+  submitting.value = true
+  try {
+    const formData = new FormData()
+    formData.append('content', reviewForm.content.trim())
+    formData.append('rating', reviewForm.rating)
+    if (reviewForm.averageSpend !== null && reviewForm.averageSpend !== '') {
+      formData.append('averageSpend', reviewForm.averageSpend)
+    }
+    if (reviewForm.consumptionDate) {
+      formData.append('consumptionDate', reviewForm.consumptionDate)
+    }
+    selectedImages.value.forEach(image => {
+      formData.append('images', image.file)
+    })
+
+    const response = await submitMerchantReview(route.params.id, formData)
+    if (!response.success) {
+      throw new Error(response.message || '评价提交失败')
+    }
+
+    const status = response.data?.status
+    clearReviewForm()
+    submitSuccess.value = status === 'PENDING'
+      ? '评价已提交，正在审核'
+      : '评价发表成功'
+    await loadMerchant()
+  } catch (error) {
+    submitError.value = error.message || '评价提交失败'
+  } finally {
+    submitting.value = false
+  }
+}
+
 const goBack = () => {
   router.push('/diner/ranking')
 }
@@ -358,6 +615,10 @@ const handleLogout = () => {
 
 onMounted(() => {
   loadMerchant()
+})
+
+onBeforeUnmount(() => {
+  selectedImages.value.forEach(image => URL.revokeObjectURL(image.previewUrl))
 })
 </script>
 
@@ -727,6 +988,142 @@ onMounted(() => {
   color: #52c41a;
 }
 
+.review-submit-section {
+  padding: 20px 0;
+}
+
+.review-submit-card {
+  padding: 24px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.review-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.review-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-field label {
+  color: #333;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.required {
+  color: #ff4d4f;
+}
+
+.review-field input,
+.review-field select,
+.review-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  color: #333;
+  font: inherit;
+  background: #fff;
+}
+
+.review-field textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.review-field input:disabled,
+.review-field select:disabled,
+.review-field textarea:disabled {
+  color: #999;
+  cursor: not-allowed;
+  background: #f5f5f5;
+}
+
+.review-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.field-hint {
+  color: #999;
+  font-size: 13px;
+}
+
+.selected-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.selected-image {
+  overflow: hidden;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.selected-image img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.remove-image-btn {
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  color: #ff4d4f;
+  cursor: pointer;
+  background: #fff;
+}
+
+.review-message {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  color: #606266;
+  background: #f4f4f5;
+}
+
+.review-message.warning {
+  color: #e6a23c;
+  background: #fdf6ec;
+}
+
+.review-message.error {
+  margin-bottom: 0;
+  color: #f56c6c;
+  background: #fef0f0;
+}
+
+.review-message.success {
+  margin-bottom: 0;
+  color: #67c23a;
+  background: #f0f9eb;
+}
+
+.review-submit-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.review-submit-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
 .reviews-section {
   padding: 20px 0;
 }
@@ -909,6 +1306,10 @@ onMounted(() => {
   }
   
   .dishes-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .review-meta-grid {
     grid-template-columns: 1fr;
   }
   
