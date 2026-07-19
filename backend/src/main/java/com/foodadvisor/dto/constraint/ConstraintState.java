@@ -58,6 +58,11 @@ public class ConstraintState {
     private List<String> tasteRestrictions = new ArrayList<>();
 
     /**
+     * 用户明确提出的具体菜品或主要食材关键词。
+     */
+    private List<String> dishKeywords = new ArrayList<>();
+
+    /**
      * 明确排除的菜系。
      * 例如：不要川菜。
      */
@@ -99,4 +104,14 @@ public class ConstraintState {
      * 例如：NOW_OPEN、TONIGHT、LATE_NIGHT。
      */
     private String businessTime;
+
+    /**
+     * 明确的目标营业时间，格式为 HH:mm。
+     */
+    private String businessTargetTime;
+
+    /**
+     * 明确目标时间是否指向次日，例如“凌晨1点”。
+     */
+    private Boolean businessTargetNextDay;
 }

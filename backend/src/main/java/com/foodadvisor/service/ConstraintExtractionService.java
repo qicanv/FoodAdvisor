@@ -43,6 +43,22 @@ import java.util.regex.Pattern;
 @Service
 public class ConstraintExtractionService {
 
+    private static final Pattern BUSINESS_TARGET_HH_MM_PATTERN =
+            Pattern.compile(
+                    "(凌晨|晚上|今晚|夜里)?\\s*"
+                            + "([01]?\\d|2[0-3]):([0-5]\\d)"
+                            + "\\s*(?:以后|之后|后)?\\s*(?:还)?"
+                            + "(?:开门|营业)"
+            );
+
+    private static final Pattern BUSINESS_TARGET_HOUR_PATTERN =
+            Pattern.compile(
+                    "(凌晨|晚上|今晚|夜里)?\\s*"
+                            + "([0-9一二两三四五六七八九十]+)"
+                            + "\\s*点(?:钟)?\\s*(?:以后|之后|后)?"
+                            + "\\s*(?:还)?(?:开门|营业)"
+            );
+
     private static final Pattern PARTY_SIZE_PATTERN =
             Pattern.compile(
                     "([0-9一二两三四五六七八九十]+)\\s*(?:个人|人|位)"
@@ -105,6 +121,22 @@ public class ConstraintExtractionService {
                     "烤肉",
                     "小吃",
                     "快餐"
+            );
+
+    private static final List<String> COMMON_DISH_KEYWORDS =
+            List.of(
+                    "水煮鱼",
+                    "烤鱼",
+                    "小龙虾",
+                    "牛肉",
+                    "虾",
+                    "鸡肉"
+            );
+
+    private static final Pattern DISH_PHRASE_PATTERN =
+            Pattern.compile(
+                    "(?:想吃|吃点|来份|来点)"
+                            + "([^，。！？,!?]{1,30})"
             );
 
     /**
@@ -316,7 +348,9 @@ public class ConstraintExtractionService {
                 extracted,
                 merged,
                 changes,
-                conflicts
+                conflicts,
+                extractor,
+                aiExtraction == null ? null : aiExtraction.modelName()
         );
 
         /*
@@ -335,6 +369,125 @@ public class ConstraintExtractionService {
         response.setExtractor(extractor);
         response.setDegraded(degraded);
 
+        return response;
+    }
+
+    public PreparedExtraction prepareExtraction(
+            Long sessionId,
+            Long userId,
+            String message,
+            Long messageId
+    ) {
+        validateActiveSession(sessionId, userId);
+        if (message == null || message.isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "MESSAGE_REQUIRED",
+                    "message不能为空"
+            );
+        }
+
+        ConstraintState currentState =
+                loadCurrentState(sessionId);
+        AiExtractionResult aiExtraction =
+                tryExtractByAi(
+                        sessionId,
+                        messageId,
+                        message,
+                        currentState
+                );
+
+        if (aiExtraction == null) {
+            return new PreparedExtraction(
+                    extractByRules(message),
+                    List.of(),
+                    "MERCHANT_RECOMMENDATION",
+                    "RULE_FALLBACK",
+                    true,
+                    null,
+                    detectConflicts(message)
+            );
+        }
+
+        return new PreparedExtraction(
+                aiExtraction.extracted(),
+                aiExtraction.clearedFields(),
+                aiExtraction.intent(),
+                aiExtraction.extractor(),
+                aiExtraction.degraded(),
+                aiExtraction.modelName(),
+                detectConflicts(message)
+        );
+    }
+
+    public ConstraintExtractResponse extractAndMergePrepared(
+            Long sessionId,
+            Long userId,
+            String message,
+            String requestId,
+            Long messageId,
+            PreparedExtraction prepared
+    ) {
+        validateActiveSession(sessionId, userId);
+        if (prepared == null) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "EXTRACTION_NOT_PREPARED",
+                    "消费需求提取结果尚未准备"
+            );
+        }
+
+        ChatMessage savedMessage =
+                saveUserMessage(
+                        sessionId,
+                        message,
+                        requestId,
+                        messageId
+                );
+        ConstraintState oldState =
+                loadCurrentState(sessionId);
+        ConstraintState extracted =
+                prepared.extracted();
+        List<ConstraintConflictVO> conflicts =
+                prepared.conflicts();
+        ConstraintState merged;
+        List<String> changes;
+
+        if (conflicts.isEmpty()) {
+            merged = merge(oldState, extracted, message);
+            applyClearedFields(
+                    merged,
+                    prepared.clearedFields()
+            );
+            changes = detectChanges(oldState, merged);
+        } else {
+            merged = copyState(oldState);
+            changes = new ArrayList<>();
+        }
+
+        saveSessionState(sessionId, merged, conflicts);
+        saveExtraction(
+                sessionId,
+                savedMessage.getId(),
+                extracted,
+                merged,
+                changes,
+                conflicts,
+                prepared.extractor(),
+                prepared.modelName()
+        );
+
+        ConstraintExtractResponse response =
+                new ConstraintExtractResponse();
+        response.setSessionId(sessionId);
+        response.setMessageId(savedMessage.getId());
+        response.setExtracted(extracted);
+        response.setMerged(merged);
+        response.setChanges(changes);
+        response.setConflicts(conflicts);
+        response.setIntent(prepared.intent());
+        response.setExtractor(prepared.extractor());
+        response.setDegraded(prepared.degraded());
         return response;
     }
 
@@ -407,6 +560,20 @@ public class ConstraintExtractionService {
             String message,
             String requestId
     ) {
+        return saveUserMessage(
+                sessionId,
+                message,
+                requestId,
+                null
+        );
+    }
+
+    private ChatMessage saveUserMessage(
+            Long sessionId,
+            String message,
+            String requestId,
+            Long messageId
+    ) {
         if (message == null || message.isBlank()) {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,
@@ -416,6 +583,7 @@ public class ConstraintExtractionService {
         }
 
         ChatMessage chatMessage = new ChatMessage();
+        chatMessage.setId(messageId);
         chatMessage.setSessionId(sessionId);
         chatMessage.setRole("USER");
         chatMessage.setContent(message.trim());
@@ -434,7 +602,11 @@ public class ConstraintExtractionService {
         chatMessage.setCreatedAt(OffsetDateTime.now());
 
         int affectedRows =
-                chatMessageMapper.insert(chatMessage);
+                messageId == null
+                        ? chatMessageMapper.insert(chatMessage)
+                        : chatMessageMapper.insertReserved(
+                                chatMessage
+                        );
 
         if (affectedRows != 1 || chatMessage.getId() == null) {
             throw new ApiException(
@@ -445,6 +617,17 @@ public class ConstraintExtractionService {
         }
 
         return chatMessage;
+    }
+
+    public record PreparedExtraction(
+            ConstraintState extracted,
+            List<String> clearedFields,
+            String intent,
+            String extractor,
+            boolean degraded,
+            String modelName,
+            List<ConstraintConflictVO> conflicts
+    ) {
     }
 
     /**
@@ -499,7 +682,8 @@ public class ConstraintExtractionService {
                         response.getClearedFields()
                 ),
                 "AI_MODEL",
-                false
+                false,
+                response.getModelName()
         );
     }
 
@@ -568,6 +752,9 @@ public class ConstraintExtractionService {
         target.setTasteRestrictions(
                 sanitizeStringList(source.getTasteRestrictions())
         );
+        target.setDishKeywords(
+                sanitizeStringList(source.getDishKeywords())
+        );
         target.setExcludedCuisines(
                 sanitizeStringList(source.getExcludedCuisines())
         );
@@ -592,6 +779,14 @@ public class ConstraintExtractionService {
         )) {
             target.setBusinessTime(source.getBusinessTime());
         }
+        target.setBusinessTargetTime(
+                sanitizeBusinessTargetTime(
+                        source.getBusinessTargetTime()
+                )
+        );
+        target.setBusinessTargetNextDay(
+                source.getBusinessTargetNextDay()
+        );
 
         calculatePerCapitaBudget(target);
         return target;
@@ -647,13 +842,16 @@ public class ConstraintExtractionService {
                         "cuisines",
                         "tastePreferences",
                         "tasteRestrictions",
+                        "dishKeywords",
                         "excludedCuisines",
                         "excludedMerchantTypes",
                         "distanceKm",
                         "minRating",
                         "scenes",
                         "environmentRequirements",
-                        "businessTime"
+                        "businessTime",
+                        "businessTargetTime",
+                        "businessTargetNextDay"
                 );
 
         LinkedHashSet<String> result = new LinkedHashSet<>();
@@ -692,6 +890,8 @@ public class ConstraintExtractionService {
                         state.setTastePreferences(new ArrayList<>());
                 case "tasteRestrictions" ->
                         state.setTasteRestrictions(new ArrayList<>());
+                case "dishKeywords" ->
+                        state.setDishKeywords(new ArrayList<>());
                 case "excludedCuisines" ->
                         state.setExcludedCuisines(new ArrayList<>());
                 case "excludedMerchantTypes" ->
@@ -708,6 +908,10 @@ public class ConstraintExtractionService {
                         );
                 case "businessTime" ->
                         state.setBusinessTime(null);
+                case "businessTargetTime" ->
+                        state.setBusinessTargetTime(null);
+                case "businessTargetNextDay" ->
+                        state.setBusinessTargetNextDay(null);
                 default -> {
                 }
             }
@@ -719,7 +923,8 @@ public class ConstraintExtractionService {
             ConstraintState extracted,
             List<String> clearedFields,
             String extractor,
-            boolean degraded
+            boolean degraded,
+            String modelName
     ) {
     }
 
@@ -730,6 +935,7 @@ public class ConstraintExtractionService {
         extractBudget(message, state);
         extractCuisineAndMerchantType(message, state);
         extractTaste(message, state);
+        extractDishKeywords(message, state);
         extractSceneAndEnvironment(message, state);
         extractDistance(message, state);
         extractMinRating(message, state);
@@ -895,6 +1101,20 @@ public class ConstraintExtractionService {
 
         if (compactMessage.contains("清淡")) {
             state.getTastePreferences().add("清淡");
+        }
+
+        for (String restriction :
+                List.of("香菜", "花生", "清真", "严格素食")) {
+            if ((compactMessage.contains("不吃" + restriction)
+                    || compactMessage.contains("不要" + restriction)
+                    || compactMessage.contains(restriction + "过敏")
+                    || compactMessage.contains(restriction))
+                    && ("清真".equals(restriction)
+                    || "严格素食".equals(restriction)
+                    || compactMessage.contains("不")
+                    || compactMessage.contains("过敏"))) {
+                state.getTasteRestrictions().add(restriction);
+            }
         }
     }
 
@@ -1065,6 +1285,10 @@ public class ConstraintExtractionService {
         String compactMessage =
                 message.replaceAll("\\s+", "");
 
+        if (extractBusinessTargetTime(compactMessage, state)) {
+            return;
+        }
+
         /*
          * 深夜、夜宵类表达最具体，优先判断。
          */
@@ -1102,6 +1326,170 @@ public class ConstraintExtractionService {
                 || compactMessage.contains("目前还开")
                 || compactMessage.contains("正在营业")) {
             state.setBusinessTime("NOW_OPEN");
+        }
+    }
+
+    private void extractDishKeywords(
+            String message,
+            ConstraintState state
+    ) {
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        String compact = message.replaceAll("\\s+", "");
+        for (String keyword : COMMON_DISH_KEYWORDS) {
+            if (!compact.contains(keyword)
+                    || isNegated(compact, keyword)
+                    || isDishKeywordFalsePositive(compact, keyword)) {
+                continue;
+            }
+            if (state.getDishKeywords().stream()
+                    .anyMatch(existing ->
+                            existing.contains(keyword))) {
+                continue;
+            }
+            state.getDishKeywords().add(keyword);
+        }
+        Matcher phraseMatcher = DISH_PHRASE_PATTERN.matcher(compact);
+        while (phraseMatcher.find()) {
+            String phrase = phraseMatcher.group(1)
+                    .replaceFirst(
+                            "(?:人均|预算|距离|[0-9]+公里).*",
+                            ""
+                    );
+            for (String candidate :
+                    phrase.split("(?:或者|或|、)")) {
+                String keyword = candidate.trim();
+                if (!isSafeGenericDishKeyword(compact, keyword)
+                        || state.getDishKeywords().stream()
+                        .anyMatch(existing ->
+                                existing.equals(keyword)
+                                        || existing.contains(keyword)
+                                        || keyword.contains(existing))) {
+                    continue;
+                }
+                state.getDishKeywords().add(keyword);
+            }
+        }
+        state.setDishKeywords(
+                sanitizeStringList(state.getDishKeywords())
+        );
+    }
+
+    private boolean isSafeGenericDishKeyword(
+            String message,
+            String keyword
+    ) {
+        if (keyword.length() < 2 || keyword.length() > 30
+                || isNegated(message, keyword)
+                || keyword.matches(".*[0-9元公里个人].*")) {
+            return false;
+        }
+        if (SUPPORTED_CUISINES.stream().anyMatch(keyword::contains)
+                || SUPPORTED_MERCHANT_TYPES.stream()
+                .anyMatch(keyword::contains)) {
+            return false;
+        }
+        return List.of(
+                        "辣一点",
+                        "少辣",
+                        "微辣",
+                        "清淡",
+                        "附近",
+                        "离我近一点"
+                ).stream()
+                .noneMatch(keyword::contains);
+    }
+
+    private boolean isDishKeywordFalsePositive(
+            String message,
+            String keyword
+    ) {
+        if (SUPPORTED_CUISINES.contains(keyword)
+                || SUPPORTED_MERCHANT_TYPES.contains(keyword)) {
+            return true;
+        }
+        return message.matches(".*(?:人均|预算|公里|个人).*")
+                && !message.matches(
+                ".*(?:想吃|吃点|来份|来点|或者|或).*"
+                        + Pattern.quote(keyword)
+                        + ".*"
+        );
+    }
+
+    private boolean extractBusinessTargetTime(
+            String message,
+            ConstraintState state
+    ) {
+        Matcher hhMmMatcher =
+                BUSINESS_TARGET_HH_MM_PATTERN.matcher(message);
+        if (hhMmMatcher.find()) {
+            int hour = Integer.parseInt(hhMmMatcher.group(2));
+            int minute = Integer.parseInt(hhMmMatcher.group(3));
+            setBusinessTargetTime(
+                    state,
+                    hhMmMatcher.group(1),
+                    hour,
+                    minute
+            );
+            return true;
+        }
+
+        Matcher hourMatcher =
+                BUSINESS_TARGET_HOUR_PATTERN.matcher(message);
+        if (!hourMatcher.find()) {
+            return false;
+        }
+        Integer parsedHour =
+                parseChineseOrArabicNumber(hourMatcher.group(2));
+        if (parsedHour == null || parsedHour < 0 || parsedHour > 23) {
+            return false;
+        }
+        setBusinessTargetTime(
+                state,
+                hourMatcher.group(1),
+                parsedHour,
+                0
+        );
+        return true;
+    }
+
+    private void setBusinessTargetTime(
+            ConstraintState state,
+            String period,
+            int rawHour,
+            int minute
+    ) {
+        int hour = rawHour;
+        boolean nextDay = "凌晨".equals(period);
+        if (("晚上".equals(period)
+                || "今晚".equals(period)
+                || "夜里".equals(period))
+                && hour >= 1 && hour < 12) {
+            hour += 12;
+        }
+        state.setBusinessTargetTime(
+                String.format("%02d:%02d", hour, minute)
+        );
+        state.setBusinessTargetNextDay(nextDay);
+        state.setBusinessTime(null);
+    }
+
+    private String sanitizeBusinessTargetTime(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return java.time.LocalTime.parse(
+                    value,
+                    java.time.format.DateTimeFormatter
+                            .ofPattern("HH:mm")
+            ).format(
+                    java.time.format.DateTimeFormatter
+                            .ofPattern("HH:mm")
+            );
+        } catch (java.time.format.DateTimeParseException exception) {
+            return null;
         }
     }
 
@@ -1504,6 +1892,9 @@ public class ConstraintExtractionService {
         copy.setTasteRestrictions(
                 copyList(source.getTasteRestrictions())
         );
+        copy.setDishKeywords(
+                copyList(source.getDishKeywords())
+        );
         copy.setExcludedCuisines(
                 copyList(source.getExcludedCuisines())
         );
@@ -1526,6 +1917,12 @@ public class ConstraintExtractionService {
         );
 
         copy.setBusinessTime(source.getBusinessTime());
+        copy.setBusinessTargetTime(
+                source.getBusinessTargetTime()
+        );
+        copy.setBusinessTargetNextDay(
+                source.getBusinessTargetNextDay()
+        );
 
         return copy;
     }
@@ -1599,6 +1996,18 @@ public class ConstraintExtractionService {
             merged.setBusinessTime(
                     extracted.getBusinessTime()
             );
+        }
+        if (extracted.getBusinessTargetTime() != null) {
+            merged.setBusinessTargetTime(
+                    extracted.getBusinessTargetTime()
+            );
+            merged.setBusinessTargetNextDay(
+                    extracted.getBusinessTargetNextDay()
+            );
+            merged.setBusinessTime(null);
+        } else if (extracted.getBusinessTime() != null) {
+            merged.setBusinessTargetTime(null);
+            merged.setBusinessTargetNextDay(null);
         }
 
         recalculateMergedPerCapitaBudget(
@@ -1748,6 +2157,18 @@ public class ConstraintExtractionService {
                                         "口味限制",
                                         "饮食限制"
                                 )
+                        )
+                )
+        );
+
+        merged.setDishKeywords(
+                mergeOrReplaceList(
+                        merged.getDishKeywords(),
+                        extracted.getDishKeywords(),
+                        shouldReplaceList(
+                                message,
+                                extracted.getDishKeywords(),
+                                List.of("菜品", "想吃的菜")
                         )
                 )
         );
@@ -1991,6 +2412,13 @@ public class ConstraintExtractionService {
                 "tasteRestrictions",
                 safeOld.getTasteRestrictions(),
                 safeMerged.getTasteRestrictions()
+        );
+
+        addListChangeIfDifferent(
+                changes,
+                "dishKeywords",
+                safeOld.getDishKeywords(),
+                safeMerged.getDishKeywords()
         );
 
         addListChangeIfDifferent(
@@ -2250,7 +2678,9 @@ public class ConstraintExtractionService {
             ConstraintState extracted,
             ConstraintState merged,
             List<String> changes,
-            List<ConstraintConflictVO> conflicts
+            List<ConstraintConflictVO> conflicts,
+            String extractor,
+            String modelName
     ) {
         if (messageId == null) {
             throw new ApiException(
@@ -2302,8 +2732,16 @@ public class ConstraintExtractionService {
                 toJson(safeConflicts)
         );
 
-        extraction.setModelName("RULE_BASED");
-        extraction.setModelVersion("v1");
+        boolean modelExtraction =
+                "AI_MODEL".equals(extractor)
+                        && modelName != null
+                        && !modelName.isBlank();
+        extraction.setModelName(
+                modelExtraction ? modelName : "RULE_BASED"
+        );
+        extraction.setModelVersion(
+                modelExtraction ? null : "v1"
+        );
         extraction.setCreatedAt(OffsetDateTime.now());
 
         int affectedRows =

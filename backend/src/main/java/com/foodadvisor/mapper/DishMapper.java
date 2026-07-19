@@ -10,4 +10,6 @@ import java.util.List;
 public interface DishMapper extends BaseMapper<Dish> {
 
     List<Dish> selectByMerchantId(Long merchantId);
+
+    List<Dish> selectActiveByMerchantIds(List<Long> merchantIds);
 }

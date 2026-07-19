@@ -17,22 +17,29 @@ import com.foodadvisor.dto.recommendation.LimitingConditionVO;
 import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
+import com.foodadvisor.dto.recommendation.MatchedDishVO;
+import com.foodadvisor.dto.recommendation.RecommendationBasisVO;
 import com.foodadvisor.entity.ChatMessage;
 import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Recommendation;
 import com.foodadvisor.entity.RecommendationItem;
+import com.foodadvisor.entity.RecommendationEvidence;
 import com.foodadvisor.mapper.ChatMessageMapper;
 import com.foodadvisor.mapper.ChatSessionMapper;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.RecommendationItemMapper;
 import com.foodadvisor.mapper.RecommendationMapper;
+import com.foodadvisor.mapper.RecommendationEvidenceMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -44,6 +51,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
+@Slf4j
 @Service
 public class DiningDialogueMessageService {
 
@@ -75,33 +83,47 @@ public class DiningDialogueMessageService {
     private final ChatMessageMapper chatMessageMapper;
     private final RecommendationMapper recommendationMapper;
     private final RecommendationItemMapper recommendationItemMapper;
+    private final RecommendationEvidenceMapper
+            recommendationEvidenceMapper;
     private final MerchantMapper merchantMapper;
     private final DialogueService dialogueService;
+    private final ConstraintExtractionService
+            constraintExtractionService;
     private final RecommendationRankingService recommendationRankingService;
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     public DiningDialogueMessageService(
             ChatSessionMapper chatSessionMapper,
             ChatMessageMapper chatMessageMapper,
             RecommendationMapper recommendationMapper,
             RecommendationItemMapper recommendationItemMapper,
+            RecommendationEvidenceMapper recommendationEvidenceMapper,
             MerchantMapper merchantMapper,
             DialogueService dialogueService,
+            ConstraintExtractionService constraintExtractionService,
             RecommendationRankingService recommendationRankingService,
             RedisTemplate<String, Object> redisTemplate,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager
     ) {
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
         this.recommendationMapper = recommendationMapper;
         this.recommendationItemMapper = recommendationItemMapper;
+        this.recommendationEvidenceMapper =
+                recommendationEvidenceMapper;
         this.merchantMapper = merchantMapper;
         this.dialogueService = dialogueService;
+        this.constraintExtractionService =
+                constraintExtractionService;
         this.recommendationRankingService =
                 recommendationRankingService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.transactionTemplate =
+                new TransactionTemplate(transactionManager);
     }
 
     public DialogueMessageResponse sendMessage(
@@ -161,7 +183,42 @@ public class DiningDialogueMessageService {
         }
 
         try {
-            return processMessage(sessionId, request);
+            Long messageId = chatMessageMapper.nextId();
+            if (messageId == null || messageId <= 0) {
+                throw new ApiException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "MESSAGE_ID_RESERVE_FAILED",
+                        "用户消息编号预留失败"
+                );
+            }
+
+            ConstraintExtractionService.PreparedExtraction
+                    preparedExtraction =
+                    constraintExtractionService
+                            .prepareExtraction(
+                                    sessionId,
+                                    request.getUserId(),
+                                    request.getContent(),
+                                    messageId
+                            );
+
+            DialogueMessageResponse response =
+                    transactionTemplate.execute(status ->
+                            processMessage(
+                                    sessionId,
+                                    request,
+                                    messageId,
+                                    preparedExtraction
+                            )
+                    );
+            if (response == null) {
+                throw new ApiException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "MESSAGE_PROCESSING_FAILED",
+                        "消息处理失败"
+                );
+            }
+            return response;
         } finally {
             releaseLock(lockKey, lockToken);
         }
@@ -279,13 +336,37 @@ public class DiningDialogueMessageService {
             Long sessionId,
             DialogueMessageRequest request
     ) {
+        return processMessage(
+                sessionId,
+                request,
+                null,
+                null
+        );
+    }
+
+    private DialogueMessageResponse processMessage(
+            Long sessionId,
+            DialogueMessageRequest request,
+            Long messageId,
+            ConstraintExtractionService.PreparedExtraction
+                    preparedExtraction
+    ) {
         DialogueContinueResponse dialogue =
-                dialogueService.continueDialogue(
-                        sessionId,
-                        request.getUserId(),
-                        request.getContent(),
-                        request.getRequestId()
-                );
+                preparedExtraction == null
+                        ? dialogueService.continueDialogue(
+                                sessionId,
+                                request.getUserId(),
+                                request.getContent(),
+                                request.getRequestId()
+                        )
+                        : dialogueService.continueDialogue(
+                                sessionId,
+                                request.getUserId(),
+                                request.getContent(),
+                                request.getRequestId(),
+                                messageId,
+                                preparedExtraction
+                        );
 
         if (!dialogue.isReadyForRecommendation()) {
             String assistantText =
@@ -1121,6 +1202,11 @@ public class DiningDialogueMessageService {
             return results;
         }
 
+        Map<Long, List<MatchedDishVO>> matchedDishes =
+                loadDishEvidence(items);
+        Map<Long, List<RecommendationBasisVO>> recommendationBases =
+                loadRecommendationBases(items);
+
         for (RecommendationItem item : items) {
             Merchant merchant =
                     merchantMapper.selectById(
@@ -1153,11 +1239,173 @@ public class DiningDialogueMessageService {
                             new BigDecimal("100")
                     )
             );
+            vo.setDistanceKm(
+                    readDistanceKm(item.getScoreDetails())
+            );
             vo.setReason(item.getReason());
+            vo.setMatchedDishes(
+                    matchedDishes.getOrDefault(
+                            item.getMerchantId(),
+                            new ArrayList<>()
+                    )
+            );
+            vo.setRecommendationBases(
+                    recommendationBases.getOrDefault(
+                            item.getMerchantId(), new ArrayList<>()));
             results.add(vo);
         }
 
         return results;
+    }
+
+    private Map<Long, List<RecommendationBasisVO>> loadRecommendationBases(
+            List<RecommendationItem> items
+    ) {
+        Map<Long, List<RecommendationBasisVO>> result = new LinkedHashMap<>();
+        List<Long> itemIds = items.stream().map(RecommendationItem::getId)
+                .filter(Objects::nonNull).toList();
+        if (itemIds.isEmpty()) return result;
+        Map<Long, Long> merchants = items.stream().collect(
+                java.util.stream.Collectors.toMap(
+                        RecommendationItem::getId,
+                        RecommendationItem::getMerchantId));
+        List<RecommendationEvidence> evidences =
+                recommendationEvidenceMapper.selectList(
+                        new LambdaQueryWrapper<RecommendationEvidence>()
+                                .in(RecommendationEvidence::getRecommendationItemId, itemIds)
+                                .in(RecommendationEvidence::getSourceType,
+                                        List.of("REVIEW", "MERCHANT"))
+                                .orderByAsc(RecommendationEvidence::getId));
+        for (RecommendationEvidence evidence :
+                evidences == null ? List.<RecommendationEvidence>of() : evidences) {
+            try {
+                Long merchantId = merchants.get(evidence.getRecommendationItemId());
+                if (merchantId == null
+                        || !merchantId.equals(evidence.getSourceMerchantId())) continue;
+                RecommendationBasisVO basis = objectMapper.readValue(
+                        evidence.getSourceTextSnapshot(),
+                        RecommendationBasisVO.class);
+                if (!merchantId.equals(basis.getMerchantId())) continue;
+                basis.setEvidenceId(evidence.getId());
+                List<RecommendationBasisVO> list =
+                        result.computeIfAbsent(merchantId, ignored -> new ArrayList<>());
+                if (list.size() < 3) list.add(basis);
+            } catch (Exception exception) {
+                log.warn("Ignoring invalid recommendation evidence id={}",
+                        evidence.getId());
+            }
+        }
+        return result;
+    }
+
+    private Map<Long, List<MatchedDishVO>> loadDishEvidence(
+            List<RecommendationItem> items
+    ) {
+        Map<Long, List<MatchedDishVO>> result =
+                new LinkedHashMap<>();
+        List<Long> itemIds = items.stream()
+                .map(RecommendationItem::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (itemIds.isEmpty()) {
+            return result;
+        }
+        Map<Long, Long> itemMerchants = new LinkedHashMap<>();
+        for (RecommendationItem item : items) {
+            itemMerchants.put(item.getId(), item.getMerchantId());
+        }
+        List<RecommendationEvidence> evidences =
+                recommendationEvidenceMapper.selectList(
+                        new LambdaQueryWrapper
+                                <RecommendationEvidence>()
+                                .in(
+                                        RecommendationEvidence
+                                                ::getRecommendationItemId,
+                                        itemIds
+                                )
+                                .eq(
+                                        RecommendationEvidence
+                                                ::getSourceType,
+                                        "DISH"
+                                )
+                                .orderByAsc(
+                                        RecommendationEvidence::getId
+                                )
+                );
+        for (RecommendationEvidence evidence :
+                evidences == null
+                        ? List.<RecommendationEvidence>of()
+                        : evidences) {
+            try {
+                MatchedDishVO dish = objectMapper.readValue(
+                        evidence.getSourceTextSnapshot(),
+                        MatchedDishVO.class
+                );
+                Long expectedMerchant =
+                        itemMerchants.get(
+                                evidence.getRecommendationItemId()
+                        );
+                if (expectedMerchant == null
+                        || !expectedMerchant.equals(
+                        evidence.getSourceMerchantId()
+                )
+                        || !expectedMerchant.equals(
+                        dish.getMerchantId()
+                )) {
+                    log.warn(
+                            "Ignoring cross-merchant dish evidence id={}",
+                            evidence.getId()
+                    );
+                    continue;
+                }
+                List<MatchedDishVO> merchantDishes =
+                        result.computeIfAbsent(
+                                expectedMerchant,
+                                ignored -> new ArrayList<>()
+                        );
+                if (merchantDishes.size() < 3) {
+                    merchantDishes.add(dish);
+                }
+            } catch (Exception exception) {
+                log.warn(
+                        "Ignoring invalid dish evidence snapshot id={}",
+                        evidence.getId()
+                );
+            }
+        }
+        return result;
+    }
+
+    private BigDecimal readDistanceKm(String scoreDetails) {
+        if (scoreDetails == null || scoreDetails.isBlank()) {
+            return null;
+        }
+
+        try {
+            Object value = objectMapper.readTree(scoreDetails)
+                    .get("distanceKm");
+            if (!(value instanceof
+                    com.fasterxml.jackson.databind.JsonNode node)
+                    || node.isNull()) {
+                return null;
+            }
+
+            String text = node.isNumber()
+                    ? node.asText()
+                    : node.isTextual()
+                    ? node.textValue()
+                    : null;
+            if (text == null || text.isBlank()) {
+                return null;
+            }
+
+            BigDecimal distance = new BigDecimal(text);
+            return distance.compareTo(BigDecimal.ZERO) < 0
+                    ? null
+                    : distance;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private RecommendationRankResponse loadRecommendationResponse(

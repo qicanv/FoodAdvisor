@@ -10,4 +10,8 @@ import java.util.List;
 public interface BusinessHoursMapper extends BaseMapper<MerchantBusinessHours> {
 
     List<MerchantBusinessHours> selectByMerchantId(Long merchantId);
+
+    List<MerchantBusinessHours> selectByMerchantIds(
+            List<Long> merchantIds
+    );
 }
