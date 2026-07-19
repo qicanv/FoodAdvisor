@@ -1426,7 +1426,7 @@ public class RecommendationRankingService {
             );
             item.setScoreDetails(
                     serializeToJson(
-                            result.getScoreItems(),
+                            buildScoreDetails(result),
                             "SCORE_DETAILS_SERIALIZE_FAILED",
                             "推荐评分明细序列化失败"
                     )
@@ -1459,6 +1459,18 @@ public class RecommendationRankingService {
                 );
             }
         }
+    }
+
+    private java.util.Map<String, Object> buildScoreDetails(
+            RecommendationItemVO result
+    ) {
+        java.util.Map<String, Object> details =
+                new java.util.LinkedHashMap<>();
+        if (result.getScoreItems() != null) {
+            details.putAll(result.getScoreItems());
+        }
+        details.put("distanceKm", result.getDistanceKm());
+        return details;
     }
 
     private BigDecimal normalizeDatabaseScore(

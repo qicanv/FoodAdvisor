@@ -12,10 +12,23 @@ export const getDiningMessages = sessionId => {
   return request.get(`/api/diner/sessions/${sessionId}/messages`)
 }
 
-export const sendDiningMessage = (sessionId, content, requestId) => {
+export const sendDiningMessage = (
+  sessionId,
+  content,
+  requestId,
+  location = null
+) => {
+  const body = { content, requestId }
+  if (
+    location?.userLatitude !== undefined &&
+    location?.userLongitude !== undefined
+  ) {
+    body.userLatitude = location.userLatitude
+    body.userLongitude = location.userLongitude
+  }
   return request.post(
     `/api/diner/sessions/${sessionId}/messages`,
-    { content, requestId },
+    body,
     { timeout: 60000 }
   )
 }
@@ -24,11 +37,20 @@ export const adjustDiningRecommendation = (
   sessionId,
   sourceMessageId,
   field,
-  value
+  value,
+  location = null
 ) => {
+  const body = { sourceMessageId, field, value }
+  if (
+    location?.userLatitude !== undefined &&
+    location?.userLongitude !== undefined
+  ) {
+    body.userLatitude = location.userLatitude
+    body.userLongitude = location.userLongitude
+  }
   return request.post(
     `/api/diner/sessions/${sessionId}/recommendations/adjust`,
-    { sourceMessageId, field, value },
+    body,
     { timeout: 60000 }
   )
 }

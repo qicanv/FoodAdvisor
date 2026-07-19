@@ -151,6 +151,25 @@ public class DialogueService {
             String message,
             String requestId
     ) {
+        return continueDialogue(
+                sessionId,
+                userId,
+                message,
+                requestId,
+                null,
+                null
+        );
+    }
+
+    public DialogueContinueResponse continueDialogue(
+            Long sessionId,
+            Long userId,
+            String message,
+            String requestId,
+            Long messageId,
+            ConstraintExtractionService.PreparedExtraction
+                    preparedExtraction
+    ) {
         /*
          * 必须在需求提取之前读取上一轮状态。
          *
@@ -197,12 +216,23 @@ public class DialogueService {
          * sessionId、userId、message。
          */
         ConstraintExtractResponse extractionResponse =
-                constraintExtractionService.extractAndMerge(
-                        sessionId,
-                        userId,
-                        message,
-                        requestId
-                );
+                preparedExtraction == null
+                        ? constraintExtractionService
+                        .extractAndMerge(
+                                sessionId,
+                                userId,
+                                message,
+                                requestId
+                        )
+                        : constraintExtractionService
+                        .extractAndMergePrepared(
+                                sessionId,
+                                userId,
+                                message,
+                                requestId,
+                                messageId,
+                                preparedExtraction
+                        );
 
         /*
          * extractAndMerge 执行后，
