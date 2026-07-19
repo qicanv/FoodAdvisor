@@ -228,6 +228,82 @@ public class AIClientService {
     }
 
     /**
+     * 语义检索 — 将用户查询转为向量，从 OpenSearch 检索相关文档。
+     *
+     * @param query       用户原始查询文本
+     * @param merchantIds 限定候选商家 ID，null 表示不限定
+     * @param sourceTypes 限定来源类型，null 表示全部
+     * @return 检索结果 JSON（含 searchMode、results 列表）
+     */
+    public JsonNode semanticSearch(
+            String query,
+            List<Long> merchantIds,
+            List<String> sourceTypes
+    ) {
+        String url =
+                aiServiceBaseUrl + "/internal/search/semantic";
+
+        Map<String, Object> filters =
+                new java.util.LinkedHashMap<>();
+
+        if (merchantIds != null && !merchantIds.isEmpty()) {
+            filters.put("merchantIds", merchantIds);
+        }
+
+        if (sourceTypes != null && !sourceTypes.isEmpty()) {
+            filters.put("sourceTypes", sourceTypes);
+        }
+
+        Map<String, Object> request =
+                new java.util.LinkedHashMap<>();
+
+        request.put("query", query);
+        request.put("topK", 20);
+        request.put("filters", filters);
+
+        return post(url, request, "SEMANTIC_SEARCH");
+    }
+
+    /**
+     * 调用 AI 生成评价回复建议（EPIC-02 故事7：评价辅助回复）
+     *
+     * 系统根据评价的情感倾向（好评/差评）采用不同的回复策略，
+     * 调用 AI 服务生成有针对性的回复建议。
+     *
+     * @param reviewId   评价 ID
+     * @param merchantId 商家 ID
+     * @param content    评价正文内容
+     * @param strategy   回复策略：POSITIVE（好评策略）或 NEGATIVE（差评策略）
+     * @param rating     评价评分（1-5），可为 null
+     * @return AI 服务返回的 JSON，包含 replyContent、strategy、modelName、businessTraceId
+     */
+    public JsonNode generateReplyDraft(
+            Long reviewId,
+            Long merchantId,
+            String content,
+            String strategy,
+            Integer rating
+    ) {
+        String url =
+                aiServiceBaseUrl
+                        + "/internal/reviews/generate-reply";
+
+        Map<String, Object> request = Map.of(
+                "reviewId", reviewId,
+                "merchantId", merchantId,
+                "content", content,
+                "strategy", strategy,
+                "rating", rating != null ? rating : 3
+        );
+
+        return post(
+                url,
+                request,
+                "REVIEW_REPLY_GENERATION"
+        );
+    }
+
+    /**
      * 健康检查
      */
     public boolean isHealthy() {

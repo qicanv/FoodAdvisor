@@ -35,7 +35,8 @@ class MatchScoreCalculatorTest {
                         createBaseConstraints(),
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(optionalResult.isPresent());
@@ -59,7 +60,7 @@ class MatchScoreCalculatorTest {
                                 )
                 ),
                 () -> assertEquals(
-                        6,
+                        7,
                         result.getScoreItems().size()
                 ),
                 () -> assertTrue(
@@ -113,7 +114,8 @@ class MatchScoreCalculatorTest {
                         createBaseConstraints(),
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(result.isEmpty());
@@ -137,7 +139,8 @@ class MatchScoreCalculatorTest {
                         constraints,
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(result.isEmpty());
@@ -154,7 +157,8 @@ class MatchScoreCalculatorTest {
                         createBaseConstraints(),
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(result.isEmpty());
@@ -176,7 +180,8 @@ class MatchScoreCalculatorTest {
                         createBaseConstraints(),
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(result.isEmpty());
@@ -194,7 +199,8 @@ class MatchScoreCalculatorTest {
                         createBaseConstraints(),
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(result.isEmpty());
@@ -214,7 +220,8 @@ class MatchScoreCalculatorTest {
                         constraints,
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(result.isPresent());
@@ -234,7 +241,8 @@ class MatchScoreCalculatorTest {
                         constraints,
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(result.isEmpty());
@@ -254,7 +262,8 @@ class MatchScoreCalculatorTest {
                         constraints,
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(result.isEmpty());
@@ -274,7 +283,8 @@ class MatchScoreCalculatorTest {
                         constraints,
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 );
 
         assertTrue(result.isPresent());
@@ -288,7 +298,8 @@ class MatchScoreCalculatorTest {
                         createBaseConstraints(),
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 ).orElseThrow();
 
         assertAll(
@@ -318,7 +329,8 @@ class MatchScoreCalculatorTest {
                         constraints,
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 ).orElseThrow();
 
         assertAll(
@@ -349,7 +361,8 @@ class MatchScoreCalculatorTest {
                         constraints,
                         createDefaultWeights(),
                         new BigDecimal("30.5728"),
-                        new BigDecimal("104.0668")
+                        new BigDecimal("104.0668"),
+                        java.util.Map.of()
                 ).orElseThrow();
 
         assertAll(
@@ -376,7 +389,8 @@ class MatchScoreCalculatorTest {
                         constraints,
                         createDefaultWeights(),
                         null,
-                        null
+                        null,
+                        java.util.Map.of()
                 ).orElseThrow();
 
         assertAll(
@@ -464,6 +478,10 @@ class MatchScoreCalculatorTest {
         );
         weights.setDistance(
                 new BigDecimal("15")
+        );
+        // 语义检索权重设为 0，保持原有测试断言不变
+        weights.setSemantic(
+                new BigDecimal("0")
         );
         weights.setEnvironment(
                 new BigDecimal("10")

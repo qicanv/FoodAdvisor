@@ -10,12 +10,15 @@ import com.foodadvisor.dto.review.MyReviewListVO;
 import com.foodadvisor.dto.review.ReviewDisplayVO;
 import com.foodadvisor.dto.review.ReviewFollowUpRequest;
 import com.foodadvisor.dto.review.ReviewFollowUpVO;
+import com.foodadvisor.dto.review.EditReplyDraftRequest;
+import com.foodadvisor.dto.review.ReviewReplyDraftVO;
 import com.foodadvisor.dto.review.ReviewReplyVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewAnalysis;
 import com.foodadvisor.service.AIClientService;
+import com.foodadvisor.service.ReviewReplyDraftService;
 import com.foodadvisor.service.ReviewService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.foodadvisor.dto.review.ReviewTagStatVO;
@@ -53,17 +56,20 @@ public class ReviewController {
     private final AIClientService aiClientService;
     private final ReviewTagMapper reviewTagMapper;
     private final ReviewIssueCategoryMapper issueCategoryMapper;
+    private final ReviewReplyDraftService replyDraftService;
 
     public ReviewController(
             ReviewService reviewService,
             AIClientService aiClientService,
             ReviewTagMapper reviewTagMapper,
-            ReviewIssueCategoryMapper issueCategoryMapper
+            ReviewIssueCategoryMapper issueCategoryMapper,
+            ReviewReplyDraftService replyDraftService
     ) {
         this.reviewService = reviewService;
         this.aiClientService = aiClientService;
         this.reviewTagMapper = reviewTagMapper;
         this.issueCategoryMapper = issueCategoryMapper;
+        this.replyDraftService = replyDraftService;
     }
 
     @PostMapping("/merchants/{merchantId}")
@@ -455,6 +461,133 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
         ReviewReplyVO response = reviewService.replyReview(merchantId, reviewId, replyContent);
         return ApiResponse.success(response);
     }
+
+    // ==================== 评价辅助回复（EPIC-02 故事7） ====================
+
+    /**
+     * 【评价辅助回复】生成 AI 回复建议草稿。
+     *
+     * 商家用户查看单条评价时，点击"生成回复建议"按钮调用此接口。
+     * 系统根据评价评分自动选择回复策略（好评/差评），调用 AI 服务
+     * 生成有针对性的回复内容，并以"草稿"形式保存。
+     *
+     * 业务规则：
+     * - 评分 >= 4 → 好评策略（感谢 + 回应具体优点）
+     * - 评分 <= 2 → 差评策略（道歉 + 问题说明 + 改进承诺）
+     * - 已有活跃草稿时直接返回，不重复调用 AI（节省费用）
+     * - AI 调用失败时返回明确错误，不覆盖已有草稿
+     *
+     * 请求示例：
+     *   POST /api/reviews/1/reply-draft/generate
+     *   Header: X-User-Id: 10  (商家用户ID)
+     *
+     * 响应示例：
+     *   {
+     *     "code": "SUCCESS",
+     *     "data": {
+     *       "id": 1,
+     *       "reviewId": 1,
+     *       "merchantId": 5,
+     *       "generatedContent": "感谢您的支持和认可...",
+     *       "editedContent": null,
+     *       "strategy": "POSITIVE",
+     *       "status": "DRAFT"
+     *     }
+     *   }
+     */
+    @PostMapping("/{reviewId}/reply-draft/generate")
+    public ApiResponse<ReviewReplyDraftVO> generateReplyDraft(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long merchantMemberId
+    ) {
+        ReviewReplyDraftVO draft = replyDraftService.generateDraft(merchantMemberId, reviewId);
+        return ApiResponse.success(draft);
+    }
+
+    /**
+     * 【评价辅助回复】编辑 AI 生成的草稿内容。
+     *
+     * 商家用户在发布前可以对 AI 生成内容进行修改。
+     * 修改后的内容保存到 editedContent 字段，发布时优先使用。
+     *
+     * 请求示例：
+     *   PUT /api/reviews/1/reply-draft
+     *   Header: X-User-Id: 10
+     *   Body: { "editedContent": "感谢您的反馈，我们会改进..." }
+     */
+    @PutMapping("/{reviewId}/reply-draft")
+    public ApiResponse<ReviewReplyDraftVO> editReplyDraft(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long merchantMemberId,
+            @RequestBody EditReplyDraftRequest request
+    ) {
+        if (request.getEditedContent() == null || request.getEditedContent().isBlank()) {
+            return ApiResponse.failure("INVALID_REQUEST", "回复内容不能为空");
+        }
+        ReviewReplyDraftVO draft = replyDraftService.editDraft(
+                merchantMemberId, reviewId, request.getEditedContent()
+        );
+        return ApiResponse.success(draft);
+    }
+
+    /**
+     * 【评价辅助回复】发布草稿为正式商家回复。
+     *
+     * 商家确认回复内容后调用此接口，将草稿转为正式回复。
+     * 正式回复写入 review_reply 表，用户端即可看到商家的回复。
+     *
+     * 根据验收准则4："未点击确认时回复不会进入已发布状态"
+     *
+     * 请求示例：
+     *   POST /api/reviews/1/reply-draft/publish
+     *   Header: X-User-Id: 10
+     */
+    @PostMapping("/{reviewId}/reply-draft/publish")
+    public ApiResponse<ReviewReplyVO> publishReplyDraft(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long merchantMemberId
+    ) {
+        ReviewReplyVO reply = replyDraftService.publishDraft(merchantMemberId, reviewId);
+        return ApiResponse.success(reply);
+    }
+
+    /**
+     * 【评价辅助回复】获取当前草稿。
+     *
+     * 前端在加载评价详情时调用此接口，判断是否已有待处理的草稿。
+     * 如果有草稿则展示草稿内容，如果没有则显示"生成回复建议"按钮。
+     *
+     * 请求示例：
+     *   GET /api/reviews/1/reply-draft
+     */
+    @GetMapping("/{reviewId}/reply-draft")
+    public ApiResponse<ReviewReplyDraftVO> getReplyDraft(
+            @PathVariable Long reviewId
+    ) {
+        ReviewReplyDraftVO draft = replyDraftService.getDraft(reviewId);
+        return ApiResponse.success(draft);
+    }
+
+    /**
+     * 【评价辅助回复】丢弃草稿。
+     *
+     * 商家选择不使用 AI 生成的回复建议时调用此接口。
+     * 丢弃后草稿状态变为 DISCARDED，商家可以重新请求生成新的回复建议。
+     *
+     * 请求示例：
+     *   DELETE /api/reviews/1/reply-draft
+     *   Header: X-User-Id: 10
+     */
+    @DeleteMapping("/{reviewId}/reply-draft")
+    public ApiResponse<Void> discardReplyDraft(
+            @PathVariable Long reviewId,
+            @RequestHeader("X-User-Id") Long merchantMemberId
+    ) {
+        replyDraftService.discardDraft(merchantMemberId, reviewId);
+        return ApiResponse.success("草稿已丢弃", null);
+    }
+
+    // ==================== 评价辅助回复 结束 ====================
 
     /**
      * 查询当前用户的评价列表（"我的评价"页面用）。

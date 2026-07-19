@@ -60,7 +60,8 @@ public class MatchScoreCalculator {
             ConstraintState constraints,
             RecommendationWeights weights,
             BigDecimal userLatitude,
-            BigDecimal userLongitude
+            BigDecimal userLongitude,
+            java.util.Map<Long, BigDecimal> semanticScores
     ) {
         ConstraintState safeConstraints =
                 constraints == null
@@ -208,6 +209,25 @@ public class MatchScoreCalculator {
                         weights.getReputation(),
                         reputationResult.factor(),
                         reputationResult.explanation()
+                )
+        );
+
+        FactorResult semanticResult =
+                calculateSemanticFactor(
+                        merchant,
+                        constraints,
+                        semanticScores,
+                        matchedConditions,
+                        riskNotes
+                );
+
+        finalScore = finalScore.add(
+                addScoreItem(
+                        result.getScoreItems(),
+                        "semantic",
+                        weights.getSemantic(),
+                        semanticResult.factor(),
+                        semanticResult.explanation()
                 )
         );
 
@@ -848,6 +868,55 @@ public class MatchScoreCalculator {
         return new FactorResult(
                 clampFactor(factor),
                 "口碑系数由60%评分因子和40%评论数量因子计算"
+        );
+    }
+
+    private FactorResult calculateSemanticFactor(
+            Merchant merchant,
+            ConstraintState constraints,
+            Map<Long, BigDecimal> semanticScores,
+            List<String> matchedConditions,
+            List<String> riskNotes
+    ) {
+        // 语义检索不可用或未触发时降级为中性
+        if (semanticScores == null || semanticScores.isEmpty()) {
+            return new FactorResult(
+                    HALF,
+                    "语义检索未启用，使用中性系数0.5"
+            );
+        }
+
+        BigDecimal semanticScore =
+                semanticScores.get(merchant.getId());
+
+        if (semanticScore == null) {
+            riskNotes.add("该商家未在语义检索结果中出现");
+            return new FactorResult(
+                    ZERO,
+                    "该商家未匹配用户语义描述"
+            );
+        }
+
+        BigDecimal factor = clampFactor(semanticScore);
+
+        if (factor.compareTo(new BigDecimal("0.7")) >= 0) {
+            matchedConditions.add(
+                    "语义匹配度高（"
+                            + formatNumber(factor.multiply(ONE_HUNDRED))
+                            + "%）"
+            );
+        } else if (factor.compareTo(new BigDecimal("0.3")) < 0) {
+            riskNotes.add("语义匹配度较低（"
+                    + formatNumber(factor.multiply(ONE_HUNDRED))
+                    + "%）"
+            );
+        }
+
+        return new FactorResult(
+                factor,
+                "语义检索匹配系数为"
+                        + formatNumber(factor.multiply(ONE_HUNDRED))
+                        + "%"
         );
     }
 
