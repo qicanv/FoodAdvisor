@@ -90,6 +90,30 @@ class EmbeddingService:
         )
         return embeddings.tolist()
 
+    def encode_query(self, text: str) -> list[float]:
+        """
+        将查询文本转换为向量（带 BGE 指令前缀）。
+
+        BGE 模型在检索时需要给查询加上特定前缀以获得最佳效果，
+        文档向量不需要前缀（encode() 已处理）。
+
+        Args:
+            text: 用户查询文本
+
+        Returns:
+            768 维向量，已 L2 归一化
+        """
+        prefixed = f"为这个句子生成表示以用于检索相关文章：{text.strip()}"
+
+        embeddings = self._model.encode(
+            [prefixed],
+            normalize_embeddings=True,
+            batch_size=1,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+        )
+        return embeddings[0].tolist()
+
     def check_health(self) -> bool:
         """快速自检：用空文本试跑一次编码"""
         try:
