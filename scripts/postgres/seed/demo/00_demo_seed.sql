@@ -15,4 +15,5 @@ BEGIN;
 \ir 01_accounts_and_merchants.inc
 \ir 02_reviews_and_analysis.inc
 \ir 03_reputation_and_ai.inc
+\ir 04_sync_sequences.inc
 COMMIT;

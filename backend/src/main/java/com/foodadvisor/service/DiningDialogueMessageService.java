@@ -57,6 +57,15 @@ public class DiningDialogueMessageService {
 
     private static final String TYPE_NO_MATCH = "NO_MATCH";
 
+    private static final String MESSAGE_TYPE_TEXT = "TEXT";
+
+    private static final String MESSAGE_TYPE_QUESTION = "QUESTION";
+
+    private static final String MESSAGE_TYPE_ERROR = "ERROR";
+
+    private static final String MESSAGE_TYPE_SYSTEM_NOTICE =
+            "SYSTEM_NOTICE";
+
     private static final Duration IDEMPOTENCY_TTL =
             Duration.ofSeconds(60);
 
@@ -541,7 +550,9 @@ public class DiningDialogueMessageService {
         message.setRole(ROLE_ASSISTANT);
         message.setContent(content);
         message.setRequestId(requestId);
-        message.setMessageType(responseType);
+        message.setMessageType(
+                mapResponseTypeToMessageType(responseType)
+        );
         message.setMetadata(
                 toJson(metadata(
                         requestId,
@@ -567,6 +578,26 @@ public class DiningDialogueMessageService {
         return message;
     }
 
+    static String mapResponseTypeToMessageType(
+            String responseType
+    ) {
+        if (responseType == null) {
+            return MESSAGE_TYPE_TEXT;
+        }
+
+        return switch (responseType) {
+            case TYPE_NO_MATCH, TYPE_RECOMMENDATION ->
+                    TYPE_RECOMMENDATION;
+            case TYPE_CLARIFICATION, MESSAGE_TYPE_QUESTION ->
+                    MESSAGE_TYPE_QUESTION;
+            case MESSAGE_TYPE_ERROR -> MESSAGE_TYPE_ERROR;
+            case MESSAGE_TYPE_SYSTEM_NOTICE ->
+                    MESSAGE_TYPE_SYSTEM_NOTICE;
+            case MESSAGE_TYPE_TEXT -> MESSAGE_TYPE_TEXT;
+            default -> MESSAGE_TYPE_TEXT;
+        };
+    }
+
     private void saveResponseSnapshot(
             ChatMessage assistantMessage,
             DialogueMessageResponse response
@@ -576,6 +607,13 @@ public class DiningDialogueMessageService {
         Map<String, Object> updated =
                 new LinkedHashMap<>(metadata);
         updated.put("responseSnapshot", response);
+        if (response.getRecommendation() != null) {
+            updated.put(
+                    "adjustmentSuggestions",
+                    response.getRecommendation()
+                            .getAdjustmentSuggestions()
+            );
+        }
 
         assistantMessage.setMetadata(toJson(updated));
 
@@ -793,6 +831,17 @@ public class DiningDialogueMessageService {
             readAdjustmentSuggestions(
             Map<String, Object> metadata
     ) {
+        Object directSuggestions =
+                metadata.get("adjustmentSuggestions");
+        if (directSuggestions != null) {
+            return objectMapper.convertValue(
+                    directSuggestions,
+                    new TypeReference<
+                            List<AdjustmentSuggestionVO>>() {
+                    }
+            );
+        }
+
         Object snapshot = metadata.get("responseSnapshot");
         if (!(snapshot instanceof Map<?, ?> snapshotMap)) {
             return new ArrayList<>();
