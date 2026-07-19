@@ -3,6 +3,11 @@
 DO $demo_validation$
 DECLARE
     bad integer;
+    sequence_table text;
+    sequence_name text;
+    table_max_id bigint;
+    sequence_last_value bigint;
+    sequence_is_called boolean;
 BEGIN
     IF (SELECT count(*) FROM users) <> 10 THEN RAISE EXCEPTION 'Expected 10 users'; END IF;
     IF (SELECT count(*) FROM merchants) <> 24 THEN RAISE EXCEPTION 'Expected 24 merchants'; END IF;
@@ -54,9 +59,15 @@ BEGIN
        (r.id IS NOT NULL AND (r.merchant_id<>i.merchant_id OR r.status<>'PUBLISHED'
        OR r.moderation_status<>'APPROVED')))
        THEN RAISE EXCEPTION 'Invalid recommendation evidence'; END IF;
-    IF EXISTS (SELECT request_id FROM chat_messages WHERE request_id IS NOT NULL GROUP BY request_id HAVING count(*)>1)
+    IF EXISTS (
+       SELECT session_id, request_id, role
+         FROM chat_messages
+        WHERE request_id IS NOT NULL
+        GROUP BY session_id, request_id, role
+       HAVING count(*) > 1
+    )
        OR EXISTS (SELECT request_id FROM recommendations WHERE request_id IS NOT NULL GROUP BY request_id HAVING count(*)>1)
-       THEN RAISE EXCEPTION 'Duplicate request_id'; END IF;
+       THEN RAISE EXCEPTION 'Duplicate idempotency key'; END IF;
     IF (SELECT count(DISTINCT region_code) FROM region_hot_words WHERE status='ACTIVE')<>6
        THEN RAISE EXCEPTION 'Every region needs hot words'; END IF;
     IF EXISTS (SELECT 1 FROM region_hot_words h WHERE NOT EXISTS (
@@ -67,6 +78,40 @@ BEGIN
     IF to_regclass('public.restaurants') IS NOT NULL THEN RAISE EXCEPTION 'restaurants must not exist'; END IF;
     IF EXISTS (SELECT 1 FROM model_configs WHERE encrypted_api_key !~ '^DEMO')
        THEN RAISE EXCEPTION 'Unexpected model key'; END IF;
+
+    FOREACH sequence_table IN ARRAY ARRAY[
+        'users', 'merchants', 'dishes', 'reviews', 'review_images',
+        'review_tags', 'review_issue_categories', 'review_reply',
+        'notifications', 'merchant_review_summaries',
+        'merchant_highlights', 'region_hot_words', 'chat_sessions',
+        'chat_messages', 'recommendations', 'recommendation_items'
+    ]
+    LOOP
+        sequence_name :=
+            pg_get_serial_sequence(sequence_table, 'id');
+        EXECUTE format(
+            'SELECT COALESCE(MAX(id), 0) FROM %I',
+            sequence_table
+        ) INTO table_max_id;
+        EXECUTE format(
+            'SELECT last_value, is_called FROM %s',
+            sequence_name
+        ) INTO sequence_last_value, sequence_is_called;
+
+        IF (sequence_is_called
+                AND sequence_last_value < table_max_id)
+           OR (NOT sequence_is_called
+                AND sequence_last_value <= table_max_id) THEN
+            RAISE EXCEPTION
+                '% sequence % is not synchronized: max(id)=%, last_value=%, is_called=%',
+                sequence_table,
+                sequence_name,
+                table_max_id,
+                sequence_last_value,
+                sequence_is_called;
+        END IF;
+    END LOOP;
+
     SELECT count(*) INTO bad FROM pg_constraint WHERE contype='f' AND NOT convalidated;
     IF bad<>0 THEN RAISE EXCEPTION 'Unvalidated foreign keys'; END IF;
 END

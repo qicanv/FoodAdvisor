@@ -65,7 +65,3 @@ SELECT (m.id - 1) * 4 + d, m.id,
        CASE WHEN d = 4 AND m.id % 5 = 0 THEN 'OFF_SHELF' ELSE 'ACTIVE' END,
        '2026-01-03 09:00+08', '2026-01-03 09:00+08'
 FROM merchants m CROSS JOIN generate_series(1, 4) d;
-
-SELECT setval(pg_get_serial_sequence('users','id'), 10, true);
-SELECT setval(pg_get_serial_sequence('merchants','id'), 24, true);
-SELECT setval(pg_get_serial_sequence('dishes','id'), 96, true);
