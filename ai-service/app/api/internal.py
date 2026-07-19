@@ -7,6 +7,7 @@ FastAPI 内部接口 — 供 Spring Boot 后端调用
 - POST /internal/reviews/batch-analyze     批量分析
 - POST /internal/content/process           内容清洗与切分
 - POST /internal/content/query             查询/导出处理结果
+- POST /internal/knowledge/upsert          知识向量化与存储
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,11 +22,15 @@ from app.schemas.dialogue import DialogueExtractRequest, DialogueExtractResponse
 from app.schemas.content_processing import (
     ProcessRequest, ProcessResult, QueryRequest,
 )
+from app.schemas.knowledge import (
+    KnowledgeUpsertRequest, KnowledgeUpsertResponse,
+)
 from app.services.dialogue_extraction_service import dialogue_extraction_service
 from app.services.review_analysis_service import review_analysis_service
 from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
 from app.services.review_summary_service import review_summary_service
 from app.services.content_processing_service import content_processing_service
+from app.services.knowledge_service import get_knowledge_service
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +160,49 @@ async def query_content(request: QueryRequest):
     当前返回占位 — 后续可对接 OpenSearch 或数据库进行持久化查询。
     """
     raise HTTPException(status_code=501, detail="内容查询功能将在数据持久化后实现（可对接 OpenSearch）")
+
+
+# ---- 知识向量化与存储 ----
+
+@router.post(
+    "/knowledge/upsert",
+    response_model=KnowledgeUpsertResponse,
+    summary="知识向量化与存储",
+)
+async def upsert_knowledge(request: KnowledgeUpsertRequest):
+    """
+    将清洗后的文本块转换为向量并写入 OpenSearch。
+
+    流程：
+    1. 确保索引存在并校验向量维度
+    2. 逐条对比 contentHash，跳过内容未变化的文档
+    3. 对新增/变更文档批量调用 Embedding 模型生成向量
+    4. 以 chunkId 为 _id 幂等写入 OpenSearch
+
+    单条失败不影响其他文档；相同 chunkId + contentHash 重复请求时
+    标记为 SKIPPED。
+    """
+    if not request.documents:
+        raise HTTPException(status_code=422, detail="文档列表不能为空")
+    if len(request.documents) > 500:
+        raise HTTPException(status_code=422, detail="单次最多处理500条文档")
+
+    logger.info(
+        "知识向量化请求: documents=%d",
+        len(request.documents),
+    )
+
+    service = get_knowledge_service()
+    result = service.upsert(request)
+
+    logger.info(
+        "知识向量化完成: total=%d, success=%d, skipped=%d, failed=%d",
+        result.total,
+        result.successCount,
+        result.skipCount,
+        result.failCount,
+    )
+    return result
 
 
 # ---- 以下为后续 Sprint 接口骨架，仅定义路由签名 ----
