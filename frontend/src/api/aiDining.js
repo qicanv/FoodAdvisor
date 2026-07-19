@@ -19,3 +19,16 @@ export const sendDiningMessage = (sessionId, content, requestId) => {
     { timeout: 60000 }
   )
 }
+
+export const adjustDiningRecommendation = (
+  sessionId,
+  sourceMessageId,
+  field,
+  value
+) => {
+  return request.post(
+    `/api/diner/sessions/${sessionId}/recommendations/adjust`,
+    { sourceMessageId, field, value },
+    { timeout: 60000 }
+  )
+}

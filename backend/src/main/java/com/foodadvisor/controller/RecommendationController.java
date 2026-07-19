@@ -5,6 +5,7 @@ import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.service.RecommendationRankingService;
+import com.foodadvisor.service.DiningDialogueMessageService;
 import com.foodadvisor.util.AuthenticatedUserId;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -26,13 +27,19 @@ public class RecommendationController {
 
     private final RecommendationRankingService
             recommendationRankingService;
+    private final DiningDialogueMessageService
+            diningDialogueMessageService;
 
     public RecommendationController(
             RecommendationRankingService
-                    recommendationRankingService
+                    recommendationRankingService,
+            DiningDialogueMessageService
+                    diningDialogueMessageService
     ) {
         this.recommendationRankingService =
                 recommendationRankingService;
+        this.diningDialogueMessageService =
+                diningDialogueMessageService;
     }
 
     /**
@@ -76,8 +83,8 @@ public class RecommendationController {
                 AuthenticatedUserId.require(httpRequest)
         );
         RecommendationRankResponse response =
-                recommendationRankingService
-                        .adjustAndRank(
+                diningDialogueMessageService
+                        .adjustRecommendation(
                                 sessionId,
                                 request
                         );

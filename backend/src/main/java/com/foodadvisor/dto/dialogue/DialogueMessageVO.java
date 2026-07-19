@@ -2,6 +2,8 @@ package com.foodadvisor.dto.dialogue;
 
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
+import com.foodadvisor.dto.recommendation.LimitingConditionVO;
+import com.foodadvisor.dto.constraint.ConstraintState;
 import lombok.Data;
 
 import java.time.OffsetDateTime;
@@ -30,6 +32,11 @@ public class DialogueMessageVO {
 
     private List<AdjustmentSuggestionVO> adjustmentSuggestions =
             new ArrayList<>();
+
+    private List<LimitingConditionVO> limitingConditions =
+            new ArrayList<>();
+
+    private ConstraintState currentConstraints;
 
     private OffsetDateTime createdAt;
 }
