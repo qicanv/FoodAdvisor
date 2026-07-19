@@ -4,8 +4,22 @@
 
     <select id="selectByMerchantId" resultType="com.foodadvisor.entity.Dish">
         SELECT * FROM dishes 
-        WHERE merchant_id = #{merchantId} AND status = 'ACTIVE' 
-        ORDER BY recommended DESC, created_at DESC
+        WHERE merchant_id = #{merchantId}
+          AND status = 'ACTIVE'
+          AND deleted_at IS NULL
+        ORDER BY recommended DESC, created_at DESC, id ASC
+    </select>
+
+    <select id="selectActiveByMerchantIds" resultType="com.foodadvisor.entity.Dish">
+        SELECT *
+        FROM dishes
+        WHERE merchant_id IN
+        <foreach collection="merchantIds" item="merchantId" open="(" separator="," close=")">
+            #{merchantId}
+        </foreach>
+          AND status = 'ACTIVE'
+          AND deleted_at IS NULL
+        ORDER BY merchant_id ASC, recommended DESC, created_at DESC, id ASC
     </select>
 
 </mapper>

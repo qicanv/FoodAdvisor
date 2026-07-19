@@ -58,6 +58,11 @@ public class ConstraintState {
     private List<String> tasteRestrictions = new ArrayList<>();
 
     /**
+     * 用户明确提出的具体菜品或主要食材关键词。
+     */
+    private List<String> dishKeywords = new ArrayList<>();
+
+    /**
      * 明确排除的菜系。
      * 例如：不要川菜。
      */

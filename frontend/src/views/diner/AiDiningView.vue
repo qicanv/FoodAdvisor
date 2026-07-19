@@ -59,6 +59,20 @@
                   <span>{{ distanceText(merchant.distanceKm) }}</span>
                 </div>
                 <p class="reason">{{ textOr(merchant.reason, '暂无推荐理由') }}</p>
+                <div
+                  v-if="Array.isArray(merchant.matchedDishes) && merchant.matchedDishes.length"
+                  class="matched-dishes"
+                >
+                  <span class="matched-dishes-title">匹配菜品：</span>
+                  <span
+                    v-for="dish in merchant.matchedDishes.slice(0, 3)"
+                    :key="dish.dishId"
+                    class="matched-dish"
+                  >
+                    {{ textOr(dish.dishName, '菜品名称暂无') }}
+                    {{ dish.dishPrice == null ? '价格暂无' : `¥${dish.dishPrice}` }}
+                  </span>
+                </div>
               </button>
             </div>
 
@@ -445,6 +459,9 @@ onMounted(initialize)
 .merchant-meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .merchant-meta span { padding: 3px 7px; border-radius: 6px; background: #f3f4f6; color: #4b5563; font-size: 12px; }
 .reason { margin-top: 12px !important; color: #374151; font-size: 14px; }
+.matched-dishes { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.matched-dishes-title { color: #6b7280; font-size: 13px; }
+.matched-dish { padding: 4px 8px; border-radius: 999px; background: #fff7ed; color: #9a3412; font-size: 13px; }
 .suggestion-panel { margin-top: 14px; padding: 12px; border-radius: 10px; background: #fff7ed; color: #9a3412; }
 .suggestion-list { display: grid; gap: 8px; margin-top: 9px; }
 .suggestion-button { display: flex; justify-content: space-between; gap: 14px; align-items: center; width: 100%; padding: 10px 12px; text-align: left; border: 1px solid #fdba74; border-radius: 9px; color: #9a3412; background: #fff; cursor: pointer; }

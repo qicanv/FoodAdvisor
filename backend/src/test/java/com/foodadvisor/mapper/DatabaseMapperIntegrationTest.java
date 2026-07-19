@@ -9,7 +9,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import com.foodadvisor.entity.ChatMessage;
 import com.foodadvisor.entity.MerchantBusinessHours;
+import com.foodadvisor.entity.Dish;
 
+import java.math.BigDecimal;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -45,6 +47,9 @@ class DatabaseMapperIntegrationTest {
 
     @Autowired
     private BusinessHoursMapper businessHoursMapper;
+
+    @Autowired
+    private DishMapper dishMapper;
 
     @Test
     void auditLogCountQueryUsesCurrentDatabaseColumns() {
@@ -253,6 +258,54 @@ class DatabaseMapperIntegrationTest {
         );
     }
 
+    @Test
+    @Transactional
+    void dishQueriesReturnOnlyActiveNonDeletedRequestedMerchants() {
+        Long merchantA = insertMerchant("DISH_MAPPER_A");
+        Long merchantB = insertMerchant("DISH_MAPPER_B");
+        Long excluded = insertMerchant("DISH_MAPPER_EXCLUDED");
+
+        insertDish(merchantA, "下架烤鱼", "OFF_SHELF", false, "30", "[]");
+        insertDish(merchantB, "牛肉菜", "ACTIVE", false, "48", "[\"香辣\"]");
+        insertDish(merchantA, "已归档菜", "ARCHIVED", false, "20", "[]");
+        insertDish(excluded, "其他商家水煮鱼", "ACTIVE", false, "66", "[]");
+        insertDish(merchantA, "已删除水煮鱼", "ACTIVE", true, "50", "[]");
+        insertDish(merchantA, "水煮鱼", "ACTIVE", false, "68", "[\"麻辣\"]");
+        insertDish(merchantA, "价格未知菜", "ACTIVE", false, null, "[]");
+
+        List<Dish> single =
+                dishMapper.selectByMerchantId(merchantA);
+        List<Dish> batch =
+                dishMapper.selectActiveByMerchantIds(
+                        List.of(merchantB, merchantA)
+                );
+
+        assertEquals(
+                Set.of("水煮鱼", "价格未知菜"),
+                single.stream().map(Dish::getName)
+                        .collect(Collectors.toSet())
+        );
+        assertEquals(3, batch.size());
+        assertEquals(
+                Set.of(merchantA, merchantB),
+                batch.stream().map(Dish::getMerchantId)
+                        .collect(Collectors.toSet())
+        );
+        assertTrue(batch.stream().allMatch(dish ->
+                "ACTIVE".equals(dish.getStatus())
+                        && dish.getDeletedAt() == null));
+        Dish beef = batch.stream()
+                .filter(dish -> "牛肉菜".equals(dish.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(new BigDecimal("48.00"), beef.getPrice());
+        assertEquals("[\"香辣\"]", beef.getTasteTags());
+        assertEquals(merchantB, beef.getMerchantId());
+        assertTrue(batch.stream().anyMatch(dish ->
+                "价格未知菜".equals(dish.getName())
+                        && dish.getPrice() == null));
+    }
+
     private Long insertSession() {
         return jdbcTemplate.queryForObject(
                 """
@@ -320,6 +373,35 @@ class DatabaseMapperIntegrationTest {
                 closeTime,
                 isClosed,
                 crossesMidnight
+        );
+    }
+
+    private void insertDish(
+            Long merchantId,
+            String name,
+            String status,
+            boolean deleted,
+            String price,
+            String tasteTags
+    ) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO dishes (
+                    merchant_id, name, price, category, description,
+                    taste_tags, recommended, status,
+                    created_at, updated_at, deleted_at
+                )
+                VALUES (?, ?, ?::numeric, 'TEST', 'test description',
+                        ?::jsonb, false, ?,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                        CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END)
+                """,
+                merchantId,
+                name,
+                price,
+                tasteTags,
+                status,
+                deleted
         );
     }
 

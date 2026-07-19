@@ -79,6 +79,9 @@ public class RecommendationItemVO {
     private List<String> riskNotes =
             new ArrayList<>();
 
+    private List<MatchedDishVO> matchedDishes =
+            new ArrayList<>();
+
     /**
      * 仅引用数据库和规则计算结果生成的推荐理由。
      */

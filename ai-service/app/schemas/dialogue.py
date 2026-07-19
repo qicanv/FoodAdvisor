@@ -13,6 +13,7 @@ ALLOWED_FIELDS = {
     "cuisines",
     "tastePreferences",
     "tasteRestrictions",
+    "dishKeywords",
     "excludedCuisines",
     "excludedMerchantTypes",
     "distanceKm",
@@ -40,6 +41,7 @@ class ConstraintStateModel(BaseModel):
     cuisines: list[str] = Field(default_factory=list)
     tastePreferences: list[str] = Field(default_factory=list)
     tasteRestrictions: list[str] = Field(default_factory=list)
+    dishKeywords: list[str] = Field(default_factory=list)
     excludedCuisines: list[str] = Field(default_factory=list)
     excludedMerchantTypes: list[str] = Field(default_factory=list)
     distanceKm: Optional[float] = Field(default=None, gt=0, le=100)
@@ -60,6 +62,7 @@ class ConstraintStateModel(BaseModel):
         "cuisines",
         "tastePreferences",
         "tasteRestrictions",
+        "dishKeywords",
         "excludedCuisines",
         "excludedMerchantTypes",
         "scenes",

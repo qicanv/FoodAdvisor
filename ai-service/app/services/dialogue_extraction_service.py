@@ -20,6 +20,7 @@ MERCHANT_RECOMMENDATION, CONSTRAINT_UPDATE, GENERAL_CHAT, UNKNOWN.
 Allowed constraint fields:
 partySize, totalBudget, perCapitaBudget, merchantTypes, cuisines,
 tastePreferences, tasteRestrictions, excludedCuisines,
+ dishKeywords,
 excludedMerchantTypes, distanceKm, minRating, scenes,
 environmentRequirements, businessTime.
 
@@ -31,6 +32,9 @@ Rules:
 - Put explicitly removed conditions into clearedFields.
 - Only use allowed fields.
 - Do not output latitude or longitude.
+- Put explicit dishes or main ingredients in dishKeywords.
+- Never put negated foods such as "不吃香菜" in dishKeywords.
+- Do not treat cuisines, budgets, distances, or party size as dishes.
 """
 
 

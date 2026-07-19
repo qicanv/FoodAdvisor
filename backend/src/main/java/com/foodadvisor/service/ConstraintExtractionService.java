@@ -123,6 +123,22 @@ public class ConstraintExtractionService {
                     "快餐"
             );
 
+    private static final List<String> COMMON_DISH_KEYWORDS =
+            List.of(
+                    "水煮鱼",
+                    "烤鱼",
+                    "小龙虾",
+                    "牛肉",
+                    "虾",
+                    "鸡肉"
+            );
+
+    private static final Pattern DISH_PHRASE_PATTERN =
+            Pattern.compile(
+                    "(?:想吃|吃点|来份|来点)"
+                            + "([^，。！？,!?]{1,30})"
+            );
+
     /**
      * 表示排除、不接受的常见表达。
      */
@@ -728,6 +744,9 @@ public class ConstraintExtractionService {
         target.setTasteRestrictions(
                 sanitizeStringList(source.getTasteRestrictions())
         );
+        target.setDishKeywords(
+                sanitizeStringList(source.getDishKeywords())
+        );
         target.setExcludedCuisines(
                 sanitizeStringList(source.getExcludedCuisines())
         );
@@ -815,6 +834,7 @@ public class ConstraintExtractionService {
                         "cuisines",
                         "tastePreferences",
                         "tasteRestrictions",
+                        "dishKeywords",
                         "excludedCuisines",
                         "excludedMerchantTypes",
                         "distanceKm",
@@ -862,6 +882,8 @@ public class ConstraintExtractionService {
                         state.setTastePreferences(new ArrayList<>());
                 case "tasteRestrictions" ->
                         state.setTasteRestrictions(new ArrayList<>());
+                case "dishKeywords" ->
+                        state.setDishKeywords(new ArrayList<>());
                 case "excludedCuisines" ->
                         state.setExcludedCuisines(new ArrayList<>());
                 case "excludedMerchantTypes" ->
@@ -904,6 +926,7 @@ public class ConstraintExtractionService {
         extractBudget(message, state);
         extractCuisineAndMerchantType(message, state);
         extractTaste(message, state);
+        extractDishKeywords(message, state);
         extractSceneAndEnvironment(message, state);
         extractDistance(message, state);
         extractMinRating(message, state);
@@ -1069,6 +1092,20 @@ public class ConstraintExtractionService {
 
         if (compactMessage.contains("清淡")) {
             state.getTastePreferences().add("清淡");
+        }
+
+        for (String restriction :
+                List.of("香菜", "花生", "清真", "严格素食")) {
+            if ((compactMessage.contains("不吃" + restriction)
+                    || compactMessage.contains("不要" + restriction)
+                    || compactMessage.contains(restriction + "过敏")
+                    || compactMessage.contains(restriction))
+                    && ("清真".equals(restriction)
+                    || "严格素食".equals(restriction)
+                    || compactMessage.contains("不")
+                    || compactMessage.contains("过敏"))) {
+                state.getTasteRestrictions().add(restriction);
+            }
         }
     }
 
@@ -1281,6 +1318,94 @@ public class ConstraintExtractionService {
                 || compactMessage.contains("正在营业")) {
             state.setBusinessTime("NOW_OPEN");
         }
+    }
+
+    private void extractDishKeywords(
+            String message,
+            ConstraintState state
+    ) {
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        String compact = message.replaceAll("\\s+", "");
+        for (String keyword : COMMON_DISH_KEYWORDS) {
+            if (!compact.contains(keyword)
+                    || isNegated(compact, keyword)
+                    || isDishKeywordFalsePositive(compact, keyword)) {
+                continue;
+            }
+            if (state.getDishKeywords().stream()
+                    .anyMatch(existing ->
+                            existing.contains(keyword))) {
+                continue;
+            }
+            state.getDishKeywords().add(keyword);
+        }
+        Matcher phraseMatcher = DISH_PHRASE_PATTERN.matcher(compact);
+        while (phraseMatcher.find()) {
+            String phrase = phraseMatcher.group(1)
+                    .replaceFirst(
+                            "(?:人均|预算|距离|[0-9]+公里).*",
+                            ""
+                    );
+            for (String candidate :
+                    phrase.split("(?:或者|或|、)")) {
+                String keyword = candidate.trim();
+                if (!isSafeGenericDishKeyword(compact, keyword)
+                        || state.getDishKeywords().stream()
+                        .anyMatch(existing ->
+                                existing.equals(keyword)
+                                        || existing.contains(keyword)
+                                        || keyword.contains(existing))) {
+                    continue;
+                }
+                state.getDishKeywords().add(keyword);
+            }
+        }
+        state.setDishKeywords(
+                sanitizeStringList(state.getDishKeywords())
+        );
+    }
+
+    private boolean isSafeGenericDishKeyword(
+            String message,
+            String keyword
+    ) {
+        if (keyword.length() < 2 || keyword.length() > 30
+                || isNegated(message, keyword)
+                || keyword.matches(".*[0-9元公里个人].*")) {
+            return false;
+        }
+        if (SUPPORTED_CUISINES.stream().anyMatch(keyword::contains)
+                || SUPPORTED_MERCHANT_TYPES.stream()
+                .anyMatch(keyword::contains)) {
+            return false;
+        }
+        return List.of(
+                        "辣一点",
+                        "少辣",
+                        "微辣",
+                        "清淡",
+                        "附近",
+                        "离我近一点"
+                ).stream()
+                .noneMatch(keyword::contains);
+    }
+
+    private boolean isDishKeywordFalsePositive(
+            String message,
+            String keyword
+    ) {
+        if (SUPPORTED_CUISINES.contains(keyword)
+                || SUPPORTED_MERCHANT_TYPES.contains(keyword)) {
+            return true;
+        }
+        return message.matches(".*(?:人均|预算|公里|个人).*")
+                && !message.matches(
+                ".*(?:想吃|吃点|来份|来点|或者|或).*"
+                        + Pattern.quote(keyword)
+                        + ".*"
+        );
     }
 
     private boolean extractBusinessTargetTime(
@@ -1758,6 +1883,9 @@ public class ConstraintExtractionService {
         copy.setTasteRestrictions(
                 copyList(source.getTasteRestrictions())
         );
+        copy.setDishKeywords(
+                copyList(source.getDishKeywords())
+        );
         copy.setExcludedCuisines(
                 copyList(source.getExcludedCuisines())
         );
@@ -2024,6 +2152,18 @@ public class ConstraintExtractionService {
                 )
         );
 
+        merged.setDishKeywords(
+                mergeOrReplaceList(
+                        merged.getDishKeywords(),
+                        extracted.getDishKeywords(),
+                        shouldReplaceList(
+                                message,
+                                extracted.getDishKeywords(),
+                                List.of("菜品", "想吃的菜")
+                        )
+                )
+        );
+
         merged.setExcludedCuisines(
                 mergeOrReplaceList(
                         merged.getExcludedCuisines(),
@@ -2263,6 +2403,13 @@ public class ConstraintExtractionService {
                 "tasteRestrictions",
                 safeOld.getTasteRestrictions(),
                 safeMerged.getTasteRestrictions()
+        );
+
+        addListChangeIfDifferent(
+                changes,
+                "dishKeywords",
+                safeOld.getDishKeywords(),
+                safeMerged.getDishKeywords()
         );
 
         addListChangeIfDifferent(
