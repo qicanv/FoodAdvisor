@@ -99,6 +99,13 @@
                 <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
               </svg>
             </button>
+            <button class="action-btn delete-btn" @click="confirmDeleteTopic(topic)" title="删除专题">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18"></path>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -424,6 +431,101 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showDeleteConfirmModal" class="modal-overlay" @click.self="cancelDeleteTopic">
+      <div class="modal-content confirm-modal">
+        <div class="modal-icon-wrapper danger">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polyline points="3 6 9 12 3 18"></polyline>
+            <line x1="18" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </div>
+        <div class="modal-body-content">
+          <h3 class="modal-title">确认删除</h3>
+          <p class="modal-message">确定要删除专题「<strong>{{ topicToDelete?.name }}</strong>」吗？</p>
+          <p class="modal-hint">此操作不可恢复，所有关联的商家和标签关系也将被删除。</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="cancelDeleteTopic">取消</button>
+          <button class="btn btn-danger" @click="performDeleteTopic">确认删除</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showPublishConfirmModal" class="modal-overlay" @click.self="cancelPublishTopic">
+      <div class="modal-content confirm-modal">
+        <div class="modal-icon-wrapper warning">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+        </div>
+        <div class="modal-body-content">
+          <h3 class="modal-title">确认{{ publishAction === 'publish' ? '发布' : '下架' }}</h3>
+          <p class="modal-message">确定要{{ publishAction === 'publish' ? '发布' : '下架' }}专题「<strong>{{ topicToPublish?.name }}</strong>」吗？</p>
+          <p v-if="publishAction === 'publish'" class="modal-hint">发布后该专题将对所有用户可见，请确保内容完整且符合平台规范。</p>
+          <p v-else class="modal-hint">下架后该专题将不再对用户展示，但数据将被保留。</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="cancelPublishTopic">取消</button>
+          <button :class="['btn', publishAction === 'publish' ? 'btn-primary' : 'btn-danger']" @click="performPublishTopic">确认{{ publishAction === 'publish' ? '发布' : '下架' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showToastModal" class="modal-overlay" @click.self="closeToastModal">
+      <div class="modal-content toast-modal">
+        <div :class="['modal-icon-wrapper', toastType]">
+          <svg v-if="toastType === 'error'" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+          </svg>
+          <svg v-else-if="toastType === 'success'" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          <svg v-else-if="toastType === 'warning'" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <svg v-else viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+        </div>
+        <div class="modal-body-content">
+          <h3 class="modal-title">{{ toastTitle }}</h3>
+          <p class="modal-message">{{ toastMessage }}</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" @click="closeToastModal">知道了</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showTagDeleteConfirmModal" class="modal-overlay" @click.self="cancelDeleteTag">
+      <div class="modal-content confirm-modal">
+        <div class="modal-icon-wrapper danger">
+          <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polyline points="3 6 9 12 3 18"></polyline>
+            <line x1="18" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </div>
+        <div class="modal-body-content">
+          <h3 class="modal-title">确认删除</h3>
+          <p class="modal-message">确定要删除标签「<strong>{{ tagToDelete?.name }}</strong>」吗？</p>
+          <p class="modal-hint">此操作不可恢复，所有关联的专题和商家关系也将被删除。</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="cancelDeleteTag">取消</button>
+          <button class="btn btn-danger" @click="performDeleteTag">确认删除</button>
+        </div>
+      </div>
+    </div>
   </AdminLayout>
 </template>
 
@@ -475,8 +577,23 @@ const currentTopic = ref(null)
 const currentTopicMerchants = ref([])
 
 const showTagMerchantListModal = ref(false)
+
+const showDeleteConfirmModal = ref(false)
+const topicToDelete = ref(null)
 const currentTag = ref(null)
 const currentTagMerchants = ref([])
+
+const showPublishConfirmModal = ref(false)
+const topicToPublish = ref(null)
+const publishAction = ref('')
+
+const showToastModal = ref(false)
+const toastType = ref('info')
+const toastTitle = ref('')
+const toastMessage = ref('')
+
+const showTagDeleteConfirmModal = ref(false)
+const tagToDelete = ref(null)
 
 const tagTypes = [
   { key: 'category', label: '餐饮类型' },
@@ -729,7 +846,7 @@ const isMerchantSelected = (merchantId) => {
 
 const toggleMerchant = (merchant) => {
   if (merchant.operationStatus !== 'OPERATING') {
-    alert('已停业商家不能加入公开专题')
+    showToast('warning', '无法选择', '已停业商家不能加入公开专题')
     return
   }
   
@@ -741,35 +858,95 @@ const toggleMerchant = (merchant) => {
   }
 }
 
+const showToast = (type, title, message) => {
+  toastType.value = type
+  toastTitle.value = title
+  toastMessage.value = message
+  showToastModal.value = true
+}
+
+const closeToastModal = () => {
+  showToastModal.value = false
+}
+
 const removeMerchant = (merchantId) => {
   topicForm.value.merchants = topicForm.value.merchants.filter(m => m.id !== merchantId)
 }
 
-const toggleTopicStatus = async (topic) => {
-  const newStatus = topic.status === 'PUBLISHED' ? 'OFFLINE' : 'PUBLISHED'
-  if (confirm(`确定要${newStatus === 'PUBLISHED' ? '发布' : '下架'}专题「${topic.name}」吗？`)) {
-    try {
-      const response = await updateTopic(topic.id, { ...topic, status: newStatus, merchantIds: [], tagNames: [] })
-      if (response.success) {
-        topic.status = newStatus
-      } else {
-        alert(response.message || '更新失败，请稍后重试')
-      }
-    } catch (error) {
-      console.error('更新专题状态失败:', error)
-      alert('更新失败，请稍后重试')
+const toggleTopicStatus = (topic) => {
+  topicToPublish.value = topic
+  publishAction.value = topic.status === 'PUBLISHED' ? 'offline' : 'publish'
+  showPublishConfirmModal.value = true
+}
+
+const cancelPublishTopic = () => {
+  showPublishConfirmModal.value = false
+  topicToPublish.value = null
+  publishAction.value = ''
+}
+
+const performPublishTopic = async () => {
+  if (!topicToPublish.value) return
+  
+  const newStatus = publishAction.value === 'publish' ? 'PUBLISHED' : 'OFFLINE'
+  
+  try {
+    const response = await updateTopic(topicToPublish.value.id, { 
+      ...topicToPublish.value, 
+      status: newStatus, 
+      merchantIds: [], 
+      tagNames: [] 
+    })
+    if (response.success) {
+      topicToPublish.value.status = newStatus
+      showToast('success', '操作成功', `${publishAction.value === 'publish' ? '发布' : '下架'}成功`)
+    } else {
+      showToast('error', '操作失败', response.message || '更新失败，请稍后重试')
     }
+  } catch (error) {
+    console.error('更新专题状态失败:', error)
+    showToast('error', '操作失败', '更新失败，请稍后重试')
+  }
+  
+  cancelPublishTopic()
+}
+
+const confirmDeleteTopic = (topic) => {
+  topicToDelete.value = topic
+  showDeleteConfirmModal.value = true
+}
+
+const cancelDeleteTopic = () => {
+  showDeleteConfirmModal.value = false
+  topicToDelete.value = null
+}
+
+const performDeleteTopic = async () => {
+  if (!topicToDelete.value) return
+  try {
+    const response = await deleteTopic(topicToDelete.value.id)
+    if (response.success) {
+      topics.value = topics.value.filter(t => t.id !== topicToDelete.value.id)
+      showDeleteConfirmModal.value = false
+      topicToDelete.value = null
+      showToast('success', '删除成功', '专题已成功删除')
+    } else {
+      showToast('error', '删除失败', response.message || '删除失败，请稍后重试')
+    }
+  } catch (error) {
+    console.error('删除专题失败:', error)
+    showToast('error', '删除失败', '删除失败，请稍后重试')
   }
 }
 
 const saveTopic = async () => {
   if (!topicForm.value.name.trim()) {
-    alert('请输入专题名称')
+    showToast('warning', '输入提示', '请输入专题名称')
     return
   }
   
   if (topicForm.value.status === 'PUBLISHED' && topicForm.value.merchants.length === 0) {
-    alert('公开专题必须至少关联一个商家')
+    showToast('warning', '输入提示', '公开专题必须至少关联一个商家')
     return
   }
   
@@ -794,11 +971,11 @@ const saveTopic = async () => {
       closeTopicModal()
       loadTopics()
     } else {
-      alert(response.message || '保存失败，请稍后重试')
+      showToast('error', '保存失败', response.message || '保存失败，请稍后重试')
     }
   } catch (error) {
     console.error('保存专题失败:', error)
-    alert('保存失败，请稍后重试')
+    showToast('error', '保存失败', '保存失败，请稍后重试')
   }
 }
 
@@ -822,7 +999,7 @@ const closeTagModal = () => {
 
 const saveTag = async () => {
   if (!tagForm.value.name.trim()) {
-    alert('请输入标签名称')
+    showToast('warning', '输入提示', '请输入标签名称')
     return
   }
   
@@ -832,28 +1009,41 @@ const saveTag = async () => {
       closeTagModal()
       loadTags()
     } else {
-      alert(response.message || '保存失败，请稍后重试')
+      showToast('error', '保存失败', response.message || '保存失败，请稍后重试')
     }
   } catch (error) {
     console.error('保存标签失败:', error)
-    alert('保存失败，请稍后重试')
+    showToast('error', '保存失败', '保存失败，请稍后重试')
   }
 }
 
-const removeTag = async (tag) => {
-  if (confirm(`确定要删除标签「${tag.name}」吗？`)) {
-    try {
-      const response = await deleteTag(tag.id)
-      if (response.success) {
-        tags.value = tags.value.filter(t => t.id !== tag.id)
-      } else {
-        alert(response.message || '删除失败，请稍后重试')
-      }
-    } catch (error) {
-      console.error('删除标签失败:', error)
-      alert('删除失败，请稍后重试')
+const removeTag = (tag) => {
+  tagToDelete.value = tag
+  showTagDeleteConfirmModal.value = true
+}
+
+const cancelDeleteTag = () => {
+  showTagDeleteConfirmModal.value = false
+  tagToDelete.value = null
+}
+
+const performDeleteTag = async () => {
+  if (!tagToDelete.value) return
+  
+  try {
+    const response = await deleteTag(tagToDelete.value.id)
+    if (response.success) {
+      tags.value = tags.value.filter(t => t.id !== tagToDelete.value.id)
+      showToast('success', '删除成功', '标签已成功删除')
+    } else {
+      showToast('error', '删除失败', response.message || '删除失败，请稍后重试')
     }
+  } catch (error) {
+    console.error('删除标签失败:', error)
+    showToast('error', '删除失败', '删除失败，请稍后重试')
   }
+  
+  cancelDeleteTag()
 }
 
 const openMerchantListModal = async (topic) => {
@@ -1601,6 +1791,96 @@ onMounted(() => {
 .btn-primary {
   background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
   color: #fff;
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.delete-btn {
+  color: #ff4d4f;
+}
+
+.delete-btn:hover {
+  background: rgba(255, 77, 79, 0.1);
+}
+
+.confirm-modal {
+  max-width: 460px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.toast-modal {
+  max-width: 420px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.modal-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 0 20px;
+}
+
+.modal-icon-wrapper.danger {
+  color: #ff4d4f;
+}
+
+.modal-icon-wrapper.warning {
+  color: #faad14;
+}
+
+.modal-icon-wrapper.success {
+  color: #52c41a;
+}
+
+.modal-icon-wrapper.error {
+  color: #ff4d4f;
+}
+
+.modal-icon-wrapper.info {
+  color: #1890ff;
+}
+
+.modal-body-content {
+  text-align: center;
+  padding: 0 32px 24px;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2d3d;
+  margin: 0 0 12px;
+}
+
+.modal-message {
+  font-size: 15px;
+  color: #434e59;
+  margin: 0 0 8px;
+  line-height: 1.6;
+}
+
+.modal-message strong {
+  color: #1f2d3d;
+}
+
+.modal-hint {
+  font-size: 13px;
+  color: #8c9aa8;
+  margin: 0;
+  line-height: 1.5;
 }
 
 @media (max-width: 768px) {

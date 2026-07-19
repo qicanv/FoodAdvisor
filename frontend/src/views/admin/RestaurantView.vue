@@ -288,7 +288,7 @@
         <h2 class="form-title">批量状态管理</h2>
         <div class="status-info-card">
           <div class="status-stat">
-            <div class="stat-value">{{ total }}</div>
+            <div class="stat-value">{{ totalCount }}</div>
             <div class="stat-label">总商家数</div>
           </div>
           <div class="status-stat">
@@ -545,7 +545,8 @@ import {
   getAdminMerchants, 
   createAdminMerchant, 
   updateAdminMerchant, 
-  updateAdminMerchantStatus 
+  updateAdminMerchantStatus,
+  getAdminMerchantStatistics
 } from '../../api/adminMerchant'
 
 const activeTab = ref('list')
@@ -603,9 +604,10 @@ const isDisabling = computed(() => {
          statusForm.value.operationStatus === 'CLOSED_PERMANENTLY'
 })
 
-const activeCount = computed(() => merchants.value.filter(m => m.platformStatus === 'ACTIVE' && m.operationStatus === 'OPERATING').length)
-const disabledCount = computed(() => merchants.value.filter(m => m.platformStatus === 'DISABLED').length)
-const suspendedCount = computed(() => merchants.value.filter(m => m.operationStatus === 'SUSPENDED' || m.operationStatus === 'CLOSED_PERMANENTLY').length)
+const totalCount = ref(0)
+const activeCount = ref(0)
+const disabledCount = ref(0)
+const suspendedCount = ref(0)
 
 const loadMerchants = async () => {
   loading.value = true
@@ -869,6 +871,7 @@ const submitStatus = async () => {
     if (response.success) {
       closeStatusModal()
       loadMerchants()
+      loadStatistics()
     } else {
       console.error('修改状态失败:', response.message)
     }
@@ -917,8 +920,23 @@ const getChangeStatusTitle = (merchant) => {
   return `修改商家状态：${merchant.name}`
 }
 
+const loadStatistics = async () => {
+  try {
+    const response = await getAdminMerchantStatistics()
+    if (response.success && response.data) {
+      totalCount.value = Number(response.data.total) || 0
+      activeCount.value = Number(response.data.activeCount) || 0
+      disabledCount.value = Number(response.data.disabledCount) || 0
+      suspendedCount.value = Number(response.data.suspendedCount) || 0
+    }
+  } catch (error) {
+    console.error('加载统计数据失败:', error)
+  }
+}
+
 onMounted(() => {
   loadMerchants()
+  loadStatistics()
 })
 </script>
 

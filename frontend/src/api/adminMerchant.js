@@ -23,3 +23,7 @@ export const updateAdminMerchantStatus = (id, params) => {
 export const deleteAdminMerchant = id => {
   return request.delete(`/api/admin/merchants/${id}`)
 }
+
+export const getAdminMerchantStatistics = () => {
+  return request.get('/api/admin/merchants/statistics')
+}

@@ -263,18 +263,25 @@ const defaultQuickActions = [
     bgClass: 'action-card-orange',
   },
   {
-    label: '商家统计',
-    description: '查看商家使用平台功能情况',
-    path: '/admin/merchant-statistics',
+    label: '数据分析',
+    description: '分析用户搜索、点击和反馈行为',
+    path: '/admin/analytics',
     emoji: '📈',
     bgClass: 'action-card-purple',
+  },
+  {
+    label: '商家统计',
+    description: '查看商家状态和运营统计',
+    path: '/admin/restaurants?tab=status',
+    emoji: '📉',
+    bgClass: 'action-card-cyan',
   },
   {
     label: '专题管理',
     description: '管理分类标签和探店专题',
     path: '/admin/topics',
     emoji: '📚',
-    bgClass: 'action-card-blue',
+    bgClass: 'action-card-pink',
   },
 ]
 
@@ -324,10 +331,11 @@ const availableActions = computed(() => {
     { label: '商家管理', description: '管理商家信息', path: '/admin/restaurants', emoji: '🏪', bgClass: 'action-card-green' },
     { label: '模型配置', description: '管理 AI 模型服务配置', path: '/admin/model-configs', emoji: '🤖', bgClass: 'action-card-blue' },
     { label: '运营数据', description: '查看平台核心运营数据', path: '/admin/dashboard', emoji: '📊', bgClass: 'action-card-orange' },
-    { label: '商家统计', description: '查看商家使用平台功能情况', path: '/admin/merchant-statistics', emoji: '📈', bgClass: 'action-card-purple' },
-    { label: '专题管理', description: '管理分类标签和探店专题', path: '/admin/topics', emoji: '📚', bgClass: 'action-card-blue' },
-    { label: '管理食客', description: '管理平台注册用户和食客信息', path: '/admin/diners', emoji: '👥', bgClass: 'action-card-blue' },
-    { label: '审计日志', description: '查询系统和重要操作的审计日志', path: '/admin/logs', emoji: '📋', bgClass: 'action-card-purple' },
+    { label: '数据分析', description: '分析用户搜索、点击和反馈行为', path: '/admin/analytics', emoji: '📈', bgClass: 'action-card-purple' },
+    { label: '商家统计', description: '查看商家状态和运营统计', path: '/admin/restaurants?tab=status', emoji: '📉', bgClass: 'action-card-cyan' },
+    { label: '专题管理', description: '管理分类标签和探店专题', path: '/admin/topics', emoji: '📚', bgClass: 'action-card-pink' },
+    { label: '管理食客', description: '管理平台注册用户和食客信息', path: '/admin/diners', emoji: '👥', bgClass: 'action-card-red' },
+    { label: '审计日志', description: '查询系统和重要操作的审计日志', path: '/admin/logs', emoji: '📋', bgClass: 'action-card-teal' },
   ].filter(a => !usedLabels.includes(a.label))
 })
 
@@ -755,6 +763,26 @@ onMounted(() => {
 .action-card-orange {
   background: linear-gradient(135deg, #fa8c16 0%, #ffa940 100%);
   border: 1px solid rgba(250, 140, 22, 0.3);
+}
+
+.action-card-cyan {
+  background: linear-gradient(135deg, #13c2c2 0%, #36cfc9 100%);
+  border: 1px solid rgba(19, 194, 194, 0.3);
+}
+
+.action-card-pink {
+  background: linear-gradient(135deg, #eb2f96 0%, #ff69c1 100%);
+  border: 1px solid rgba(235, 47, 150, 0.3);
+}
+
+.action-card-red {
+  background: linear-gradient(135deg, #f5222d 0%, #ff4d4f 100%);
+  border: 1px solid rgba(245, 34, 45, 0.3);
+}
+
+.action-card-teal {
+  background: linear-gradient(135deg, #2378f7 0%, #40a9ff 100%);
+  border: 1px solid rgba(35, 120, 247, 0.3);
 }
 
 .empty-actions {
