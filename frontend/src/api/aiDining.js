@@ -54,3 +54,10 @@ export const adjustDiningRecommendation = (
     { timeout: 60000 }
   )
 }
+
+export const getRecommendationEvidences = (recommendationId, merchantId) => {
+  return request.get(
+    `/api/diner/recommendations/${recommendationId}/evidences`,
+    { params: { merchantId } }
+  )
+}

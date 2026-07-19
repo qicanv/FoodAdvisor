@@ -49,6 +49,8 @@ class DiningDialogueTransactionIntegrationTest {
     private Long sessionId;
     private Long userId;
     private String requestId;
+    private Long evidenceHighlightId;
+    private Long evidenceReviewId;
 
     @BeforeEach
     void setUp() {
@@ -142,11 +144,26 @@ class DiningDialogueTransactionIntegrationTest {
                     fail_ai_dining_assistant_test()
                 """
         );
+        jdbcTemplate.execute(
+                "DROP TRIGGER IF EXISTS trg_fail_recommendation_evidence_test "
+                        + "ON recommendation_evidences");
+        jdbcTemplate.execute(
+                "DROP FUNCTION IF EXISTS fail_recommendation_evidence_test()");
         if (sessionId != null) {
             jdbcTemplate.update(
                     "DELETE FROM chat_sessions WHERE id = ?",
                     sessionId
             );
+        }
+        if (evidenceHighlightId != null) {
+            jdbcTemplate.update(
+                    "DELETE FROM merchant_highlights WHERE id = ?",
+                    evidenceHighlightId);
+        }
+        if (evidenceReviewId != null) {
+            jdbcTemplate.update(
+                    "DELETE FROM reviews WHERE id = ?",
+                    evidenceReviewId);
         }
     }
 
@@ -217,6 +234,102 @@ class DiningDialogueTransactionIntegrationTest {
                         sessionId
                 )
         );
+    }
+
+    @Test
+    void recommendationEvidenceInsertFailureRollsBackRecommendationGraph() {
+        jdbcTemplate.execute(
+                "DROP TRIGGER IF EXISTS trg_fail_ai_dining_assistant_test "
+                        + "ON chat_messages");
+        Long merchantId = jdbcTemplate.queryForObject(
+                """
+                SELECT id FROM merchants
+                 WHERE platform_status = 'ACTIVE'
+                   AND operation_status = 'OPERATING'
+                   AND deleted_at IS NULL
+                 ORDER BY id LIMIT 1
+                """,
+                Long.class);
+        evidenceReviewId = jdbcTemplate.queryForObject(
+                """
+                INSERT INTO reviews (
+                    merchant_id, review_type, rating, content, source,
+                    current_version, status, moderation_status, risk_level,
+                    published_at, created_at, updated_at
+                )
+                VALUES (?, 'ORIGINAL', 5,
+                        '环境安静，适合聊天，真实事务测试评价内容',
+                        'SYSTEM', 1, 'PUBLISHED', 'APPROVED', 'LOW',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+                """,
+                Long.class, merchantId);
+        evidenceHighlightId = jdbcTemplate.queryForObject(
+                """
+                INSERT INTO merchant_highlights (
+                    merchant_id, highlight_type, title, description,
+                    mention_count, positive_ratio, version, status, generated_at
+                )
+                VALUES (?, 'ENVIRONMENT', '环境安静',
+                        '有评价提到环境安静', 1, 1, 9999,
+                        'ACTIVE', CURRENT_TIMESTAMP)
+                RETURNING id
+                """,
+                Long.class, merchantId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO merchant_highlight_evidences (
+                    highlight_id, review_id, review_version,
+                    evidence_excerpt, created_at
+                )
+                VALUES (?, ?, 1, '环境安静', CURRENT_TIMESTAMP)
+                """,
+                evidenceHighlightId, evidenceReviewId);
+        jdbcTemplate.execute(
+                """
+                CREATE OR REPLACE FUNCTION fail_recommendation_evidence_test()
+                RETURNS trigger AS $$
+                BEGIN
+                    RAISE EXCEPTION 'forced evidence insert failure';
+                END;
+                $$ LANGUAGE plpgsql
+                """);
+        jdbcTemplate.execute(
+                """
+                CREATE TRIGGER trg_fail_recommendation_evidence_test
+                BEFORE INSERT ON recommendation_evidences
+                FOR EACH ROW EXECUTE FUNCTION
+                    fail_recommendation_evidence_test()
+                """);
+
+        DialogueMessageRequest request = new DialogueMessageRequest();
+        request.setUserId(userId);
+        request.setRequestId("tx-evidence-" + UUID.randomUUID());
+        request.setContent(
+                "四个人，人均八十，环境安静，适合聊天，直接推荐");
+        request.setUserLatitude(new BigDecimal("30.5728"));
+        request.setUserLongitude(new BigDecimal("104.0668"));
+
+        assertThrows(RuntimeException.class,
+                () -> service.sendMessage(sessionId, request));
+
+        assertEquals(0, count(
+                "SELECT count(*) FROM recommendations WHERE session_id = ?",
+                sessionId));
+        assertEquals(0, count(
+                """
+                SELECT count(*) FROM recommendation_items ri
+                JOIN recommendations r ON r.id = ri.recommendation_id
+                WHERE r.session_id = ?
+                """, sessionId));
+        assertEquals(0, count(
+                """
+                SELECT count(*) FROM recommendation_evidences re
+                JOIN recommendation_items ri
+                  ON ri.id = re.recommendation_item_id
+                JOIN recommendations r ON r.id = ri.recommendation_id
+                WHERE r.session_id = ?
+                """, sessionId));
     }
 
     private int count(String sql, Long id) {

@@ -10,6 +10,7 @@ import com.foodadvisor.dto.dialogue.DialogueMessageResponse;
 import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
 import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
+import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.entity.ChatMessage;
 import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.Merchant;
@@ -218,6 +219,8 @@ class DiningDialogueMessageServiceTest {
                 .insert(any(ChatMessage.class));
         verify(recommendationMapper, never())
                 .insert(any(Recommendation.class));
+        verify(recommendationEvidenceMapper, never())
+                .insert(any(RecommendationEvidence.class));
     }
 
     @Test
@@ -1039,6 +1042,74 @@ class DiningDialogueMessageServiceTest {
         );
     }
 
+    @Test
+    void shouldRestoreOnlySafePerMerchantRecommendationBases() {
+        when(chatSessionMapper.selectById(1L)).thenReturn(activeSession());
+        when(chatMessageMapper.selectList(any())).thenReturn(List.of(message(
+                22L, "ASSISTANT", "req-basis-history",
+                "{\"recommendationId\":100}")));
+        RecommendationItem itemA = historicalItem(201L, "{}");
+        itemA.setId(301L);
+        RecommendationItem itemB = historicalItem(202L, "{}");
+        itemB.setId(302L);
+        when(recommendationItemMapper.selectList(any()))
+                .thenReturn(List.of(itemA, itemB));
+        when(merchantMapper.selectById(201L))
+                .thenReturn(historicalMerchant(201L));
+        when(merchantMapper.selectById(202L))
+                .thenReturn(historicalMerchant(202L));
+
+        RecommendationEvidence validA = basisEvidence(
+                401L, 301L, 201L,
+                """
+                {"sourceType":"REVIEW","sourceId":501,"merchantId":201,
+                 "title":"环境安静","summary":"有评价提到环境安静",
+                 "matchedCondition":"安静","relevanceScore":0.8,
+                 "available":true}
+                """);
+        RecommendationEvidence validB = basisEvidence(
+                402L, 302L, 202L,
+                """
+                {"sourceType":"MERCHANT","sourceId":202,"merchantId":202,
+                 "title":"商家资料","summary":"环境标签：适合聚会",
+                 "matchedCondition":"聚会","relevanceScore":1,
+                 "available":true}
+                """);
+        RecommendationEvidence crossMerchant = basisEvidence(
+                403L, 301L, 202L,
+                """
+                {"sourceType":"REVIEW","sourceId":502,"merchantId":202,
+                 "title":"错误依据","summary":"其他商家长评论正文",
+                 "available":true}
+                """);
+        RecommendationEvidence malformed = basisEvidence(
+                404L, 301L, 201L, "{broken");
+        when(recommendationEvidenceMapper.selectList(any()))
+                .thenReturn(List.of(validA, validB, crossMerchant, malformed));
+
+        DialogueHistoryResponse history = service.listMessages(1L, 1L);
+        List<RecommendationItemVO> restored =
+                history.getMessages().get(0).getRecommendations();
+
+        assertAll(
+                () -> assertEquals(1,
+                        restored.get(0).getRecommendationBases().size()),
+                () -> assertEquals(201L,
+                        restored.get(0).getRecommendationBases().get(0)
+                                .getMerchantId()),
+                () -> assertEquals("有评价提到环境安静",
+                        restored.get(0).getRecommendationBases().get(0)
+                                .getSummary()),
+                () -> assertEquals(1,
+                        restored.get(1).getRecommendationBases().size()),
+                () -> assertEquals(202L,
+                        restored.get(1).getRecommendationBases().get(0)
+                                .getMerchantId()),
+                () -> assertFalse(restored.toString()
+                        .contains("其他商家长评论正文"))
+        );
+    }
+
     private RecommendationItem historicalItem(
             Long merchantId,
             String scoreDetails
@@ -1049,6 +1120,17 @@ class DiningDialogueMessageServiceTest {
         item.setRankNo(merchantId.intValue());
         item.setScoreDetails(scoreDetails);
         return item;
+    }
+
+    private RecommendationEvidence basisEvidence(
+            Long id, Long itemId, Long merchantId, String snapshot) {
+        RecommendationEvidence evidence = new RecommendationEvidence();
+        evidence.setId(id);
+        evidence.setRecommendationItemId(itemId);
+        evidence.setSourceType("REVIEW");
+        evidence.setSourceMerchantId(merchantId);
+        evidence.setSourceTextSnapshot(snapshot);
+        return evidence;
     }
 
     private Merchant historicalMerchant(Long merchantId) {
