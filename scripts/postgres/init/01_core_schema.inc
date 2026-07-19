@@ -414,6 +414,7 @@ CREATE TABLE IF NOT EXISTS recommendation_evidences (
     knowledge_document_id VARCHAR(200),
     evidence_excerpt TEXT,
     source_text_snapshot TEXT,
+    condition_key VARCHAR(100),
     relevance_score NUMERIC(8, 6),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -510,6 +511,9 @@ CREATE TABLE IF NOT EXISTS merchant_summary_evidences (
     id BIGSERIAL PRIMARY KEY,
     summary_id BIGINT NOT NULL,
     review_id BIGINT NOT NULL,
+    source_type VARCHAR(30) NOT NULL DEFAULT 'REVIEW',
+    source_merchant_id BIGINT NOT NULL,
+    review_version INTEGER,
     evidence_type VARCHAR(50) NOT NULL,
     evidence_excerpt TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -521,6 +525,27 @@ CREATE TABLE IF NOT EXISTS merchant_summary_evidences (
     CONSTRAINT fk_summary_evidence_review
         FOREIGN KEY (review_id) REFERENCES reviews(id)
         ON DELETE RESTRICT,
+
+    CONSTRAINT fk_summary_evidence_merchant
+        FOREIGN KEY (source_merchant_id) REFERENCES merchants(id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT ck_summary_evidence_source_type
+        CHECK (source_type IN ('REVIEW')),
+
+    CONSTRAINT ck_summary_evidence_type
+        CHECK (evidence_type IN (
+            'REVIEW',
+            'ADVANTAGE',
+            'DISADVANTAGE',
+            'DISH',
+            'ENVIRONMENT',
+            'SERVICE',
+            'RECENT_CHANGE'
+        )),
+
+    CONSTRAINT ck_summary_evidence_review_version
+        CHECK (review_version IS NULL OR review_version >= 1),
 
     CONSTRAINT uk_summary_evidence
         UNIQUE (summary_id, review_id, evidence_type)

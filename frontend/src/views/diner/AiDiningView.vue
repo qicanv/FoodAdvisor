@@ -156,8 +156,11 @@
         <article v-for="(evidence, index) in evidences" :key="index" class="evidence-item">
           <strong>{{ evidenceTypeText(evidence.sourceType) }}</strong>
           <span>{{ evidence.merchantName }}</span>
+          <span v-if="evidence.conditionKey">
+            对应条件：{{ evidence.conditionKey }}
+          </span>
           <p v-if="evidence.available">{{ evidence.excerpt || '暂无详细内容' }}</p>
-          <p v-else>{{ evidence.unavailableReason || '该来源已删除或无权查看' }}</p>
+          <p v-else>该评价已删除或当前无权查看</p>
           <small v-if="evidence.available && evidence.reviewTime">{{ evidence.reviewTime }}</small>
         </article>
       </section>

@@ -1807,6 +1807,10 @@ private void applyDishKeywordFilter(
                 result.getRecommendationBases() == null
                         ? List.<RecommendationBasisVO>of()
                         : result.getRecommendationBases()) {
+            if (basis.getMatchedCondition() == null
+                    || basis.getMatchedCondition().isBlank()) {
+                continue;
+            }
             if (!result.getMerchantId().equals(basis.getMerchantId())
                     || (!"REVIEW".equals(basis.getSourceType())
                     && !"MERCHANT".equals(basis.getSourceType()))) {
@@ -1822,6 +1826,7 @@ private void applyDishKeywordFilter(
                 evidence.setReviewId(basis.getSourceId());
             }
             evidence.setEvidenceExcerpt(basis.getSummary());
+            evidence.setConditionKey(basis.getMatchedCondition());
             evidence.setSourceTextSnapshot(serializeToJson(
                     basis, "EVIDENCE_SNAPSHOT_SERIALIZE_FAILED",
                     "推荐依据快照序列化失败"));

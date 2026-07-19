@@ -252,6 +252,24 @@
         </div>
       </section>
 
+      <section v-if="reviewSummary?.status === 'SUCCESS'" class="summary-section">
+        <div class="container">
+          <div class="summary-card">
+            <div class="summary-header">
+              <h2 class="section-title">AI 评价摘要</h2>
+              <button
+                type="button"
+                class="summary-evidence-button"
+                @click="openSummaryEvidence"
+              >
+                查看依据
+              </button>
+            </div>
+            <p>{{ reviewSummary.summaryText || '暂无摘要内容' }}</p>
+          </div>
+        </div>
+      </section>
+
       <section class="recommend-section">
         <div class="container">
           <h2 class="section-title">📌 AI推荐理由</h2>
@@ -285,6 +303,54 @@
         </div>
       </section>
     </main>
+
+    <div
+      v-if="summaryEvidenceOpen"
+      class="evidence-mask"
+      @click.self="closeSummaryEvidence"
+    >
+      <section class="evidence-dialog" role="dialog" aria-modal="true">
+        <header>
+          <h2>评价摘要依据</h2>
+          <button type="button" @click="closeSummaryEvidence">关闭</button>
+        </header>
+        <div v-if="summaryEvidenceLoading" class="evidence-state">
+          正在加载评价依据...
+        </div>
+        <div v-else-if="summaryEvidenceError" class="evidence-error">
+          {{ summaryEvidenceError }}
+        </div>
+        <div v-else-if="!summaryEvidences.length" class="evidence-state">
+          该摘要暂无可查看依据
+        </div>
+        <article
+          v-for="evidence in summaryEvidences"
+          :key="evidence.evidenceId"
+          class="evidence-item"
+        >
+          <div class="evidence-meta">
+            <strong>用户评价</strong>
+            <span>{{ evidence.merchantName || merchant?.name }}</span>
+            <span>{{ evidenceTypeText(evidence.evidenceType) }}</span>
+          </div>
+          <template v-if="evidence.available">
+            <p>{{ evidence.evidenceExcerpt || evidence.reviewContent }}</p>
+            <div class="evidence-footer">
+              <span v-if="evidence.rating != null">
+                评分：{{ evidence.rating }} 星
+              </span>
+              <span v-if="evidence.reviewTime">
+                {{ formatDate(evidence.reviewTime) }}
+              </span>
+            </div>
+          </template>
+          <template v-else>
+            <p class="evidence-unavailable">来源不可用</p>
+            <small>该评价已删除或当前无权查看</small>
+          </template>
+        </article>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -293,6 +359,10 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import request from '../../api/request'
 import { submitMerchantReview } from '../../api/review'
+import {
+  getMerchantReviewSummary,
+  getMerchantReviewSummaryEvidences
+} from '../../api/restaurant'
 
 const router = useRouter()
 const route = useRoute()
@@ -305,6 +375,11 @@ const submitError = ref('')
 const submitSuccess = ref('')
 const imageInput = ref(null)
 const selectedImages = ref([])
+const reviewSummary = ref(null)
+const summaryEvidenceOpen = ref(false)
+const summaryEvidenceLoading = ref(false)
+const summaryEvidenceError = ref('')
+const summaryEvidences = ref([])
 
 const reviewForm = reactive({
   rating: 0,
@@ -387,6 +462,15 @@ const formatDate = (dateStr) => {
   if (isNaN(date.getTime())) return dateStr
   return date.toLocaleDateString('zh-CN')
 }
+
+const evidenceTypeText = type => ({
+  ADVANTAGE: '优势',
+  DISADVANTAGE: '不足',
+  DISH: '推荐菜品',
+  ENVIRONMENT: '环境',
+  SERVICE: '服务',
+  RECENT_CHANGE: '近期变化'
+}[type] || '摘要依据')
 
 const formatBusinessHours = (hoursList) => {
   if (!hoursList || hoursList.length === 0) return '暂无信息'
@@ -496,11 +580,43 @@ const loadMerchant = async () => {
         taste: parseTags(dish.tasteTags)
       }))
     }
+
+    const summaryResponse = await getMerchantReviewSummary(merchantId)
+    reviewSummary.value = summaryResponse.success
+      ? summaryResponse.data
+      : null
   } catch (error) {
     console.error('加载商家信息失败:', error)
   } finally {
     loading.value = false
   }
+}
+
+const openSummaryEvidence = async () => {
+  if (!reviewSummary.value?.summaryId || !merchant.value?.id) return
+  summaryEvidenceOpen.value = true
+  summaryEvidenceLoading.value = true
+  summaryEvidenceError.value = ''
+  summaryEvidences.value = []
+  try {
+    const response = await getMerchantReviewSummaryEvidences(
+      merchant.value.id,
+      reviewSummary.value.summaryId
+    )
+    if (!response.success) {
+      throw new Error(response.message || '评价依据加载失败')
+    }
+    summaryEvidences.value = response.data || []
+  } catch (error) {
+    summaryEvidenceError.value =
+      error.message || '评价依据加载失败，请稍后重试'
+  } finally {
+    summaryEvidenceLoading.value = false
+  }
+}
+
+const closeSummaryEvidence = () => {
+  summaryEvidenceOpen.value = false
 }
 
 const validateReview = () => {
@@ -1133,6 +1249,94 @@ onBeforeUnmount(() => {
 
 .reviews-section {
   padding: 20px 0;
+}
+
+.summary-section {
+  padding: 20px 0;
+}
+
+.summary-card {
+  padding: 24px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.summary-header .section-title {
+  margin-bottom: 0;
+}
+
+.summary-evidence-button {
+  padding: 8px 14px;
+  border: 1px solid #ff6b35;
+  border-radius: 8px;
+  color: #ff6b35;
+  background: #fff;
+  cursor: pointer;
+}
+
+.evidence-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(17, 24, 39, 0.45);
+}
+
+.evidence-dialog {
+  width: min(680px, 100%);
+  max-height: 78vh;
+  overflow-y: auto;
+  padding: 20px;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.evidence-dialog header,
+.evidence-meta,
+.evidence-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.evidence-dialog header h2 {
+  margin: 0;
+}
+
+.evidence-item {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.evidence-meta,
+.evidence-footer,
+.evidence-item small {
+  color: #667085;
+  font-size: 13px;
+}
+
+.evidence-unavailable,
+.evidence-error {
+  color: #d92d20;
+}
+
+.evidence-state,
+.evidence-error {
+  padding: 24px 0;
+  text-align: center;
 }
 
 .reviews-list {

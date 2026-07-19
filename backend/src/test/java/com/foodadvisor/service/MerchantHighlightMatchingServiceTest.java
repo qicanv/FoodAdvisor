@@ -6,6 +6,7 @@ import com.foodadvisor.entity.MerchantHighlightEvidence;
 import com.foodadvisor.entity.Review;
 import org.junit.jupiter.api.Test;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -111,6 +112,82 @@ class MerchantHighlightMatchingServiceTest {
                 .isEmpty());
     }
 
+    @Test
+    void tastePreferenceUsesSupportingVisibleReviewAndStableConditionKey() {
+        ConstraintState state = new ConstraintState();
+        state.setTastePreferences(List.of("微辣"));
+        MerchantHighlight highlight = highlight(
+                20L, 10L, "TASTE", "招牌微辣风味", "辣度柔和");
+        Review review = review(200L, 10L, "PUBLISHED", "APPROVED");
+        review.setContent("微辣刚刚好，香味也很足。");
+
+        var result = service.match(state, List.of(highlight),
+                List.of(link(20L, 200L)), Map.of(200L, review));
+
+        assertAll(
+                () -> assertEquals(1, result.get(10L).size()),
+                () -> assertEquals("REVIEW",
+                        result.get(10L).get(0).getSourceType()),
+                () -> assertEquals(200L,
+                        result.get(10L).get(0).getSourceId()),
+                () -> assertEquals("tastePreferences",
+                        result.get(10L).get(0).getMatchedCondition())
+        );
+    }
+
+    @Test
+    void genericTasteReviewCannotSupportSpecificMildSpicyPreference() {
+        ConstraintState state = new ConstraintState();
+        state.setTastePreferences(List.of("微辣"));
+        MerchantHighlight highlight = highlight(
+                20L, 10L, "TASTE", "招牌微辣风味", "辣度柔和");
+        Review review = review(200L, 10L, "PUBLISHED", "APPROVED");
+        review.setContent("味道不错，服务也很热情。");
+
+        assertTrue(service.match(state, List.of(highlight),
+                List.of(link(20L, 200L)), Map.of(200L, review)).isEmpty());
+    }
+
+    @Test
+    void crossMerchantTasteReviewCannotProduceEvidence() {
+        ConstraintState state = new ConstraintState();
+        state.setTastePreferences(List.of("微辣"));
+        MerchantHighlight highlight = highlight(
+                20L, 10L, "TASTE", "招牌微辣风味", "辣度柔和");
+        Review review = review(200L, 11L, "PUBLISHED", "APPROVED");
+        review.setContent("微辣刚刚好。");
+
+        assertTrue(service.match(state, List.of(highlight),
+                List.of(link(20L, 200L)), Map.of(200L, review)).isEmpty());
+    }
+
+    @Test
+    void deletedRejectedAndNonPublicTasteReviewsCannotProduceEvidence() {
+        ConstraintState state = new ConstraintState();
+        state.setTastePreferences(List.of("微辣"));
+        MerchantHighlight highlight = highlight(
+                20L, 10L, "TASTE", "招牌微辣风味", "辣度柔和");
+
+        Review deleted = supportingTasteReview(201L);
+        deleted.setDeletedAt(OffsetDateTime.now());
+        Review rejected = supportingTasteReview(202L);
+        rejected.setModerationStatus("REJECTED");
+        Review pending = supportingTasteReview(203L);
+        pending.setStatus("PENDING");
+
+        assertAll(
+                () -> assertTrue(service.match(state, List.of(highlight),
+                        List.of(link(20L, 201L)),
+                        Map.of(201L, deleted)).isEmpty()),
+                () -> assertTrue(service.match(state, List.of(highlight),
+                        List.of(link(20L, 202L)),
+                        Map.of(202L, rejected)).isEmpty()),
+                () -> assertTrue(service.match(state, List.of(highlight),
+                        List.of(link(20L, 203L)),
+                        Map.of(203L, pending)).isEmpty())
+        );
+    }
+
     private MerchantHighlight highlight(Long id, Long merchantId,
                                         String type, String title, String description) {
         MerchantHighlight value = new MerchantHighlight();
@@ -133,6 +210,12 @@ class MerchantHighlightMatchingServiceTest {
         value.setMerchantId(merchantId);
         value.setStatus(status);
         value.setModerationStatus(moderation);
+        return value;
+    }
+
+    private Review supportingTasteReview(Long id) {
+        Review value = review(id, 10L, "PUBLISHED", "APPROVED");
+        value.setContent("微辣刚刚好。");
         return value;
     }
 }

@@ -158,6 +158,9 @@ CREATE INDEX IF NOT EXISTS idx_recommendation_evidences_review
 CREATE INDEX IF NOT EXISTS idx_recommendation_evidences_merchant
     ON recommendation_evidences(source_merchant_id);
 
+CREATE INDEX IF NOT EXISTS idx_recommendation_evidences_condition
+    ON recommendation_evidences(condition_key);
+
 -- === recommendation_feedback ===
 CREATE INDEX IF NOT EXISTS idx_feedback_type_created
     ON recommendation_feedback(feedback_type, created_at DESC);
@@ -175,6 +178,9 @@ CREATE INDEX IF NOT EXISTS idx_summary_evidences_summary
 
 CREATE INDEX IF NOT EXISTS idx_summary_evidences_review
     ON merchant_summary_evidences(review_id);
+
+CREATE INDEX IF NOT EXISTS idx_summary_evidences_merchant
+    ON merchant_summary_evidences(source_merchant_id);
 
 -- === import_tasks ===
 CREATE INDEX IF NOT EXISTS idx_import_tasks_created_by

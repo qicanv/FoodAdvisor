@@ -10,17 +10,24 @@ SELECT id, id, 1, '演示摘要：评价覆盖味道、服务和环境。',
  review_count, '2026-03-01', '2026-04-30', 'SUCCESS',
  'DEMO-RULE', '1.0', '2026-05-01 08:00+08' FROM merchants;
 
-INSERT INTO merchant_summary_evidences (summary_id, review_id, evidence_type, evidence_excerpt, created_at)
-SELECT s.id, r.id, 'REVIEW', left(r.content,120), '2026-05-01 08:00+08'
+INSERT INTO merchant_summary_evidences (
+ summary_id, review_id, source_type, source_merchant_id, review_version,
+ evidence_type, evidence_excerpt, created_at
+)
+SELECT s.id, r.id, 'REVIEW', s.merchant_id, r.version,
+ 'ADVANTAGE', left(r.content,120), '2026-05-01 08:00+08'
 FROM merchant_review_summaries s
-JOIN LATERAL (SELECT id,content FROM reviews WHERE merchant_id=s.merchant_id
+JOIN LATERAL (SELECT id,content,version FROM reviews WHERE merchant_id=s.merchant_id
  AND status='PUBLISHED' AND moderation_status='APPROVED' ORDER BY id LIMIT 1) r ON true;
 
 INSERT INTO merchant_highlights (
  id, merchant_id, highlight_type, title, description, mention_count,
  positive_ratio, version, status, generated_at
 )
-SELECT id, id, 'TASTE', '虚构演示亮点', '味道和服务获得稳定反馈',
+SELECT id, id, 'TASTE',
+ CASE WHEN id = 10 THEN '微辣风味' ELSE '虚构演示亮点' END,
+ CASE WHEN id = 10 THEN '评价明确提到菜品微辣、辣度柔和'
+      ELSE '味道和服务获得稳定反馈' END,
  greatest(review_count,1), 0.6667, 1, 'ACTIVE', '2026-05-01 08:00+08'
 FROM merchants;
 

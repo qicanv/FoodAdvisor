@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 # 评价原文片段最长截取长度（作为兜底依据时）
 EVIDENCE_EXCERPT_MAX_LENGTH = 100
+EVIDENCE_TYPES = {
+    "ADVANTAGE", "DISADVANTAGE", "DISH",
+    "ENVIRONMENT", "SERVICE", "RECENT_CHANGE",
+}
 
 REVIEW_SUMMARY_PROMPT = """你是餐饮点评平台的口碑分析专家。下面会给你一家商家的用户评价列表，请生成一份口碑摘要。
 
@@ -214,6 +218,11 @@ class ReviewSummaryService:
             review_id = item.get("reviewId")
             if review_id not in valid_ids:
                 continue
+            evidence_type = str(
+                item.get("evidenceType", "ADVANTAGE")
+            ).upper()
+            if evidence_type not in EVIDENCE_TYPES:
+                continue
             excerpt = str(item.get("evidenceExcerpt", "")).strip()
             content = id_to_content.get(review_id, "")
             # 片段必须真实出现在原评价中，否则回退为原文截取
@@ -221,7 +230,7 @@ class ReviewSummaryService:
                 excerpt = content[:EVIDENCE_EXCERPT_MAX_LENGTH]
             evidences.append(SummaryEvidence(
                 reviewId=review_id,
-                evidenceType=str(item.get("evidenceType", "ADVANTAGE")).upper(),
+                evidenceType=evidence_type,
                 evidenceExcerpt=excerpt,
             ))
         return evidences
