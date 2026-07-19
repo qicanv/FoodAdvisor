@@ -8,6 +8,7 @@ import com.foodadvisor.dto.dialogue.DialogueHistoryResponse;
 import com.foodadvisor.dto.dialogue.DialogueMessageRequest;
 import com.foodadvisor.dto.dialogue.DialogueMessageResponse;
 import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
+import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.entity.ChatMessage;
 import com.foodadvisor.entity.ChatSession;
@@ -390,6 +391,353 @@ class DiningDialogueMessageServiceTest {
     }
 
     @Test
+    void shouldPersistSuccessfulAdjustmentOnSourceAssistant()
+            throws Exception {
+        ChatMessage assistant = adjustableAssistant();
+        RecommendationRankResponse adjusted =
+                successRecommendation();
+        adjusted.setRecommendationId(102L);
+        adjusted.setRequestId("rank-new-102");
+        adjusted.setMessage("为您找到 4 家符合条件的商家。");
+        adjusted.setResultCount(4);
+        ConstraintState constraints = new ConstraintState();
+        constraints.setScenes(List.of());
+        adjusted.setCurrentConstraints(constraints);
+        prepareAdjustment(assistant, adjusted, 1);
+
+        RecommendationRankResponse response =
+                service.adjustRecommendation(
+                        1L,
+                        adjustRequest(assistant.getId())
+                );
+
+        Map<String, Object> metadata =
+                objectMapper.readValue(
+                        assistant.getMetadata(),
+                        new com.fasterxml.jackson.core.type.TypeReference<
+                                Map<String, Object>>() {
+                        }
+                );
+        Map<?, ?> savedConstraints =
+                (Map<?, ?>) metadata.get("currentConstraints");
+
+        assertAll(
+                () -> assertEquals(102L, response.getRecommendationId()),
+                () -> assertEquals(
+                        "RECOMMENDATION",
+                        assistant.getMessageType()
+                ),
+                () -> assertEquals(
+                        "RECOMMENDATION",
+                        metadata.get("responseType")
+                ),
+                () -> assertEquals("SUCCESS", metadata.get("status")),
+                () -> assertEquals(
+                        102,
+                        metadata.get("recommendationId")
+                ),
+                () -> assertEquals(
+                        71,
+                        metadata.get("sourceMessageId")
+                ),
+                () -> assertEquals(
+                        17,
+                        metadata.get("previousRecommendationId")
+                ),
+                () -> assertEquals(
+                        "rank-old-17",
+                        metadata.get("previousRequestId")
+                ),
+                () -> assertEquals(
+                        List.of(),
+                        savedConstraints.get("scenes")
+                ),
+                () -> assertNotNull(
+                        metadata.get("responseSnapshot")
+                ),
+                () -> assertEquals(
+                        "rank-new-102",
+                        ((Map<?, ?>) ((Map<?, ?>) metadata.get(
+                                "responseSnapshot"
+                        )).get("recommendation")).get("requestId")
+                )
+        );
+
+        ArgumentCaptor<Recommendation> recommendationCaptor =
+                ArgumentCaptor.forClass(Recommendation.class);
+        verify(recommendationMapper).updateById(
+                recommendationCaptor.capture()
+        );
+        assertEquals(
+                "rank-new-102",
+                recommendationCaptor.getValue().getRequestId()
+        );
+    }
+
+    @Test
+    void shouldPersistNoMatchAdjustmentAndNewSuggestions()
+            throws Exception {
+        ChatMessage assistant = adjustableAssistant();
+        RecommendationRankResponse adjusted =
+                noMatchRecommendation();
+        adjusted.setRecommendationId(103L);
+        prepareAdjustment(assistant, adjusted, 1);
+
+        service.adjustRecommendation(
+                1L,
+                adjustRequest(assistant.getId())
+        );
+
+        Map<String, Object> metadata =
+                objectMapper.readValue(
+                        assistant.getMetadata(),
+                        new com.fasterxml.jackson.core.type.TypeReference<
+                                Map<String, Object>>() {
+                        }
+                );
+
+        assertAll(
+                () -> assertEquals(
+                        "RECOMMENDATION",
+                        assistant.getMessageType()
+                ),
+                () -> assertEquals(
+                        "NO_MATCH",
+                        metadata.get("responseType")
+                ),
+                () -> assertEquals(
+                        "NO_MATCH",
+                        metadata.get("status")
+                ),
+                () -> assertEquals(
+                        103,
+                        metadata.get("recommendationId")
+                ),
+                () -> assertFalse(
+                        ((List<?>) metadata.get(
+                                "adjustmentSuggestions"
+                        )).isEmpty()
+                )
+        );
+    }
+
+    @Test
+    void shouldRejectAdjustmentForMessageInAnotherSession() {
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        when(chatMessageMapper.selectOne(any()))
+                .thenReturn(null);
+
+        ApiException exception = assertThrows(
+                ApiException.class,
+                () -> service.adjustRecommendation(
+                        1L,
+                        adjustRequest(71L)
+                )
+        );
+
+        assertEquals("SOURCE_MESSAGE_NOT_FOUND", exception.getCode());
+        verify(recommendationRankingService, never())
+                .adjustAndRank(any(), any());
+    }
+
+    @Test
+    void shouldRejectAdjustmentForUserMessage() {
+        ChatMessage user = adjustableAssistant();
+        user.setRole("USER");
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        when(chatMessageMapper.selectOne(any()))
+                .thenReturn(user);
+
+        ApiException exception = assertThrows(
+                ApiException.class,
+                () -> service.adjustRecommendation(
+                        1L,
+                        adjustRequest(user.getId())
+                )
+        );
+
+        assertEquals(
+                "SOURCE_MESSAGE_NOT_ASSISTANT",
+                exception.getCode()
+        );
+        verify(recommendationRankingService, never())
+                .adjustAndRank(any(), any());
+    }
+
+    @Test
+    void shouldFailTransactionWhenAdjustedMessageUpdateFails() {
+        ChatMessage assistant = adjustableAssistant();
+        RecommendationRankResponse adjusted =
+                successRecommendation();
+        adjusted.setRecommendationId(104L);
+        prepareAdjustment(assistant, adjusted, 0);
+
+        ApiException exception = assertThrows(
+                ApiException.class,
+                () -> service.adjustRecommendation(
+                        1L,
+                        adjustRequest(assistant.getId())
+                )
+        );
+
+        assertEquals("MESSAGE_UPDATE_FAILED", exception.getCode());
+        verify(recommendationRankingService)
+                .adjustAndRank(eq(1L), any());
+        verify(recommendationMapper, never())
+                .updateById(any(Recommendation.class));
+    }
+
+    @Test
+    void shouldSaveNoMatchAsRecommendationAndKeepBusinessMetadata()
+            throws Exception {
+        prepareRecommendationFlow(noMatchRecommendation());
+
+        DialogueMessageResponse response =
+                service.sendMessage(1L, request("req-no-match"));
+
+        ArgumentCaptor<ChatMessage> captor =
+                ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageMapper).insert(captor.capture());
+        ChatMessage assistant = captor.getValue();
+        Map<String, Object> metadata =
+                objectMapper.readValue(
+                        assistant.getMetadata(),
+                        new com.fasterxml.jackson.core.type.TypeReference<
+                                Map<String, Object>>() {
+                        }
+                );
+
+        assertAll(
+                () -> assertEquals(
+                        "ASSISTANT",
+                        assistant.getRole()
+                ),
+                () -> assertEquals(
+                        "RECOMMENDATION",
+                        assistant.getMessageType()
+                ),
+                () -> assertEquals(
+                        "当前没有完全匹配的结果",
+                        assistant.getContent()
+                ),
+                () -> assertEquals(
+                        "NO_MATCH",
+                        metadata.get("responseType")
+                ),
+                () -> assertEquals(
+                        "NO_MATCH",
+                        metadata.get("status")
+                ),
+                () -> assertEquals(
+                        101,
+                        metadata.get("recommendationId")
+                ),
+                () -> assertEquals(
+                        "relax cuisine",
+                        ((Map<?, ?>) ((List<?>) metadata.get(
+                                "adjustmentSuggestions"
+                        )).get(0)).get("displayText")
+                ),
+                () -> assertEquals(
+                        "NO_MATCH",
+                        response.getResponseType()
+                ),
+                () -> assertEquals(
+                        "relax cuisine",
+                        response.getRecommendation()
+                                .getAdjustmentSuggestions()
+                                .get(0)
+                                .getDisplayText()
+                )
+        );
+    }
+
+    @Test
+    void shouldSaveNormalRecommendationAsRecommendation() {
+        prepareRecommendationFlow(successRecommendation());
+
+        service.sendMessage(1L, request("req-recommendation"));
+
+        ArgumentCaptor<ChatMessage> captor =
+                ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageMapper).insert(captor.capture());
+
+        assertEquals(
+                "RECOMMENDATION",
+                captor.getValue().getMessageType()
+        );
+    }
+
+    @Test
+    void shouldSafelyMapUnknownResponseTypeToText() {
+        assertAll(
+                () -> assertEquals(
+                        "TEXT",
+                        DiningDialogueMessageService
+                                .mapResponseTypeToMessageType(
+                                        "UNEXPECTED"
+                                )
+                ),
+                () -> assertEquals(
+                        "TEXT",
+                        DiningDialogueMessageService
+                                .mapResponseTypeToMessageType(null)
+                ),
+                () -> assertEquals(
+                        "QUESTION",
+                        DiningDialogueMessageService
+                                .mapResponseTypeToMessageType(
+                                        "CLARIFICATION"
+                                )
+                )
+        );
+    }
+
+    @Test
+    void shouldRestoreNoMatchResponseTypeFromHistoryMetadata() {
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+
+        ChatMessage assistant =
+                message(
+                        21L,
+                        "ASSISTANT",
+                        "req-history-no-match",
+                        "{\"responseType\":\"NO_MATCH\","
+                                + "\"status\":\"NO_MATCH\","
+                                + "\"recommendationId\":101}"
+                );
+        assistant.setMessageType("RECOMMENDATION");
+        when(chatMessageMapper.selectList(any()))
+                .thenReturn(List.of(assistant));
+        when(recommendationItemMapper.selectList(any()))
+                .thenReturn(List.of());
+
+        DialogueHistoryResponse history =
+                service.listMessages(1L, 1L);
+
+        assertAll(
+                () -> assertEquals(
+                        "NO_MATCH",
+                        history.getMessages().get(0)
+                                .getResponseType()
+                ),
+                () -> assertEquals(
+                        "NO_MATCH",
+                        history.getMessages().get(0)
+                                .getStatus()
+                ),
+                () -> assertEquals(
+                        101L,
+                        history.getMessages().get(0)
+                                .getRecommendationId()
+                )
+        );
+    }
+
+    @Test
     void shouldReturnHistoryWithRecommendationCardsFromDatabase() {
         when(chatSessionMapper.selectById(1L))
                 .thenReturn(activeSession());
@@ -635,6 +983,150 @@ class DiningDialogueMessageServiceTest {
         response.setResultCount(1);
         response.setResults(List.of());
         return response;
+    }
+
+    private RecommendationRankResponse noMatchRecommendation() {
+        RecommendationRankResponse response =
+                new RecommendationRankResponse();
+        response.setRecommendationId(101L);
+        response.setSessionId(1L);
+        response.setStatus("NO_MATCH");
+        response.setMatched(false);
+        response.setMessage("当前没有完全匹配的结果");
+        response.setResultCount(0);
+        response.setResults(List.of());
+        response.setAdjustmentSuggestions(
+                List.of(new AdjustmentSuggestionVO(
+                        "relax-cuisine",
+                        "RELAX_CUISINE",
+                        "cuisines",
+                        List.of("sichuan"),
+                        List.of(),
+                        "relax cuisine",
+                        "no match"
+                ))
+        );
+        return response;
+    }
+
+    private ChatMessage adjustableAssistant()
+            throws RuntimeException {
+        ChatMessage message =
+                message(
+                        71L,
+                        "ASSISTANT",
+                        "request-adjust",
+                        "{\"responseType\":\"NO_MATCH\","
+                                + "\"status\":\"NO_MATCH\","
+                                + "\"recommendationId\":17,"
+                                + "\"responseSnapshot\":{"
+                                + "\"userMessageId\":70,"
+                                + "\"recommendation\":{"
+                                + "\"requestId\":\"rank-old-17\"}}}"
+                );
+        message.setMessageType("RECOMMENDATION");
+        message.setContent("当前没有完全匹配的结果");
+        return message;
+    }
+
+    private RecommendationAdjustRequest adjustRequest(
+            Long sourceMessageId
+    ) {
+        RecommendationAdjustRequest request =
+                new RecommendationAdjustRequest();
+        request.setUserId(1L);
+        request.setSourceMessageId(sourceMessageId);
+        request.setField("scenes");
+        request.setValue(List.of());
+        return request;
+    }
+
+    private void prepareAdjustment(
+            ChatMessage assistant,
+            RecommendationRankResponse response,
+            int updatedRows
+    ) {
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        when(chatMessageMapper.selectOne(any()))
+                .thenReturn(assistant);
+        when(recommendationRankingService.adjustAndRank(
+                eq(1L),
+                any(RecommendationAdjustRequest.class)
+        )).thenReturn(response);
+        when(chatMessageMapper.updateById(assistant))
+                .thenReturn(updatedRows);
+
+        if (updatedRows == 1) {
+            Recommendation recommendation =
+                    new Recommendation();
+            recommendation.setId(
+                    response.getRecommendationId()
+            );
+            recommendation.setRequestId(
+                    response.getRequestId()
+            );
+            when(recommendationMapper.selectById(
+                    response.getRecommendationId()
+            )).thenReturn(recommendation);
+            when(recommendationMapper.updateById(
+                    recommendation
+            )).thenReturn(1);
+        }
+    }
+
+    private void prepareRecommendationFlow(
+            RecommendationRankResponse rankResponse
+    ) {
+        AtomicReference<Object> token =
+                new AtomicReference<>();
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        when(chatMessageMapper.selectOne(any()))
+                .thenReturn(null, null, null);
+        when(valueOperations.setIfAbsent(
+                anyString(),
+                any(),
+                any()
+        )).thenAnswer(invocation -> {
+            token.set(invocation.getArgument(1));
+            return true;
+        });
+        when(valueOperations.get(anyString()))
+                .thenAnswer(invocation -> token.get());
+        when(redisTemplate.delete(anyString()))
+                .thenReturn(true);
+        when(dialogueService.continueDialogue(
+                any(),
+                any(),
+                any(),
+                any()
+        )).thenReturn(readyDialogue());
+        when(recommendationRankingService.rank(any(), any()))
+                .thenReturn(rankResponse);
+        when(chatMessageMapper.insert(any(ChatMessage.class)))
+                .thenAnswer(invocation -> {
+                    ChatMessage message =
+                            invocation.getArgument(0);
+                    message.setId(
+                            "ASSISTANT".equals(message.getRole())
+                                    ? 12L
+                                    : 10L
+                    );
+                    return 1;
+                });
+        when(chatMessageMapper.updateById(any(ChatMessage.class)))
+                .thenReturn(1);
+
+        Recommendation recommendation =
+                new Recommendation();
+        recommendation.setId(rankResponse.getRecommendationId());
+        when(recommendationMapper.selectById(
+                rankResponse.getRecommendationId()
+        )).thenReturn(recommendation);
+        when(recommendationMapper.updateById(
+                any(Recommendation.class)
+        )).thenReturn(1);
     }
 
     private Recommendation recommendation() {

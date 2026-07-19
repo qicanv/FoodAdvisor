@@ -13,6 +13,8 @@ import com.foodadvisor.dto.dialogue.DialogueMessageVO;
 import com.foodadvisor.dto.dialogue.FollowUpQuestionVO;
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
+import com.foodadvisor.dto.recommendation.LimitingConditionVO;
+import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.entity.ChatMessage;
@@ -56,6 +58,15 @@ public class DiningDialogueMessageService {
             "RECOMMENDATION";
 
     private static final String TYPE_NO_MATCH = "NO_MATCH";
+
+    private static final String MESSAGE_TYPE_TEXT = "TEXT";
+
+    private static final String MESSAGE_TYPE_QUESTION = "QUESTION";
+
+    private static final String MESSAGE_TYPE_ERROR = "ERROR";
+
+    private static final String MESSAGE_TYPE_SYSTEM_NOTICE =
+            "SYSTEM_NOTICE";
 
     private static final Duration IDEMPOTENCY_TTL =
             Duration.ofSeconds(60);
@@ -194,6 +205,76 @@ public class DiningDialogueMessageService {
         return response;
     }
 
+    @Transactional
+    public RecommendationRankResponse adjustRecommendation(
+            Long sessionId,
+            RecommendationAdjustRequest request
+    ) {
+        if (request == null
+                || request.getSourceMessageId() == null
+                || request.getSourceMessageId() <= 0) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "SOURCE_MESSAGE_REQUIRED",
+                    "sourceMessageId不能为空"
+            );
+        }
+
+        validateSessionOwner(sessionId, request.getUserId());
+
+        ChatMessage assistantMessage =
+                chatMessageMapper.selectOne(
+                        new LambdaQueryWrapper<ChatMessage>()
+                                .eq(
+                                        ChatMessage::getId,
+                                        request.getSourceMessageId()
+                                )
+                                .eq(
+                                        ChatMessage::getSessionId,
+                                        sessionId
+                                )
+                                .last("FOR UPDATE")
+                );
+
+        if (assistantMessage == null) {
+            throw new ApiException(
+                    HttpStatus.NOT_FOUND,
+                    "SOURCE_MESSAGE_NOT_FOUND",
+                    "待调整的助手消息不存在"
+            );
+        }
+        if (!ROLE_ASSISTANT.equals(
+                assistantMessage.getRole()
+        )) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "SOURCE_MESSAGE_NOT_ASSISTANT",
+                    "只能调整助手推荐消息"
+            );
+        }
+        if (!TYPE_RECOMMENDATION.equals(
+                assistantMessage.getMessageType()
+        )) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "SOURCE_MESSAGE_NOT_RECOMMENDATION",
+                    "源消息不是推荐类型"
+            );
+        }
+
+        RecommendationRankResponse recommendation =
+                recommendationRankingService.adjustAndRank(
+                        sessionId,
+                        request
+                );
+
+        updateAdjustedAssistantMessage(
+                assistantMessage,
+                recommendation
+        );
+        return recommendation;
+    }
+
     protected DialogueMessageResponse processMessage(
             Long sessionId,
             DialogueMessageRequest request
@@ -279,7 +360,6 @@ public class DiningDialogueMessageService {
                 recommendation.getRecommendationId(),
                 dialogue.getUserMessageId(),
                 assistant.getId(),
-                request.getRequestId(),
                 assistantText
         );
 
@@ -541,7 +621,9 @@ public class DiningDialogueMessageService {
         message.setRole(ROLE_ASSISTANT);
         message.setContent(content);
         message.setRequestId(requestId);
-        message.setMessageType(responseType);
+        message.setMessageType(
+                mapResponseTypeToMessageType(responseType)
+        );
         message.setMetadata(
                 toJson(metadata(
                         requestId,
@@ -567,6 +649,26 @@ public class DiningDialogueMessageService {
         return message;
     }
 
+    static String mapResponseTypeToMessageType(
+            String responseType
+    ) {
+        if (responseType == null) {
+            return MESSAGE_TYPE_TEXT;
+        }
+
+        return switch (responseType) {
+            case TYPE_NO_MATCH, TYPE_RECOMMENDATION ->
+                    TYPE_RECOMMENDATION;
+            case TYPE_CLARIFICATION, MESSAGE_TYPE_QUESTION ->
+                    MESSAGE_TYPE_QUESTION;
+            case MESSAGE_TYPE_ERROR -> MESSAGE_TYPE_ERROR;
+            case MESSAGE_TYPE_SYSTEM_NOTICE ->
+                    MESSAGE_TYPE_SYSTEM_NOTICE;
+            case MESSAGE_TYPE_TEXT -> MESSAGE_TYPE_TEXT;
+            default -> MESSAGE_TYPE_TEXT;
+        };
+    }
+
     private void saveResponseSnapshot(
             ChatMessage assistantMessage,
             DialogueMessageResponse response
@@ -576,6 +678,13 @@ public class DiningDialogueMessageService {
         Map<String, Object> updated =
                 new LinkedHashMap<>(metadata);
         updated.put("responseSnapshot", response);
+        if (response.getRecommendation() != null) {
+            updated.put(
+                    "adjustmentSuggestions",
+                    response.getRecommendation()
+                            .getAdjustmentSuggestions()
+            );
+        }
 
         assistantMessage.setMetadata(toJson(updated));
 
@@ -591,6 +700,129 @@ public class DiningDialogueMessageService {
                     "助手消息响应快照保存失败"
             );
         }
+    }
+
+    private void updateAdjustedAssistantMessage(
+            ChatMessage assistantMessage,
+            RecommendationRankResponse recommendation
+    ) {
+        String responseType =
+                "SUCCESS".equals(recommendation.getStatus())
+                        ? TYPE_RECOMMENDATION
+                        : TYPE_NO_MATCH;
+        String assistantText =
+                buildRecommendationText(recommendation);
+
+        Map<String, Object> existing =
+                parseMetadata(assistantMessage);
+        Map<String, Object> updated =
+                new LinkedHashMap<>(existing);
+        Object previousRecommendationId =
+                existing.get("recommendationId");
+        DialogueMessageResponse snapshot =
+                readResponseSnapshot(existing);
+        String previousRequestId =
+                snapshot.getRecommendation() == null
+                        ? null
+                        : snapshot.getRecommendation()
+                                .getRequestId();
+
+        updated.put(
+                "sourceMessageId",
+                assistantMessage.getId()
+        );
+        updated.put(
+                "previousRecommendationId",
+                previousRecommendationId
+        );
+        if (previousRequestId != null) {
+            updated.put(
+                    "previousRequestId",
+                    previousRequestId
+            );
+        }
+        updated.put("responseType", responseType);
+        updated.put("status", recommendation.getStatus());
+        updated.put(
+                "recommendationId",
+                recommendation.getRecommendationId()
+        );
+        updated.put(
+                "currentConstraints",
+                recommendation.getCurrentConstraints()
+        );
+        updated.put(
+                "limitingConditions",
+                recommendation.getLimitingConditions()
+        );
+        updated.put(
+                "adjustmentSuggestions",
+                recommendation.getAdjustmentSuggestions()
+        );
+
+        snapshot.setSessionId(assistantMessage.getSessionId());
+        snapshot.setAssistantMessageId(
+                assistantMessage.getId()
+        );
+        snapshot.setRequestId(
+                assistantMessage.getRequestId()
+        );
+        snapshot.setResponseType(responseType);
+        snapshot.setAssistantText(assistantText);
+        snapshot.setCurrentConstraints(
+                recommendation.getCurrentConstraints()
+        );
+        snapshot.setRecommendation(recommendation);
+
+        if (snapshot.getUserMessageId() == null
+                && assistantMessage.getRequestId() != null) {
+            ChatMessage userMessage =
+                    selectMessage(
+                            assistantMessage.getSessionId(),
+                            assistantMessage.getRequestId(),
+                            ROLE_USER
+                    );
+            if (userMessage != null) {
+                snapshot.setUserMessageId(userMessage.getId());
+            }
+        }
+        updated.put("responseSnapshot", snapshot);
+
+        assistantMessage.setContent(assistantText);
+        assistantMessage.setMessageType(TYPE_RECOMMENDATION);
+        assistantMessage.setMetadata(toJson(updated));
+
+        int rows =
+                chatMessageMapper.updateById(
+                        assistantMessage
+                );
+        if (rows != 1) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "MESSAGE_UPDATE_FAILED",
+                    "调整后的助手消息保存失败"
+            );
+        }
+
+        attachRecommendationMessages(
+                recommendation.getRecommendationId(),
+                snapshot.getUserMessageId(),
+                assistantMessage.getId(),
+                assistantText
+        );
+    }
+
+    private DialogueMessageResponse readResponseSnapshot(
+            Map<String, Object> metadata
+    ) {
+        Object snapshot = metadata.get("responseSnapshot");
+        if (snapshot == null) {
+            return new DialogueMessageResponse();
+        }
+        return objectMapper.convertValue(
+                snapshot,
+                DialogueMessageResponse.class
+        );
     }
 
     private Map<String, Object> metadata(
@@ -628,7 +860,6 @@ public class DiningDialogueMessageService {
             Long recommendationId,
             Long userMessageId,
             Long assistantMessageId,
-            String requestId,
             String replyText
     ) {
         if (recommendationId == null) {
@@ -648,7 +879,6 @@ public class DiningDialogueMessageService {
         recommendation.setAssistantMessageId(
                 assistantMessageId
         );
-        recommendation.setRequestId(requestId);
         recommendation.setReplyText(replyText);
 
         int rows =
@@ -785,14 +1015,60 @@ public class DiningDialogueMessageService {
         vo.setAdjustmentSuggestions(
                 readAdjustmentSuggestions(metadata)
         );
+        vo.setLimitingConditions(
+                readMetadataList(
+                        metadata,
+                        "limitingConditions",
+                        new TypeReference<
+                                List<LimitingConditionVO>>() {
+                        }
+                )
+        );
+        Object currentConstraints =
+                metadata.get("currentConstraints");
+        if (currentConstraints != null) {
+            vo.setCurrentConstraints(
+                    objectMapper.convertValue(
+                            currentConstraints,
+                            com.foodadvisor.dto.constraint
+                                    .ConstraintState.class
+                    )
+            );
+        }
 
         return vo;
+    }
+
+    private <T> T readMetadataList(
+            Map<String, Object> metadata,
+            String key,
+            TypeReference<T> type
+    ) {
+        Object value = metadata.get(key);
+        if (value == null) {
+            return objectMapper.convertValue(
+                    List.of(),
+                    type
+            );
+        }
+        return objectMapper.convertValue(value, type);
     }
 
     private List<AdjustmentSuggestionVO>
             readAdjustmentSuggestions(
             Map<String, Object> metadata
     ) {
+        Object directSuggestions =
+                metadata.get("adjustmentSuggestions");
+        if (directSuggestions != null) {
+            return objectMapper.convertValue(
+                    directSuggestions,
+                    new TypeReference<
+                            List<AdjustmentSuggestionVO>>() {
+                    }
+            );
+        }
+
         Object snapshot = metadata.get("responseSnapshot");
         if (!(snapshot instanceof Map<?, ?> snapshotMap)) {
             return new ArrayList<>();
