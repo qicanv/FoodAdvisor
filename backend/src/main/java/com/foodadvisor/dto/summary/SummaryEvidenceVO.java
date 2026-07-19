@@ -7,6 +7,11 @@ import java.time.OffsetDateTime;
 /** 摘要依据 VO — 供"查看依据"溯源使用 */
 @Data
 public class SummaryEvidenceVO {
+    private Long evidenceId;
+    private String sourceType;
+    private Long sourceId;
+    private Long merchantId;
+    private String merchantName;
     private Long reviewId;
     private String evidenceType;
     private String evidenceExcerpt;
@@ -15,5 +20,7 @@ public class SummaryEvidenceVO {
     private Boolean reviewAvailable;
     private BigDecimal rating;
     private String reviewContent;
-    private OffsetDateTime publishedAt;
+    private OffsetDateTime reviewTime;
+    private Boolean available;
+    private String unavailableReason;
 }

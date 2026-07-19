@@ -156,10 +156,19 @@ class SummaryPoint(BaseModel):
     reviewIds: List[int] = Field(default_factory=list)
 
 
+class SummaryEvidenceTypeEnum(str, Enum):
+    ADVANTAGE = "ADVANTAGE"
+    DISADVANTAGE = "DISADVANTAGE"
+    DISH = "DISH"
+    ENVIRONMENT = "ENVIRONMENT"
+    SERVICE = "SERVICE"
+    RECENT_CHANGE = "RECENT_CHANGE"
+
+
 class SummaryEvidence(BaseModel):
     """摘要依据 — 关联原始评价"""
     reviewId: int
-    evidenceType: str = Field(description="ADVANTAGE/DISADVANTAGE/DISH/ENVIRONMENT/SERVICE/RECENT_CHANGE")
+    evidenceType: SummaryEvidenceTypeEnum
     evidenceExcerpt: Optional[str] = None
 
 

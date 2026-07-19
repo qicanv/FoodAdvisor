@@ -29,22 +29,20 @@ public class MerchantHighlightMatchingService {
             byHighlight.computeIfAbsent(evidence.getHighlightId(), ignored -> new ArrayList<>())
                     .add(evidence);
         }
-        List<String> terms = new ArrayList<>();
-        terms.addAll(safe(state.getEnvironmentRequirements()));
-        terms.addAll(safe(state.getScenes()));
-        terms.addAll(safe(state.getTastePreferences()));
-        terms.addAll(safe(state.getDishKeywords()));
         Map<Long, List<RecommendationBasisVO>> result = new LinkedHashMap<>();
         for (MerchantHighlight highlight : safe(highlights)) {
-            String matched = terms.stream().filter(term -> matches(highlight, term))
-                    .findFirst().orElse(null);
-            if (matched == null) continue;
             List<MerchantHighlightEvidence> visibleSources = byHighlight
                     .getOrDefault(highlight.getId(), List.of()).stream()
                     .filter(e -> visibleForMerchant(reviews.get(e.getReviewId()),
                             highlight.getMerchantId())).toList();
-            MerchantHighlightEvidence source = visibleSources.stream()
-                    .findFirst().orElse(null);
+            Match match = findMatch(state, highlight, visibleSources, reviews);
+            if (match == null) continue;
+            MerchantHighlightEvidence source = "TASTE".equals(highlight.getHighlightType())
+                    ? visibleSources.stream()
+                    .filter(e -> matchesTasteText(
+                            reviews.get(e.getReviewId()).getContent(), match.term()))
+                    .findFirst().orElse(null)
+                    : visibleSources.stream().findFirst().orElse(null);
             if (source == null) continue;
             RecommendationBasisVO basis = new RecommendationBasisVO();
             basis.setSourceType("REVIEW");
@@ -53,7 +51,7 @@ public class MerchantHighlightMatchingService {
             basis.setTitle(highlight.getTitle());
             basis.setSummary(limit(normalizeAggregationClaim(
                     highlight.getDescription(), visibleSources.size()), 160));
-            basis.setMatchedCondition(matched);
+            basis.setMatchedCondition(match.conditionKey());
             basis.setRelevanceScore(BigDecimal.valueOf(0.8));
             result.computeIfAbsent(highlight.getMerchantId(), ignored -> new ArrayList<>());
             if (result.get(highlight.getMerchantId()).size() < 3) {
@@ -63,12 +61,40 @@ public class MerchantHighlightMatchingService {
         return result;
     }
 
+    private Match findMatch(
+            ConstraintState state,
+            MerchantHighlight highlight,
+            List<MerchantHighlightEvidence> visibleSources,
+            Map<Long, Review> reviews
+    ) {
+        if ("TASTE".equals(highlight.getHighlightType())) {
+            for (String term : safe(state.getTastePreferences())) {
+                boolean highlightMatches = matchesText(highlight, term);
+                boolean reviewMatches = visibleSources.stream()
+                        .map(e -> reviews.get(e.getReviewId()))
+                        .anyMatch(review -> matchesTasteText(review.getContent(), term));
+                if ((highlightMatches || reviewMatches) && reviewMatches) {
+                    return new Match("tastePreferences", term);
+                }
+            }
+            return null;
+        }
+        List<Match> candidates = new ArrayList<>();
+        safe(state.getEnvironmentRequirements()).forEach(term ->
+                candidates.add(new Match("environmentRequirements", term)));
+        safe(state.getScenes()).forEach(term ->
+                candidates.add(new Match("scenes", term)));
+        safe(state.getDishKeywords()).forEach(term ->
+                candidates.add(new Match("dishKeywords", term)));
+        return candidates.stream()
+                .filter(candidate -> matches(highlight, candidate.term()))
+                .findFirst().orElse(null);
+    }
+
     private boolean matches(MerchantHighlight h, String term) {
         if (term == null || term.isBlank()) return false;
-        String text = ((h.getTitle() == null ? "" : h.getTitle()) + " "
-                + (h.getDescription() == null ? "" : h.getDescription())).toLowerCase();
+        if (matchesText(h, term)) return true;
         String normalized = term.trim().toLowerCase();
-        if (text.contains(normalized)) return true;
         if ("ENVIRONMENT".equals(h.getHighlightType())) {
             return containsAny(normalized, "安静", "环境", "聊天", "聚会", "约会", "包间");
         }
@@ -77,6 +103,25 @@ public class MerchantHighlightMatchingService {
         }
         return "SIGNATURE_DISH".equals(h.getHighlightType())
                 && containsAny(normalized, "辣", "清淡", "甜", "麻辣");
+    }
+
+    private boolean matchesText(MerchantHighlight highlight, String term) {
+        if (term == null || term.isBlank()) return false;
+        String text = ((highlight.getTitle() == null ? "" : highlight.getTitle()) + " "
+                + (highlight.getDescription() == null ? "" : highlight.getDescription()))
+                .toLowerCase();
+        return text.contains(term.trim().toLowerCase());
+    }
+
+    private boolean matchesTasteText(String text, String term) {
+        if (text == null || term == null || term.isBlank()) return false;
+        String normalizedText = text.toLowerCase();
+        String normalizedTerm = term.trim().toLowerCase();
+        if (normalizedText.contains(normalizedTerm)) return true;
+        if (containsAny(normalizedTerm, "微辣", "小辣", "轻辣")) {
+            return containsAny(normalizedText, "微辣", "小辣", "轻辣");
+        }
+        return false;
     }
 
     private boolean visibleForMerchant(Review r, Long merchantId) {
@@ -93,6 +138,9 @@ public class MerchantHighlightMatchingService {
     private String limit(String text, int max) {
         return text == null ? "" : text.substring(0, Math.min(text.length(), max));
     }
+    private record Match(String conditionKey, String term) {
+    }
+
     private String normalizeAggregationClaim(String text, int visibleCount) {
         if (text == null || visibleCount >= 2) return text;
         return text.replace("多条评价", "有评价")

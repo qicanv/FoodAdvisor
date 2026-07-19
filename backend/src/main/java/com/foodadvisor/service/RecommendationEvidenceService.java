@@ -78,6 +78,7 @@ public class RecommendationEvidenceService {
             RecommendationEvidenceDetailVO vo = new RecommendationEvidenceDetailVO();
             vo.setSourceType(evidence.getSourceType());
             vo.setMerchantId(evidenceMerchantId);
+            vo.setConditionKey(evidence.getConditionKey());
             vo.setMerchantName(Optional.ofNullable(
                             merchants.get(evidenceMerchantId))
                     .map(Merchant::getName).orElse("商家"));
@@ -101,7 +102,7 @@ public class RecommendationEvidenceService {
                             ? review.getPublishedAt() : review.getReviewTime());
                     vo.setHighlightTitle(readTitle(evidence.getSourceTextSnapshot()));
                 } else {
-                    vo.setUnavailableReason("该来源已删除或无权查看");
+                    vo.setUnavailableReason("SOURCE_UNAVAILABLE");
                 }
             } else if ("DISH".equals(evidence.getSourceType())) {
                 vo.setExcerpt(readDishText(evidence.getSourceTextSnapshot(),

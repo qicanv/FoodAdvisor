@@ -18,6 +18,9 @@ public class MerchantSummaryEvidence {
 
     private Long summaryId;
     private Long reviewId;
+    private String sourceType;
+    private Long sourceMerchantId;
+    private Integer reviewVersion;
 
     /** ADVANTAGE / DISADVANTAGE / DISH / ENVIRONMENT / SERVICE / RECENT_CHANGE */
     private String evidenceType;

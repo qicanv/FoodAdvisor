@@ -80,6 +80,41 @@ BEGIN
             'uk_chat_messages_session_request must uniquely index (session_id, request_id, role) where request_id is not null';
     END IF;
 
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'recommendation_evidences'
+           AND column_name = 'condition_key'
+    ) THEN
+        RAISE EXCEPTION
+            'recommendation_evidences.condition_key is missing';
+    END IF;
+
+    IF (
+        SELECT count(*) FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'merchant_summary_evidences'
+           AND column_name IN (
+               'source_type', 'source_merchant_id', 'review_version'
+           )
+    ) <> 3 THEN
+        RAISE EXCEPTION
+            'merchant_summary_evidences traceability columns are missing';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'merchant_summary_evidences'::regclass
+           AND conname = 'ck_summary_evidence_source_type'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'merchant_summary_evidences'::regclass
+           AND conname = 'ck_summary_evidence_type'
+    ) THEN
+        RAISE EXCEPTION
+            'merchant_summary_evidences source/type checks are missing';
+    END IF;
+
     SELECT count(*) INTO invalid_fk_count
       FROM pg_constraint c
       JOIN pg_class t ON t.oid = c.conrelid

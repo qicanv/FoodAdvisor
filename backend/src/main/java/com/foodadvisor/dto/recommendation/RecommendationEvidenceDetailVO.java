@@ -13,6 +13,7 @@ public class RecommendationEvidenceDetailVO {
     private String excerpt;
     private OffsetDateTime reviewTime;
     private String highlightTitle;
+    private String conditionKey;
     private Boolean available;
     private String unavailableReason;
 }
