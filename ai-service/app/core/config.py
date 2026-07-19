@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     content_default_chunk_overlap: int = 64
     content_batch_max_size: int = 500
 
+    # ---- Embedding 模型配置 ----
+    embedding_model_path: str = "app/local_models/bge-base-zh-v1.5"
+    embedding_device: str = "auto"  # auto / cpu / cuda
+    embedding_batch_size: int = 32
+
+    # ---- 知识索引 ----
+    knowledge_index_name: str = "foodadvisor_knowledge_v1"
+
     model_config = SettingsConfigDict(
         case_sensitive=False,
         extra="ignore",
