@@ -16,6 +16,7 @@ import com.foodadvisor.dto.recommendation.RecommendationWeights;
 import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.ChatSessionState;
 import com.foodadvisor.entity.Merchant;
+import com.foodadvisor.entity.MerchantBusinessHours;
 import com.foodadvisor.entity.Recommendation;
 import com.foodadvisor.entity.RecommendationItem;
 import com.foodadvisor.mapper.ChatSessionMapper;
@@ -36,6 +37,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -88,6 +90,7 @@ public class RecommendationRankingService {
     private final RecommendationMapper recommendationMapper;
     private final RecommendationItemMapper recommendationItemMapper;
     private final MatchScoreCalculator matchScoreCalculator;
+    private final MerchantBusinessHoursService businessHoursService;
     private final ObjectMapper objectMapper;
 
     public RecommendationRankingService(
@@ -97,6 +100,7 @@ public class RecommendationRankingService {
             RecommendationMapper recommendationMapper,
             RecommendationItemMapper recommendationItemMapper,
             MatchScoreCalculator matchScoreCalculator,
+            MerchantBusinessHoursService businessHoursService,
             ObjectMapper objectMapper
     ) {
         this.chatSessionMapper = chatSessionMapper;
@@ -105,6 +109,7 @@ public class RecommendationRankingService {
         this.recommendationMapper = recommendationMapper;
         this.recommendationItemMapper = recommendationItemMapper;
         this.matchScoreCalculator = matchScoreCalculator;
+        this.businessHoursService = businessHoursService;
         this.objectMapper = objectMapper;
     }
 
@@ -218,13 +223,17 @@ public class RecommendationRankingService {
         List<Merchant> candidates =
                 loadCandidateMerchants();
 
+        Map<Long, List<MerchantBusinessHours>> businessHours =
+                loadBusinessHours(candidates, constraints);
+
         List<RecommendationItemVO> results =
                 calculateResults(
                         candidates,
                         constraints,
                         weights,
                         request.getUserLatitude(),
-                        request.getUserLongitude()
+                        request.getUserLongitude(),
+                        businessHours
                 );
 
         results.sort(this::compareResults);
@@ -616,22 +625,53 @@ public class RecommendationRankingService {
             ConstraintState constraints,
             RecommendationWeights weights,
             BigDecimal userLatitude,
-            BigDecimal userLongitude
+            BigDecimal userLongitude,
+            Map<Long, List<MerchantBusinessHours>> businessHours
     ) {
         List<RecommendationItemVO> results =
                 new ArrayList<>();
 
         for (Merchant merchant : candidates) {
+            MerchantBusinessHoursService.BusinessHoursMatch
+                    businessHoursMatch = businessHoursService.match(
+                    constraints,
+                    businessHours.get(merchant.getId())
+            );
+            if (!businessHoursMatch.matched()) {
+                continue;
+            }
             matchScoreCalculator.calculate(
                     merchant,
                     constraints,
                     weights,
                     userLatitude,
                     userLongitude
-            ).ifPresent(results::add);
+            ).ifPresent(result -> {
+                matchScoreCalculator.addBusinessHoursEvidence(
+                        result,
+                        businessHoursMatch.evidence()
+                );
+                results.add(result);
+            });
         }
 
         return results;
+    }
+
+    private Map<Long, List<MerchantBusinessHours>> loadBusinessHours(
+            List<Merchant> candidates,
+            ConstraintState constraints
+    ) {
+        if (!businessHoursService.hasBusinessTimeConstraint(
+                constraints
+        )) {
+            return Map.of();
+        }
+        return businessHoursService.loadGrouped(
+                candidates.stream()
+                        .map(Merchant::getId)
+                        .toList()
+        );
     }
 
     private NoMatchAnalysis analyzeNoMatch(

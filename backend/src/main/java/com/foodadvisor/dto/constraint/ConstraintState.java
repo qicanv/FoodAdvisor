@@ -99,4 +99,14 @@ public class ConstraintState {
      * 例如：NOW_OPEN、TONIGHT、LATE_NIGHT。
      */
     private String businessTime;
+
+    /**
+     * 明确的目标营业时间，格式为 HH:mm。
+     */
+    private String businessTargetTime;
+
+    /**
+     * 明确目标时间是否指向次日，例如“凌晨1点”。
+     */
+    private Boolean businessTargetNextDay;
 }

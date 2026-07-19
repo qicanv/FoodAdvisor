@@ -5,7 +5,17 @@
     <select id="selectByMerchantId" resultType="com.foodadvisor.entity.MerchantBusinessHours">
         SELECT * FROM merchant_business_hours 
         WHERE merchant_id = #{merchantId} 
-        ORDER BY day_of_week ASC
+        ORDER BY day_of_week ASC, open_time ASC NULLS LAST
+    </select>
+
+    <select id="selectByMerchantIds" resultType="com.foodadvisor.entity.MerchantBusinessHours">
+        SELECT *
+        FROM merchant_business_hours
+        WHERE merchant_id IN
+        <foreach collection="merchantIds" item="merchantId" open="(" separator="," close=")">
+            #{merchantId}
+        </foreach>
+        ORDER BY merchant_id ASC, day_of_week ASC, open_time ASC NULLS LAST
     </select>
 
 </mapper>
