@@ -141,6 +141,104 @@ class ConstraintExtractionServiceAiTest {
     }
 
     @Test
+    void shouldExtractBusinessTimeRulesWhenAiFails() {
+        stubSessionAndPersistence(null);
+        when(aiClientService.extractDialogueConstraints(any()))
+                .thenThrow(new RuntimeException("timeout"));
+
+        ConstraintExtractResponse response =
+                service.extractAndMerge(
+                        1L,
+                        1L,
+                        "晚上十点后还营业",
+                        "req-business-time"
+                );
+
+        assertAll(
+                () -> assertEquals(
+                        "22:00",
+                        response.getMerged().getBusinessTargetTime()
+                ),
+                () -> assertEquals(
+                        false,
+                        response.getMerged().getBusinessTargetNextDay()
+                ),
+                () -> assertEquals(
+                        null,
+                        response.getMerged().getBusinessTime()
+                )
+        );
+    }
+
+    @Test
+    void shouldExtractSupportedBusinessTimeExpressions() {
+        stubSessionAndPersistence(null);
+        when(aiClientService.extractDialogueConstraints(any()))
+                .thenThrow(new RuntimeException("timeout"));
+
+        assertEquals(
+                "NOW_OPEN",
+                extractRules("现在还开门", "req-now")
+                        .getBusinessTime()
+        );
+        assertEquals(
+                "TONIGHT",
+                extractRules("今晚营业", "req-tonight")
+                        .getBusinessTime()
+        );
+        assertEquals(
+                "LATE_NIGHT",
+                extractRules(
+                        "想吃夜宵，深夜还开",
+                        "req-late-night"
+                ).getBusinessTime()
+        );
+        assertEquals(
+                "22:30",
+                extractRules("22:30还开门", "req-2230")
+                        .getBusinessTargetTime()
+        );
+
+        ConstraintState afterMidnight =
+                extractRules("凌晨1点还营业", "req-0100");
+        assertAll(
+                () -> assertEquals(
+                        "01:00",
+                        afterMidnight.getBusinessTargetTime()
+                ),
+                () -> assertEquals(
+                        true,
+                        afterMidnight.getBusinessTargetNextDay()
+                )
+        );
+
+        ConstraintState budget =
+                extractRules("人均80元", "req-budget-only");
+        assertAll(
+                () -> assertEquals(
+                        null,
+                        budget.getBusinessTargetTime()
+                ),
+                () -> assertEquals(
+                        null,
+                        budget.getBusinessTime()
+                )
+        );
+    }
+
+    private ConstraintState extractRules(
+            String message,
+            String requestId
+    ) {
+        return service.extractAndMerge(
+                1L,
+                1L,
+                message,
+                requestId
+        ).getMerged();
+    }
+
+    @Test
     void shouldIgnoreInvalidAiBudgetAndDistance()
             throws Exception {
         stubSessionAndPersistence(null);

@@ -30,6 +30,7 @@ import org.springframework.dao.DataRetrievalFailureException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -40,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -67,6 +69,9 @@ class RecommendationRankingServiceTest {
     @Mock
     private MatchScoreCalculator matchScoreCalculator;
 
+    @Mock
+    private MerchantBusinessHoursService businessHoursService;
+
     private RecommendationRankingService service;
 
     private AtomicLong recommendationIdSequence;
@@ -83,8 +88,19 @@ class RecommendationRankingServiceTest {
                 recommendationMapper,
                 recommendationItemMapper,
                 matchScoreCalculator,
+                businessHoursService,
                 new ObjectMapper()
         );
+
+        lenient().when(businessHoursService.hasBusinessTimeConstraint(any()))
+                .thenReturn(false);
+        lenient().when(businessHoursService.match(any(), any()))
+                .thenReturn(
+                        new MerchantBusinessHoursService.BusinessHoursMatch(
+                                true,
+                                null
+                        )
+                );
 
         lenient().when(recommendationMapper.insert(
                 any(Recommendation.class)
@@ -221,6 +237,82 @@ class RecommendationRankingServiceTest {
                         .getScoreDetails()
                         .contains("\"distanceKm\":1.00")
         );
+    }
+
+    @Test
+    void shouldBatchLoadAndHardFilterByBusinessHours() {
+        Merchant open = createMerchant(
+                201L, "open", new BigDecimal("4.8"), 100
+        );
+        Merchant closed = createMerchant(
+                202L, "closed", new BigDecimal("4.7"), 90
+        );
+        stubSessionStateAndMerchants(
+                List.of(open, closed),
+                "{\"businessTime\":\"NOW_OPEN\"}"
+        );
+        when(businessHoursService.hasBusinessTimeConstraint(any()))
+                .thenReturn(true);
+        when(businessHoursService.loadGrouped(
+                eq(List.of(201L, 202L))
+        )).thenReturn(Map.of(201L, List.of(), 202L, List.of()));
+        when(businessHoursService.match(
+                any(),
+                eq(List.of())
+        )).thenReturn(
+                new MerchantBusinessHoursService.BusinessHoursMatch(
+                        true,
+                        "当前处于营业时段 10:00–22:00"
+                ),
+                new MerchantBusinessHoursService.BusinessHoursMatch(
+                        false,
+                        null
+                )
+        );
+        when(matchScoreCalculator.calculate(
+                eq(open),
+                any(),
+                any(),
+                any(),
+                any()
+        )).thenReturn(Optional.of(
+                createCalculatedResult(open, new BigDecimal("90"))
+        ));
+
+        RecommendationRankResponse response = service.rank(
+                1L,
+                createRequest(createDefaultWeights())
+        );
+
+        assertEquals(List.of(201L), response.getResults().stream()
+                .map(RecommendationItemVO::getMerchantId)
+                .toList());
+        verify(businessHoursService, times(1))
+                .loadGrouped(eq(List.of(201L, 202L)));
+        verify(matchScoreCalculator, never()).calculate(
+                eq(closed), any(), any(), any(), any()
+        );
+        verify(matchScoreCalculator).addBusinessHoursEvidence(
+                any(),
+                eq("当前处于营业时段 10:00–22:00")
+        );
+    }
+
+    @Test
+    void shouldNotLoadBusinessHoursWithoutConstraint() {
+        Merchant merchant = createMerchant(
+                203L, "normal", new BigDecimal("4.8"), 100
+        );
+        stubSessionStateAndMerchants(List.of(merchant), "{}");
+        when(matchScoreCalculator.calculate(
+                eq(merchant), any(), any(), any(), any()
+        )).thenReturn(Optional.of(
+                createCalculatedResult(merchant, new BigDecimal("90"))
+        ));
+
+        service.rank(1L, createRequest(createDefaultWeights()));
+
+        verify(businessHoursService, never()).loadGrouped(any());
     }
 
     @Test

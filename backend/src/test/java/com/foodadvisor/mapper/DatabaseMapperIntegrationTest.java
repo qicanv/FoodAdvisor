@@ -8,10 +8,14 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import com.foodadvisor.entity.ChatMessage;
+import com.foodadvisor.entity.MerchantBusinessHours;
 
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -38,6 +42,9 @@ class DatabaseMapperIntegrationTest {
 
     @Autowired
     private ChatMessageMapper chatMessageMapper;
+
+    @Autowired
+    private BusinessHoursMapper businessHoursMapper;
 
     @Test
     void auditLogCountQueryUsesCurrentDatabaseColumns() {
@@ -151,6 +158,101 @@ class DatabaseMapperIntegrationTest {
         );
     }
 
+    @Test
+    @Transactional
+    void businessHoursBatchQueryReturnsOnlyRequestedMerchantsInSqlOrder() {
+        Long merchantA = insertMerchant("BUSINESS_HOURS_A");
+        Long merchantB = insertMerchant("BUSINESS_HOURS_B");
+        Long excludedMerchant = insertMerchant(
+                "BUSINESS_HOURS_EXCLUDED"
+        );
+
+        insertBusinessHours(
+                merchantB, 4, null, null, true, false
+        );
+        insertBusinessHours(
+                merchantA, 1, "17:00", "22:00", false, false
+        );
+        insertBusinessHours(
+                excludedMerchant, 1, "08:00", "23:00", false, false
+        );
+        insertBusinessHours(
+                merchantB, 2, "09:00", "20:00", false, false
+        );
+        insertBusinessHours(
+                merchantA, 5, "18:00", "02:00", false, true
+        );
+        insertBusinessHours(
+                merchantA, 1, "10:00", "14:00", false, false
+        );
+
+        List<MerchantBusinessHours> rows =
+                businessHoursMapper.selectByMerchantIds(
+                        List.of(merchantB, merchantA)
+                );
+
+        assertEquals(5, rows.size());
+        assertEquals(
+                Set.of(merchantA, merchantB),
+                rows.stream()
+                        .map(MerchantBusinessHours::getMerchantId)
+                        .collect(Collectors.toSet())
+        );
+        assertEquals(
+                5L,
+                rows.stream()
+                        .map(MerchantBusinessHours::getId)
+                        .distinct()
+                        .count()
+        );
+
+        assertBusinessHours(
+                rows.get(0),
+                merchantA,
+                1,
+                LocalTime.of(10, 0),
+                LocalTime.of(14, 0),
+                false,
+                false
+        );
+        assertBusinessHours(
+                rows.get(1),
+                merchantA,
+                1,
+                LocalTime.of(17, 0),
+                LocalTime.of(22, 0),
+                false,
+                false
+        );
+        assertBusinessHours(
+                rows.get(2),
+                merchantA,
+                5,
+                LocalTime.of(18, 0),
+                LocalTime.of(2, 0),
+                false,
+                true
+        );
+        assertBusinessHours(
+                rows.get(3),
+                merchantB,
+                2,
+                LocalTime.of(9, 0),
+                LocalTime.of(20, 0),
+                false,
+                false
+        );
+        assertBusinessHours(
+                rows.get(4),
+                merchantB,
+                4,
+                null,
+                null,
+                true,
+                false
+        );
+    }
+
     private Long insertSession() {
         return jdbcTemplate.queryForObject(
                 """
@@ -166,6 +268,76 @@ class DatabaseMapperIntegrationTest {
                 """,
                 Long.class
         );
+    }
+
+    private Long insertMerchant(String marker) {
+        String uniqueCode =
+                marker + "_"
+                        + UUID.randomUUID()
+                        .toString()
+                        .replace("-", "")
+                        .substring(0, 8);
+        return jdbcTemplate.queryForObject(
+                """
+                INSERT INTO merchants (
+                    merchant_code, name, category, address,
+                    platform_status, operation_status,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, 'MAPPER_TEST', 'mapper test address',
+                        'ACTIVE', 'OPERATING',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+                """,
+                Long.class,
+                uniqueCode,
+                marker
+        );
+    }
+
+    private void insertBusinessHours(
+            Long merchantId,
+            int dayOfWeek,
+            String openTime,
+            String closeTime,
+            boolean isClosed,
+            boolean crossesMidnight
+    ) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO merchant_business_hours (
+                    merchant_id, day_of_week,
+                    open_time, close_time,
+                    is_closed, crosses_midnight,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?::time, ?::time, ?, ?,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                merchantId,
+                dayOfWeek,
+                openTime,
+                closeTime,
+                isClosed,
+                crossesMidnight
+        );
+    }
+
+    private void assertBusinessHours(
+            MerchantBusinessHours row,
+            Long merchantId,
+            int dayOfWeek,
+            LocalTime openTime,
+            LocalTime closeTime,
+            boolean isClosed,
+            boolean crossesMidnight
+    ) {
+        assertEquals(merchantId, row.getMerchantId());
+        assertEquals(dayOfWeek, row.getDayOfWeek());
+        assertEquals(openTime, row.getOpenTime());
+        assertEquals(closeTime, row.getCloseTime());
+        assertEquals(isClosed, row.getIsClosed());
+        assertEquals(crossesMidnight, row.getCrossesMidnight());
     }
 
     private void insertMessage(

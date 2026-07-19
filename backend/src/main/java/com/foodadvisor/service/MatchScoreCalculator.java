@@ -91,13 +91,6 @@ public class MatchScoreCalculator {
             );
         }
 
-        if (safeConstraints.getBusinessTime() != null
-                && !safeConstraints.getBusinessTime().isBlank()) {
-            riskNotes.add(
-                    "本次仅校验商家经营状态，尚未接入具体营业时段判断"
-            );
-        }
-
         BigDecimal finalScore = ZERO;
 
         FactorResult cuisineResult =
@@ -233,6 +226,18 @@ public class MatchScoreCalculator {
         result.setReason(buildReason(result));
 
         return Optional.of(result);
+    }
+
+    public void addBusinessHoursEvidence(
+            RecommendationItemVO result,
+            String evidence
+    ) {
+        if (result == null || evidence == null || evidence.isBlank()) {
+            return;
+        }
+        result.getMatchedConditions().remove(evidence);
+        result.getMatchedConditions().add(0, evidence);
+        result.setReason(buildReason(result));
     }
 
     /**

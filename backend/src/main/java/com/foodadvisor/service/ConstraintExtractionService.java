@@ -43,6 +43,22 @@ import java.util.regex.Pattern;
 @Service
 public class ConstraintExtractionService {
 
+    private static final Pattern BUSINESS_TARGET_HH_MM_PATTERN =
+            Pattern.compile(
+                    "(凌晨|晚上|今晚|夜里)?\\s*"
+                            + "([01]?\\d|2[0-3]):([0-5]\\d)"
+                            + "\\s*(?:以后|之后|后)?\\s*(?:还)?"
+                            + "(?:开门|营业)"
+            );
+
+    private static final Pattern BUSINESS_TARGET_HOUR_PATTERN =
+            Pattern.compile(
+                    "(凌晨|晚上|今晚|夜里)?\\s*"
+                            + "([0-9一二两三四五六七八九十]+)"
+                            + "\\s*点(?:钟)?\\s*(?:以后|之后|后)?"
+                            + "\\s*(?:还)?(?:开门|营业)"
+            );
+
     private static final Pattern PARTY_SIZE_PATTERN =
             Pattern.compile(
                     "([0-9一二两三四五六七八九十]+)\\s*(?:个人|人|位)"
@@ -736,6 +752,14 @@ public class ConstraintExtractionService {
         )) {
             target.setBusinessTime(source.getBusinessTime());
         }
+        target.setBusinessTargetTime(
+                sanitizeBusinessTargetTime(
+                        source.getBusinessTargetTime()
+                )
+        );
+        target.setBusinessTargetNextDay(
+                source.getBusinessTargetNextDay()
+        );
 
         calculatePerCapitaBudget(target);
         return target;
@@ -797,7 +821,9 @@ public class ConstraintExtractionService {
                         "minRating",
                         "scenes",
                         "environmentRequirements",
-                        "businessTime"
+                        "businessTime",
+                        "businessTargetTime",
+                        "businessTargetNextDay"
                 );
 
         LinkedHashSet<String> result = new LinkedHashSet<>();
@@ -852,6 +878,10 @@ public class ConstraintExtractionService {
                         );
                 case "businessTime" ->
                         state.setBusinessTime(null);
+                case "businessTargetTime" ->
+                        state.setBusinessTargetTime(null);
+                case "businessTargetNextDay" ->
+                        state.setBusinessTargetNextDay(null);
                 default -> {
                 }
             }
@@ -1209,6 +1239,10 @@ public class ConstraintExtractionService {
         String compactMessage =
                 message.replaceAll("\\s+", "");
 
+        if (extractBusinessTargetTime(compactMessage, state)) {
+            return;
+        }
+
         /*
          * 深夜、夜宵类表达最具体，优先判断。
          */
@@ -1246,6 +1280,82 @@ public class ConstraintExtractionService {
                 || compactMessage.contains("目前还开")
                 || compactMessage.contains("正在营业")) {
             state.setBusinessTime("NOW_OPEN");
+        }
+    }
+
+    private boolean extractBusinessTargetTime(
+            String message,
+            ConstraintState state
+    ) {
+        Matcher hhMmMatcher =
+                BUSINESS_TARGET_HH_MM_PATTERN.matcher(message);
+        if (hhMmMatcher.find()) {
+            int hour = Integer.parseInt(hhMmMatcher.group(2));
+            int minute = Integer.parseInt(hhMmMatcher.group(3));
+            setBusinessTargetTime(
+                    state,
+                    hhMmMatcher.group(1),
+                    hour,
+                    minute
+            );
+            return true;
+        }
+
+        Matcher hourMatcher =
+                BUSINESS_TARGET_HOUR_PATTERN.matcher(message);
+        if (!hourMatcher.find()) {
+            return false;
+        }
+        Integer parsedHour =
+                parseChineseOrArabicNumber(hourMatcher.group(2));
+        if (parsedHour == null || parsedHour < 0 || parsedHour > 23) {
+            return false;
+        }
+        setBusinessTargetTime(
+                state,
+                hourMatcher.group(1),
+                parsedHour,
+                0
+        );
+        return true;
+    }
+
+    private void setBusinessTargetTime(
+            ConstraintState state,
+            String period,
+            int rawHour,
+            int minute
+    ) {
+        int hour = rawHour;
+        boolean nextDay = "凌晨".equals(period);
+        if (("晚上".equals(period)
+                || "今晚".equals(period)
+                || "夜里".equals(period))
+                && hour >= 1 && hour < 12) {
+            hour += 12;
+        }
+        state.setBusinessTargetTime(
+                String.format("%02d:%02d", hour, minute)
+        );
+        state.setBusinessTargetNextDay(nextDay);
+        state.setBusinessTime(null);
+    }
+
+    private String sanitizeBusinessTargetTime(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return java.time.LocalTime.parse(
+                    value,
+                    java.time.format.DateTimeFormatter
+                            .ofPattern("HH:mm")
+            ).format(
+                    java.time.format.DateTimeFormatter
+                            .ofPattern("HH:mm")
+            );
+        } catch (java.time.format.DateTimeParseException exception) {
+            return null;
         }
     }
 
@@ -1670,6 +1780,12 @@ public class ConstraintExtractionService {
         );
 
         copy.setBusinessTime(source.getBusinessTime());
+        copy.setBusinessTargetTime(
+                source.getBusinessTargetTime()
+        );
+        copy.setBusinessTargetNextDay(
+                source.getBusinessTargetNextDay()
+        );
 
         return copy;
     }
@@ -1743,6 +1859,18 @@ public class ConstraintExtractionService {
             merged.setBusinessTime(
                     extracted.getBusinessTime()
             );
+        }
+        if (extracted.getBusinessTargetTime() != null) {
+            merged.setBusinessTargetTime(
+                    extracted.getBusinessTargetTime()
+            );
+            merged.setBusinessTargetNextDay(
+                    extracted.getBusinessTargetNextDay()
+            );
+            merged.setBusinessTime(null);
+        } else if (extracted.getBusinessTime() != null) {
+            merged.setBusinessTargetTime(null);
+            merged.setBusinessTargetNextDay(null);
         }
 
         recalculateMergedPerCapitaBudget(
