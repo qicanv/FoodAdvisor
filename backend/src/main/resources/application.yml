@@ -22,7 +22,7 @@ foodadvisor:
   business-time:
     zone-id: ${BUSINESS_TIME_ZONE_ID:Asia/Shanghai}
   crypto:
-    model-key-secret: ${MODEL_KEY_SECRET:foodadvisor-secret-key-2024}
+    model-key-secret: ${MODEL_KEY_SECRET:}
   upload:
     review-image-dir: ${REVIEW_IMAGE_UPLOAD_DIR:uploads/reviews}
   hot-words:
@@ -54,7 +54,7 @@ mybatis-plus:
 
 # AI 服务地址（FastAPI）
 ai-service:
-  base-url: http://localhost:${AI_SERVICE_PORT:8000}
+  base-url: ${AI_SERVICE_BASE_URL:http://localhost:${AI_SERVICE_PORT:8000}}
   internal-token: ${INTERNAL_API_TOKEN:}
   connect-timeout: 5000
   read-timeout: 60000

@@ -112,6 +112,15 @@ class ConstraintExtractionServiceAiTest {
         verify(aiClientService).extractDialogueConstraints(
                 any(DialogueExtractAiRequest.class)
         );
+        ArgumentCaptor<ConstraintExtraction> extractionCaptor =
+                ArgumentCaptor.forClass(ConstraintExtraction.class);
+        verify(constraintExtractionMapper).insert(
+                extractionCaptor.capture()
+        );
+        assertEquals(
+                "mock-model",
+                extractionCaptor.getValue().getModelName()
+        );
     }
 
     @Test
@@ -451,6 +460,7 @@ class ConstraintExtractionServiceAiTest {
         response.setConfidence(new BigDecimal("0.9"));
         response.setExtractor("AI_MODEL");
         response.setDegraded(degraded);
+        response.setModelName("mock-model");
         return response;
     }
 }

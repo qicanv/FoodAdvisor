@@ -23,6 +23,7 @@ tastePreferences, tasteRestrictions, excludedCuisines,
  dishKeywords,
 excludedMerchantTypes, distanceKm, minRating, scenes,
 environmentRequirements, businessTime.
+businessTargetTime, businessTargetNextDay.
 
 Rules:
 - Do not recommend merchants.
@@ -65,7 +66,12 @@ class DialogueExtractionService:
                 temperature=0.1,
                 max_tokens=1200,
             )
-            return DialogueExtractResponse.model_validate(result)
+            response = DialogueExtractResponse.model_validate(result)
+            response.extractor = "AI_MODEL"
+            response.degraded = False
+            response.modelName = llm_service.model
+            response.provider = llm_service.provider
+            return response
         except (ValueError, ValidationError) as exception:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,

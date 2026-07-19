@@ -348,7 +348,9 @@ public class ConstraintExtractionService {
                 extracted,
                 merged,
                 changes,
-                conflicts
+                conflicts,
+                extractor,
+                aiExtraction == null ? null : aiExtraction.modelName()
         );
 
         /*
@@ -402,6 +404,7 @@ public class ConstraintExtractionService {
                     "MERCHANT_RECOMMENDATION",
                     "RULE_FALLBACK",
                     true,
+                    null,
                     detectConflicts(message)
             );
         }
@@ -412,6 +415,7 @@ public class ConstraintExtractionService {
                 aiExtraction.intent(),
                 aiExtraction.extractor(),
                 aiExtraction.degraded(),
+                aiExtraction.modelName(),
                 detectConflicts(message)
         );
     }
@@ -468,7 +472,9 @@ public class ConstraintExtractionService {
                 extracted,
                 merged,
                 changes,
-                conflicts
+                conflicts,
+                prepared.extractor(),
+                prepared.modelName()
         );
 
         ConstraintExtractResponse response =
@@ -619,6 +625,7 @@ public class ConstraintExtractionService {
             String intent,
             String extractor,
             boolean degraded,
+            String modelName,
             List<ConstraintConflictVO> conflicts
     ) {
     }
@@ -675,7 +682,8 @@ public class ConstraintExtractionService {
                         response.getClearedFields()
                 ),
                 "AI_MODEL",
-                false
+                false,
+                response.getModelName()
         );
     }
 
@@ -915,7 +923,8 @@ public class ConstraintExtractionService {
             ConstraintState extracted,
             List<String> clearedFields,
             String extractor,
-            boolean degraded
+            boolean degraded,
+            String modelName
     ) {
     }
 
@@ -2669,7 +2678,9 @@ public class ConstraintExtractionService {
             ConstraintState extracted,
             ConstraintState merged,
             List<String> changes,
-            List<ConstraintConflictVO> conflicts
+            List<ConstraintConflictVO> conflicts,
+            String extractor,
+            String modelName
     ) {
         if (messageId == null) {
             throw new ApiException(
@@ -2721,8 +2732,16 @@ public class ConstraintExtractionService {
                 toJson(safeConflicts)
         );
 
-        extraction.setModelName("RULE_BASED");
-        extraction.setModelVersion("v1");
+        boolean modelExtraction =
+                "AI_MODEL".equals(extractor)
+                        && modelName != null
+                        && !modelName.isBlank();
+        extraction.setModelName(
+                modelExtraction ? modelName : "RULE_BASED"
+        );
+        extraction.setModelVersion(
+                modelExtraction ? null : "v1"
+        );
         extraction.setCreatedAt(OffsetDateTime.now());
 
         int affectedRows =
