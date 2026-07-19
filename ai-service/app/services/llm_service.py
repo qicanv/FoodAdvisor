@@ -26,7 +26,8 @@ class LLMService:
         if not self.is_configured():
             raise RuntimeError("LLM API Key 未配置，请在 .env 中设置 LLM_API_KEY")
 
-        url = f"{self.base_url}/v1/chat/completions"
+        # url = f"{self.base_url}/v1/chat/completions"
+        url = self.base_url
 
         payload = {
             "model": self.model,
