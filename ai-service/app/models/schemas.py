@@ -245,3 +245,31 @@ class HighlightGenerateResponse(BaseModel):
     modelName: Optional[str] = None
     businessTraceId: Optional[str] = None
     errorMessage: Optional[str] = None
+
+
+# ---- 评价辅助回复（EPIC-02 故事7） ----
+
+class ReplyStrategyEnum(str, Enum):
+    """AI 回复策略枚举"""
+    POSITIVE = "POSITIVE"  # 好评策略：感谢 + 回应具体优点
+    NEGATIVE = "NEGATIVE"  # 差评策略：道歉 + 问题说明 + 改进承诺
+
+
+class GenerateReplyRequest(BaseModel):
+    """AI 生成回复建议的请求 — 由 Spring Boot 传入评价信息"""
+    reviewId: int
+    merchantId: int
+    content: str = Field(..., min_length=1, description="评价正文内容")
+    strategy: ReplyStrategyEnum = Field(..., description="回复策略：POSITIVE 或 NEGATIVE")
+    rating: int = Field(default=3, ge=1, le=5, description="评价评分（1-5）")
+
+
+class GenerateReplyResponse(BaseModel):
+    """AI 生成回复建议的响应"""
+    reviewId: int
+    replyContent: str = Field(..., description="AI 生成的回复建议内容")
+    strategy: ReplyStrategyEnum = Field(..., description="使用的回复策略")
+    modelName: Optional[str] = Field(default=None, description="使用的模型名称")
+    businessTraceId: Optional[str] = Field(default=None, description="调用追踪 ID")
+    status: str = Field(default="SUCCESS", description="SUCCESS / FAILED")
+    errorMessage: Optional[str] = Field(default=None, description="失败时的错误信息")

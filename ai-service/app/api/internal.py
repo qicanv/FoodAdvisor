@@ -38,6 +38,8 @@ from app.schemas.search import SearchRequest, SearchResponse
 from app.services.search_service import get_search_service
 from app.models.schemas import HighlightGenerateRequest, HighlightGenerateResponse
 from app.services.highlight_service import highlight_service
+from app.models.schemas import GenerateReplyRequest, GenerateReplyResponse
+from app.services.reply_draft_service import reply_draft_service
 
 logger = logging.getLogger(__name__)
 
@@ -334,3 +336,26 @@ async def generate_merchant_highlights(request: HighlightGenerateRequest):
         f"positiveReviewCount={len(request.reviews)}"
     )
     return await highlight_service.generate(request)
+
+
+# ---- 评价辅助回复（EPIC-02 故事7） ----
+
+@router.post(
+    "/reviews/generate-reply",
+    response_model=GenerateReplyResponse,
+)
+async def generate_review_reply(request: GenerateReplyRequest):
+    """
+    评价辅助回复生成（EPIC-02 故事7）
+
+    由 Spring Boot 传入评价内容和策略（POSITIVE/NEGATIVE），
+    返回 AI 生成的回复建议。商家确认或编辑后才能发布为正式回复。
+
+    好评策略：表达感谢 + 回应具体优点
+    差评策略：道歉 + 问题说明 + 改进承诺
+    """
+    logger.info(
+        f"生成评价回复 reviewId={request.reviewId}, "
+        f"strategy={request.strategy.value}, rating={request.rating}"
+    )
+    return await reply_draft_service.generate(request)
