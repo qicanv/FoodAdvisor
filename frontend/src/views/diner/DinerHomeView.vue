@@ -159,7 +159,7 @@
             <span class="result-count">共 {{ restaurants.length }} 家</span>
           </h2>
           <div class="restaurants-grid">
-            <div v-for="restaurant in restaurants" :key="restaurant.id" class="restaurant-card">
+            <div v-for="restaurant in restaurants" :key="restaurant.id" class="restaurant-card" @click="handleMerchantClick(restaurant)">
               <div class="rest-img">
                 <div class="rest-placeholder" :style="{ background: restaurant.color }">
                   <span class="placeholder-emoji">{{ restaurant.emoji }}</span>
@@ -203,6 +203,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getMerchants } from '../../api/restaurant'
+import { logSceneEntry, logSearch, logMerchantClick } from '../../api/behavior'
 
 const router = useRouter()
 const userInfo = ref({ username: '' })
@@ -423,6 +424,19 @@ const selectScene = (scene) => {
   selectedScene.value = scene
   resetFilters()
   searchRestaurants()
+  
+  const userId = userInfo.value.id
+  const sceneTypeMap = {
+    friends: 'FRIENDS',
+    family: 'FAMILY',
+    date: 'DATE',
+    breakfast: 'BREAKFAST',
+    alone: 'ALONE',
+    afternoon: 'AFTERNOON',
+    supper: 'LATE_NIGHT',
+    birthday: 'BIRTHDAY'
+  }
+  logSceneEntry({ userId, sceneType: sceneTypeMap[scene.id] || scene.id.toUpperCase() }).catch(() => {})
 }
 
 const resetFilters = () => {
@@ -528,6 +542,26 @@ const getSceneScore = (restaurant, scene) => {
 const searchRestaurants = () => {
   let result = [...(allMerchants.value.length > 0 ? allMerchants.value : allRestaurants)]
   
+  const userId = userInfo.value.id
+  const searchKeywords = []
+  if (filters.cuisine) {
+    const cuisineNames = {
+      chinese: '中餐', western: '西餐', japanese: '日料', 
+      korean: '韩餐', thai: '泰餐', hotpot: '火锅', 
+      snacks: '小吃', breakfast: '早餐'
+    }
+    searchKeywords.push(cuisineNames[filters.cuisine] || filters.cuisine)
+  }
+  if (filters.budget) {
+    const budgetNames = {
+      low: '低价', medium: '中等', high: '高价', premium: '高端'
+    }
+    searchKeywords.push(budgetNames[filters.budget] || filters.budget)
+  }
+  if (searchKeywords.length > 0) {
+    logSearch({ userId, keyword: searchKeywords.join(' ') }).catch(() => {})
+  }
+  
   if (filters.budget) {
     const budgetMap = {
       low: r => r.avgPrice < 50,
@@ -590,6 +624,12 @@ const goToRanking = () => {
 
 const goToAiDining = () => {
   router.push('/diner/ai-dining')
+}
+
+const handleMerchantClick = (restaurant) => {
+  const userId = userInfo.value.id
+  logMerchantClick({ userId, merchantId: restaurant.id }).catch(() => {})
+  router.push(`/diner/merchant/${restaurant.id}`)
 }
 </script>
 
