@@ -175,6 +175,77 @@ def test_dialogue_extracts_environment(monkeypatch):
     assert body["extractedConstraints"]["environmentRequirements"] == ["安静"]
 
 
+def test_dialogue_accepts_dish_keywords_and_budget(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={
+                "dishKeywords": ["水煮鱼"],
+                "perCapitaBudget": 80,
+            }
+        ),
+    )
+
+    body = post_extract(request_body("想吃水煮鱼，人均80元")).json()
+
+    assert body["extractedConstraints"]["dishKeywords"] == ["水煮鱼"]
+    assert body["extractedConstraints"]["perCapitaBudget"] == 80
+
+
+def test_dialogue_accepts_business_target_time_and_model_metadata(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={
+                "businessTargetTime": "22:00",
+                "businessTargetNextDay": False,
+            }
+        ),
+    )
+    monkeypatch.setattr(service_module.llm_service, "model", "mock-model")
+    monkeypatch.setattr(
+        service_module.llm_service,
+        "provider",
+        "OPENAI_COMPATIBLE",
+    )
+
+    body = post_extract(request_body("晚上十点后还营业")).json()
+
+    assert body["extractedConstraints"]["businessTargetTime"] == "22:00"
+    assert body["extractedConstraints"]["businessTargetNextDay"] is False
+    assert body["extractor"] == "AI_MODEL"
+    assert body["degraded"] is False
+    assert body["modelName"] == "mock-model"
+    assert body["provider"] == "OPENAI_COMPATIBLE"
+
+
+def test_dialogue_rejects_invalid_business_target_time(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={"businessTargetTime": "25:99"}
+        ),
+    )
+
+    assert post_extract(request_body("深夜营业")).status_code == 502
+
+
+def test_dialogue_rejects_invalid_dish_keywords(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(extractedConstraints={"dishKeywords": "水煮鱼"}),
+    )
+    assert post_extract(request_body("想吃水煮鱼")).status_code == 502
+
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={"dishKeywords": ["超" * 31]}
+        ),
+    )
+    assert post_extract(request_body("想吃菜")).status_code == 502
+
+
 def test_dialogue_detects_constraint_update(monkeypatch):
     mock_model(
         monkeypatch,
@@ -271,3 +342,29 @@ def test_dialogue_response_does_not_include_merchant_name(monkeypatch):
     body_text = post_extract(request_body()).text
 
     assert "merchantName" not in body_text
+
+
+def test_normalize_model_result_converts_constraints_alias() -> None:
+    from app.services.dialogue_extraction_service import normalize_model_result
+
+    result = normalize_model_result(
+        {
+            "intent": "MERCHANT_RECOMMENDATION",
+            "constraints": {
+                "partySize": 4,
+                "perCapitaBudget": 80,
+                "cuisines": ["川菜"],
+                "distanceKm": 3,
+            },
+            "clearedFields": [],
+            "confidence": 0.95,
+        }
+    )
+
+    assert "constraints" not in result
+    assert result["extractedConstraints"] == {
+        "partySize": 4,
+        "perCapitaBudget": 80,
+        "cuisines": ["川菜"],
+        "distanceKm": 3,
+    }

@@ -1,11 +1,9 @@
-import os
 from functools import lru_cache
+from pathlib import Path
 
-from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# 显式加载项目根目录的 .env（与 CWD 无关）
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -27,6 +25,7 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
+    llm_provider: str = "OPENAI_COMPATIBLE"
 
     sentiment_low_confidence_threshold: float = 0.6
 
@@ -51,6 +50,8 @@ class Settings(BaseSettings):
     knowledge_index_name: str = "foodadvisor_knowledge_v1"
 
     model_config = SettingsConfigDict(
+        env_file=AI_SERVICE_ROOT / ".env",
+        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )

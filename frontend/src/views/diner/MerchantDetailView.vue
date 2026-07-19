@@ -393,15 +393,22 @@ const formatBusinessHours = (hoursList) => {
   
   const weekDays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
   const formattedHours = []
-  
-  for (const hour of hoursList) {
+
+  const sortedHours = [...hoursList].sort((left, right) => {
+    const dayDifference = (left.dayOfWeek || 0) - (right.dayOfWeek || 0)
+    if (dayDifference !== 0) return dayDifference
+    return String(left.openTime || '').localeCompare(String(right.openTime || ''))
+  })
+
+  for (const hour of sortedHours) {
     if (hour.isClosed) {
       continue
     }
     const dayName = weekDays[hour.dayOfWeek - 1] || `周${hour.dayOfWeek}`
     const openTime = hour.openTime ? hour.openTime.substring(0, 5) : ''
     const closeTime = hour.closeTime ? hour.closeTime.substring(0, 5) : ''
-    formattedHours.push(`${dayName}: ${openTime}-${closeTime}`)
+    const displayedCloseTime = hour.crossesMidnight ? `次日${closeTime}` : closeTime
+    formattedHours.push(`${dayName}: ${openTime}-${displayedCloseTime}`)
   }
   
   return formattedHours.join('，') || '暂无信息'

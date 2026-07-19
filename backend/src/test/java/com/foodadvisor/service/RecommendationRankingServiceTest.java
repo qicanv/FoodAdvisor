@@ -14,11 +14,17 @@ import com.foodadvisor.entity.ChatSessionState;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Recommendation;
 import com.foodadvisor.entity.RecommendationItem;
+import com.foodadvisor.entity.Dish;
 import com.foodadvisor.mapper.ChatSessionMapper;
 import com.foodadvisor.mapper.ChatSessionStateMapper;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.RecommendationItemMapper;
 import com.foodadvisor.mapper.RecommendationMapper;
+import com.foodadvisor.mapper.DishMapper;
+import com.foodadvisor.mapper.RecommendationEvidenceMapper;
+import com.foodadvisor.mapper.MerchantHighlightMapper;
+import com.foodadvisor.mapper.MerchantHighlightEvidenceMapper;
+import com.foodadvisor.mapper.ReviewMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +38,7 @@ import org.springframework.dao.DataRetrievalFailureException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -42,6 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -68,10 +76,27 @@ class RecommendationRankingServiceTest {
     private RecommendationItemMapper recommendationItemMapper;
 
     @Mock
+    private DishMapper dishMapper;
+
+    @Mock
+    private RecommendationEvidenceMapper recommendationEvidenceMapper;
+    @Mock
+    private MerchantHighlightMapper merchantHighlightMapper;
+    @Mock
+    private MerchantHighlightEvidenceMapper merchantHighlightEvidenceMapper;
+    @Mock
+    private ReviewMapper reviewMapper;
+
+    private DishMatchingService dishMatchingService;
+
+    @Mock
     private MatchScoreCalculator matchScoreCalculator;
 
     @Mock
     private AIClientService aiClientService;
+
+    @Mock
+    private MerchantBusinessHoursService businessHoursService;
 
     private RecommendationRankingService service;
 
@@ -81,6 +106,8 @@ class RecommendationRankingServiceTest {
     void setUp() {
         recommendationIdSequence =
                 new AtomicLong(1000L);
+        dishMatchingService =
+                new DishMatchingService(new ObjectMapper());
 
         service = new RecommendationRankingService(
                 chatSessionMapper,
@@ -88,10 +115,28 @@ class RecommendationRankingServiceTest {
                 merchantMapper,
                 recommendationMapper,
                 recommendationItemMapper,
+                dishMapper,
+                recommendationEvidenceMapper,
+                dishMatchingService,
+                merchantHighlightMapper,
+                merchantHighlightEvidenceMapper,
+                reviewMapper,
+                new MerchantHighlightMatchingService(),
                 matchScoreCalculator,
                 aiClientService,
+                businessHoursService,
                 new ObjectMapper()
         );
+
+        lenient().when(businessHoursService.hasBusinessTimeConstraint(any()))
+                .thenReturn(false);
+        lenient().when(businessHoursService.match(any(), any()))
+                .thenReturn(
+                        new MerchantBusinessHoursService.BusinessHoursMatch(
+                                true,
+                                null
+                        )
+                );
 
         lenient().when(recommendationMapper.insert(
                 any(Recommendation.class)
@@ -111,7 +156,16 @@ class RecommendationRankingServiceTest {
 
         lenient().when(recommendationItemMapper.insert(
                 any(RecommendationItem.class)
-        )).thenReturn(1);
+        )).thenAnswer(invocation -> {
+            RecommendationItem item = invocation.getArgument(0);
+            item.setId(2000L + item.getMerchantId());
+            return 1;
+        });
+
+        lenient().when(recommendationEvidenceMapper.insert(
+                any(com.foodadvisor.entity.RecommendationEvidence.class)
+        ))
+                .thenReturn(1);
 
         lenient().when(chatSessionStateMapper.updateById(
                 any(ChatSessionState.class)
@@ -222,6 +276,152 @@ class RecommendationRankingServiceTest {
                                         .getScore()
                         )
         );
+        assertTrue(
+                itemCaptor.getAllValues()
+                        .get(0)
+                        .getScoreDetails()
+                        .contains("\"distanceKm\":1.00")
+        );
+    }
+
+    @Test
+    void dishKeywordsUseOneBatchQueryAndFilterUnmatchedMerchants() {
+        Merchant matched = createMerchant(
+                101L, "matched", new BigDecimal("4.8"), 20
+        );
+        Merchant unmatched = createMerchant(
+                102L, "unmatched", new BigDecimal("4.7"), 20
+        );
+        stubSessionStateAndMerchants(
+                List.of(matched, unmatched),
+                """
+                {"dishKeywords":["水煮鱼"]}
+                """
+        );
+        stubCalculatedScores();
+        Dish dish = new Dish();
+        dish.setId(501L);
+        dish.setMerchantId(101L);
+        dish.setName("招牌水煮鱼");
+        dish.setPrice(new BigDecimal("68"));
+        dish.setTasteTags("[]");
+        when(dishMapper.selectActiveByMerchantIds(any()))
+                .thenReturn(List.of(dish));
+
+        RecommendationRankResponse response =
+                service.rank(
+                        1L,
+                        createRequest(createDefaultWeights())
+                );
+
+        assertEquals("SUCCESS", response.getStatus());
+        assertEquals(1, response.getResults().size());
+        assertEquals(
+                "招牌水煮鱼",
+                response.getResults().get(0)
+                        .getMatchedDishes().get(0).getDishName()
+        );
+        verify(dishMapper, times(1))
+                .selectActiveByMerchantIds(any());
+        verify(recommendationEvidenceMapper, times(1))
+                .insert(any(
+                        com.foodadvisor.entity
+                                .RecommendationEvidence.class
+                ));
+    }
+
+    @Test
+    void noDishKeywordsDoNotQueryDishes() {
+        Merchant merchant = createMerchant(
+                101L, "ordinary", new BigDecimal("4.8"), 20
+        );
+        stubSessionStateAndMerchants(
+                List.of(merchant),
+                "{}"
+        );
+        stubCalculatedScores();
+
+        service.rank(1L, createRequest(createDefaultWeights()));
+
+        verify(dishMapper, never())
+                .selectActiveByMerchantIds(any());
+    }
+
+    @Test
+    void shouldBatchLoadAndHardFilterByBusinessHours() {
+        Merchant open = createMerchant(
+                201L, "open", new BigDecimal("4.8"), 100
+        );
+        Merchant closed = createMerchant(
+                202L, "closed", new BigDecimal("4.7"), 90
+        );
+        stubSessionStateAndMerchants(
+                List.of(open, closed),
+                "{\"businessTime\":\"NOW_OPEN\"}"
+        );
+        when(businessHoursService.hasBusinessTimeConstraint(any()))
+                .thenReturn(true);
+        when(businessHoursService.loadGrouped(
+                eq(List.of(201L, 202L))
+        )).thenReturn(Map.of(201L, List.of(), 202L, List.of()));
+        when(businessHoursService.match(
+                any(),
+                eq(List.of())
+        )).thenReturn(
+                new MerchantBusinessHoursService.BusinessHoursMatch(
+                        true,
+                        "当前处于营业时段 10:00–22:00"
+                ),
+                new MerchantBusinessHoursService.BusinessHoursMatch(
+                        false,
+                        null
+                )
+        );
+        when(matchScoreCalculator.calculate(
+                eq(open),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        )).thenReturn(Optional.of(
+                createCalculatedResult(open, new BigDecimal("90"))
+        ));
+
+        RecommendationRankResponse response = service.rank(
+                1L,
+                createRequest(createDefaultWeights())
+        );
+
+        assertEquals(List.of(201L), response.getResults().stream()
+                .map(RecommendationItemVO::getMerchantId)
+                .toList());
+        verify(businessHoursService, times(1))
+                .loadGrouped(eq(List.of(201L, 202L)));
+        verify(matchScoreCalculator, never()).calculate(
+                eq(closed), any(), any(), any(), any(), any()
+        );
+        verify(matchScoreCalculator).addBusinessHoursEvidence(
+                any(),
+                eq("当前处于营业时段 10:00–22:00")
+        );
+    }
+
+    @Test
+    void shouldNotLoadBusinessHoursWithoutConstraint() {
+        Merchant merchant = createMerchant(
+                203L, "normal", new BigDecimal("4.8"), 100
+        );
+        stubSessionStateAndMerchants(List.of(merchant), "{}");
+        when(matchScoreCalculator.calculate(
+                eq(merchant), any(), any(), any(), any(), any()
+        )).thenReturn(Optional.of(
+                createCalculatedResult(merchant, new BigDecimal("90"))
+        ));
+
+        service.rank(1L, createRequest(createDefaultWeights()));
+
+        verify(businessHoursService, never()).loadGrouped(any());
     }
 
     @Test

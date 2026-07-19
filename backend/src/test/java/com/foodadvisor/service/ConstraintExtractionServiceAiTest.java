@@ -112,6 +112,15 @@ class ConstraintExtractionServiceAiTest {
         verify(aiClientService).extractDialogueConstraints(
                 any(DialogueExtractAiRequest.class)
         );
+        ArgumentCaptor<ConstraintExtraction> extractionCaptor =
+                ArgumentCaptor.forClass(ConstraintExtraction.class);
+        verify(constraintExtractionMapper).insert(
+                extractionCaptor.capture()
+        );
+        assertEquals(
+                "mock-model",
+                extractionCaptor.getValue().getModelName()
+        );
     }
 
     @Test
@@ -136,6 +145,161 @@ class ConstraintExtractionServiceAiTest {
                 () -> assertEquals(
                         true,
                         response.getDegraded()
+                )
+        );
+    }
+
+    @Test
+    void shouldExtractBusinessTimeRulesWhenAiFails() {
+        stubSessionAndPersistence(null);
+        when(aiClientService.extractDialogueConstraints(any()))
+                .thenThrow(new RuntimeException("timeout"));
+
+        ConstraintExtractResponse response =
+                service.extractAndMerge(
+                        1L,
+                        1L,
+                        "晚上十点后还营业",
+                        "req-business-time"
+                );
+
+        assertAll(
+                () -> assertEquals(
+                        "22:00",
+                        response.getMerged().getBusinessTargetTime()
+                ),
+                () -> assertEquals(
+                        false,
+                        response.getMerged().getBusinessTargetNextDay()
+                ),
+                () -> assertEquals(
+                        null,
+                        response.getMerged().getBusinessTime()
+                )
+        );
+    }
+
+    @Test
+    void shouldExtractSupportedBusinessTimeExpressions() {
+        stubSessionAndPersistence(null);
+        when(aiClientService.extractDialogueConstraints(any()))
+                .thenThrow(new RuntimeException("timeout"));
+
+        assertEquals(
+                "NOW_OPEN",
+                extractRules("现在还开门", "req-now")
+                        .getBusinessTime()
+        );
+        assertEquals(
+                "TONIGHT",
+                extractRules("今晚营业", "req-tonight")
+                        .getBusinessTime()
+        );
+        assertEquals(
+                "LATE_NIGHT",
+                extractRules(
+                        "想吃夜宵，深夜还开",
+                        "req-late-night"
+                ).getBusinessTime()
+        );
+        assertEquals(
+                "22:30",
+                extractRules("22:30还开门", "req-2230")
+                        .getBusinessTargetTime()
+        );
+
+        ConstraintState afterMidnight =
+                extractRules("凌晨1点还营业", "req-0100");
+        assertAll(
+                () -> assertEquals(
+                        "01:00",
+                        afterMidnight.getBusinessTargetTime()
+                ),
+                () -> assertEquals(
+                        true,
+                        afterMidnight.getBusinessTargetNextDay()
+                )
+        );
+
+        ConstraintState budget =
+                extractRules("人均80元", "req-budget-only");
+        assertAll(
+                () -> assertEquals(
+                        null,
+                        budget.getBusinessTargetTime()
+                ),
+                () -> assertEquals(
+                        null,
+                        budget.getBusinessTime()
+                )
+        );
+    }
+
+    private ConstraintState extractRules(
+            String message,
+            String requestId
+    ) {
+        return service.extractAndMerge(
+                1L,
+                1L,
+                message,
+                requestId
+        ).getMerged();
+    }
+
+    @Test
+    void shouldExtractDishKeywordsByRulesWithoutFalsePositives() {
+        stubSessionAndPersistence(null);
+
+        assertAll(
+                () -> assertEquals(
+                        List.of("水煮鱼"),
+                        extractRules(
+                                "想吃水煮鱼",
+                                "req-dish-fish"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of("牛肉"),
+                        extractRules(
+                                "想吃牛肉，人均50",
+                                "req-dish-beef"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of("小龙虾"),
+                        extractRules(
+                                "来点小龙虾",
+                                "req-dish-crayfish"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of("水煮鱼", "烤鱼"),
+                        extractRules(
+                                "水煮鱼或者烤鱼",
+                                "req-dish-or"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of(),
+                        extractRules(
+                                "不想吃烤鱼",
+                                "req-dish-negated"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of(),
+                        extractRules(
+                                "不吃香菜",
+                                "req-dish-coriander"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of(),
+                        extractRules(
+                                "人均80元",
+                                "req-dish-budget"
+                        ).getDishKeywords()
                 )
         );
     }
@@ -296,6 +460,7 @@ class ConstraintExtractionServiceAiTest {
         response.setConfidence(new BigDecimal("0.9"));
         response.setExtractor("AI_MODEL");
         response.setDegraded(degraded);
+        response.setModelName("mock-model");
         return response;
     }
 }

@@ -10,16 +10,19 @@ import com.foodadvisor.dto.dialogue.DialogueMessageResponse;
 import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
 import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
+import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.entity.ChatMessage;
 import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Recommendation;
 import com.foodadvisor.entity.RecommendationItem;
+import com.foodadvisor.entity.RecommendationEvidence;
 import com.foodadvisor.mapper.ChatMessageMapper;
 import com.foodadvisor.mapper.ChatSessionMapper;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.RecommendationItemMapper;
 import com.foodadvisor.mapper.RecommendationMapper;
+import com.foodadvisor.mapper.RecommendationEvidenceMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +32,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -64,10 +69,16 @@ class DiningDialogueMessageServiceTest {
     private RecommendationItemMapper recommendationItemMapper;
 
     @Mock
+    private RecommendationEvidenceMapper recommendationEvidenceMapper;
+
+    @Mock
     private MerchantMapper merchantMapper;
 
     @Mock
     private DialogueService dialogueService;
+
+    @Mock
+    private ConstraintExtractionService constraintExtractionService;
 
     @Mock
     private RecommendationRankingService recommendationRankingService;
@@ -77,6 +88,9 @@ class DiningDialogueMessageServiceTest {
 
     @Mock
     private ValueOperations<String, Object> valueOperations;
+
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     private DiningDialogueMessageService service;
 
@@ -88,17 +102,46 @@ class DiningDialogueMessageServiceTest {
 
         lenient().when(redisTemplate.opsForValue())
                 .thenReturn(valueOperations);
+        lenient().when(transactionManager.getTransaction(any()))
+                .thenReturn(new SimpleTransactionStatus());
+        lenient().when(chatMessageMapper.nextId())
+                .thenReturn(10L);
+        lenient().when(constraintExtractionService
+                .prepareExtraction(any(), any(), any(), any()))
+                .thenReturn(new ConstraintExtractionService
+                        .PreparedExtraction(
+                                new ConstraintState(),
+                                List.of(),
+                                "MERCHANT_RECOMMENDATION",
+                                "RULE_FALLBACK",
+                                true,
+                                null,
+                                List.of()
+                        ));
+        lenient().when(dialogueService.continueDialogue(
+                any(), any(), any(), any(), any(), any()
+        )).thenAnswer(invocation ->
+                dialogueService.continueDialogue(
+                        invocation.getArgument(0),
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3)
+                )
+        );
 
         service = new DiningDialogueMessageService(
                 chatSessionMapper,
                 chatMessageMapper,
                 recommendationMapper,
                 recommendationItemMapper,
+                recommendationEvidenceMapper,
                 merchantMapper,
                 dialogueService,
+                constraintExtractionService,
                 recommendationRankingService,
                 redisTemplate,
-                objectMapper
+                objectMapper,
+                transactionManager
         );
     }
 
@@ -177,6 +220,8 @@ class DiningDialogueMessageServiceTest {
                 .insert(any(ChatMessage.class));
         verify(recommendationMapper, never())
                 .insert(any(Recommendation.class));
+        verify(recommendationEvidenceMapper, never())
+                .insert(any(RecommendationEvidence.class));
     }
 
     @Test
@@ -327,6 +372,44 @@ class DiningDialogueMessageServiceTest {
 
         service.sendMessage(1L, request("req-5"));
 
+        verify(redisTemplate).delete(anyString());
+        verify(transactionManager).commit(any());
+    }
+
+    @Test
+    void shouldRollbackAtomicStageWhenAssistantSaveFails() {
+        AtomicReference<Object> token =
+                new AtomicReference<>();
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        when(chatMessageMapper.selectOne(any()))
+                .thenReturn(null, null, null);
+        when(valueOperations.setIfAbsent(
+                anyString(), any(), any()
+        )).thenAnswer(invocation -> {
+            token.set(invocation.getArgument(1));
+            return true;
+        });
+        when(valueOperations.get(anyString()))
+                .thenAnswer(invocation -> token.get());
+        when(dialogueService.continueDialogue(
+                any(), any(), any(), any()
+        )).thenReturn(readyDialogue());
+        when(recommendationRankingService.rank(any(), any()))
+                .thenReturn(successRecommendation());
+        when(chatMessageMapper.insert(any(ChatMessage.class)))
+                .thenReturn(0);
+
+        assertThrows(
+                ApiException.class,
+                () -> service.sendMessage(
+                        1L,
+                        request("req-atomic-failure")
+                )
+        );
+
+        verify(transactionManager).rollback(any());
+        verify(transactionManager, never()).commit(any());
         verify(redisTemplate).delete(anyString());
     }
 
@@ -769,6 +852,10 @@ class DiningDialogueMessageServiceTest {
         item.setMerchantId(200L);
         item.setRankNo(1);
         item.setReason("category and operating status");
+        item.setScoreDetails(
+                "{\"distanceKm\":2.35,"
+                        + "\"distance\":{\"score\":10}}"
+        );
 
         when(recommendationItemMapper.selectList(any()))
                 .thenReturn(List.of(item));
@@ -829,6 +916,16 @@ class DiningDialogueMessageServiceTest {
                                 .getOperationStatus()
                 ),
                 () -> assertEquals(
+                        0,
+                        new BigDecimal("2.35").compareTo(
+                                history.getMessages()
+                                        .get(1)
+                                        .getRecommendations()
+                                        .get(0)
+                                        .getDistanceKm()
+                        )
+                ),
+                () -> assertEquals(
                         "放宽距离",
                         history.getMessages()
                                 .get(1)
@@ -837,6 +934,212 @@ class DiningDialogueMessageServiceTest {
                                 .getDisplayText()
                  )
          );
+    }
+
+    @Test
+    void shouldTolerateMissingOrMalformedHistoricalDistance() {
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        ChatMessage assistant =
+                message(
+                        21L,
+                        "ASSISTANT",
+                        "req-distance-invalid",
+                        "{\"recommendationId\":100}"
+                );
+        when(chatMessageMapper.selectList(any()))
+                .thenReturn(List.of(assistant));
+
+        RecommendationItem missing =
+                historicalItem(201L, "{}");
+        RecommendationItem malformed =
+                historicalItem(
+                        202L,
+                        "{\"distanceKm\":\"not-a-number\"}"
+                );
+        when(recommendationItemMapper.selectList(any()))
+                .thenReturn(List.of(missing, malformed));
+        when(merchantMapper.selectById(201L))
+                .thenReturn(historicalMerchant(201L));
+        when(merchantMapper.selectById(202L))
+                .thenReturn(historicalMerchant(202L));
+
+        DialogueHistoryResponse history =
+                service.listMessages(1L, 1L);
+
+        assertAll(
+                () -> assertEquals(
+                        2,
+                        history.getMessages().get(0)
+                                .getRecommendations().size()
+                ),
+                () -> assertEquals(
+                        null,
+                        history.getMessages().get(0)
+                                .getRecommendations().get(0)
+                                .getDistanceKm()
+                ),
+                () -> assertEquals(
+                        null,
+                        history.getMessages().get(0)
+                                .getRecommendations().get(1)
+                                .getDistanceKm()
+                )
+        );
+    }
+
+    @Test
+    void shouldRestoreMatchedDishesFromEvidenceSnapshot() {
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        when(chatMessageMapper.selectList(any()))
+                .thenReturn(List.of(message(
+                        21L,
+                        "ASSISTANT",
+                        "req-dish-history",
+                        "{\"recommendationId\":100}"
+                )));
+        RecommendationItem item =
+                historicalItem(201L, "{}");
+        item.setId(301L);
+        when(recommendationItemMapper.selectList(any()))
+                .thenReturn(List.of(item));
+        when(merchantMapper.selectById(201L))
+                .thenReturn(historicalMerchant(201L));
+        RecommendationEvidence evidence =
+                new RecommendationEvidence();
+        evidence.setId(401L);
+        evidence.setRecommendationItemId(301L);
+        evidence.setSourceType("DISH");
+        evidence.setSourceMerchantId(201L);
+        evidence.setDishId(501L);
+        evidence.setSourceTextSnapshot(
+                """
+                {"dishId":501,"merchantId":201,
+                 "dishName":"水煮鱼","dishPrice":68,
+                 "matchType":"NAME","matchedKeyword":"水煮鱼",
+                 "matchReason":"菜名匹配"}
+                """
+        );
+        when(recommendationEvidenceMapper.selectList(any()))
+                .thenReturn(List.of(evidence));
+
+        DialogueHistoryResponse history =
+                service.listMessages(1L, 1L);
+
+        assertEquals(
+                "水煮鱼",
+                history.getMessages().get(0)
+                        .getRecommendations().get(0)
+                        .getMatchedDishes().get(0)
+                        .getDishName()
+        );
+        assertEquals(
+                new BigDecimal("68"),
+                history.getMessages().get(0)
+                        .getRecommendations().get(0)
+                        .getMatchedDishes().get(0)
+                        .getDishPrice()
+        );
+    }
+
+    @Test
+    void shouldRestoreOnlySafePerMerchantRecommendationBases() {
+        when(chatSessionMapper.selectById(1L)).thenReturn(activeSession());
+        when(chatMessageMapper.selectList(any())).thenReturn(List.of(message(
+                22L, "ASSISTANT", "req-basis-history",
+                "{\"recommendationId\":100}")));
+        RecommendationItem itemA = historicalItem(201L, "{}");
+        itemA.setId(301L);
+        RecommendationItem itemB = historicalItem(202L, "{}");
+        itemB.setId(302L);
+        when(recommendationItemMapper.selectList(any()))
+                .thenReturn(List.of(itemA, itemB));
+        when(merchantMapper.selectById(201L))
+                .thenReturn(historicalMerchant(201L));
+        when(merchantMapper.selectById(202L))
+                .thenReturn(historicalMerchant(202L));
+
+        RecommendationEvidence validA = basisEvidence(
+                401L, 301L, 201L,
+                """
+                {"sourceType":"REVIEW","sourceId":501,"merchantId":201,
+                 "title":"环境安静","summary":"有评价提到环境安静",
+                 "matchedCondition":"安静","relevanceScore":0.8,
+                 "available":true}
+                """);
+        RecommendationEvidence validB = basisEvidence(
+                402L, 302L, 202L,
+                """
+                {"sourceType":"MERCHANT","sourceId":202,"merchantId":202,
+                 "title":"商家资料","summary":"环境标签：适合聚会",
+                 "matchedCondition":"聚会","relevanceScore":1,
+                 "available":true}
+                """);
+        RecommendationEvidence crossMerchant = basisEvidence(
+                403L, 301L, 202L,
+                """
+                {"sourceType":"REVIEW","sourceId":502,"merchantId":202,
+                 "title":"错误依据","summary":"其他商家长评论正文",
+                 "available":true}
+                """);
+        RecommendationEvidence malformed = basisEvidence(
+                404L, 301L, 201L, "{broken");
+        when(recommendationEvidenceMapper.selectList(any()))
+                .thenReturn(List.of(validA, validB, crossMerchant, malformed));
+
+        DialogueHistoryResponse history = service.listMessages(1L, 1L);
+        List<RecommendationItemVO> restored =
+                history.getMessages().get(0).getRecommendations();
+
+        assertAll(
+                () -> assertEquals(1,
+                        restored.get(0).getRecommendationBases().size()),
+                () -> assertEquals(201L,
+                        restored.get(0).getRecommendationBases().get(0)
+                                .getMerchantId()),
+                () -> assertEquals("有评价提到环境安静",
+                        restored.get(0).getRecommendationBases().get(0)
+                                .getSummary()),
+                () -> assertEquals(1,
+                        restored.get(1).getRecommendationBases().size()),
+                () -> assertEquals(202L,
+                        restored.get(1).getRecommendationBases().get(0)
+                                .getMerchantId()),
+                () -> assertFalse(restored.toString()
+                        .contains("其他商家长评论正文"))
+        );
+    }
+
+    private RecommendationItem historicalItem(
+            Long merchantId,
+            String scoreDetails
+    ) {
+        RecommendationItem item = new RecommendationItem();
+        item.setRecommendationId(100L);
+        item.setMerchantId(merchantId);
+        item.setRankNo(merchantId.intValue());
+        item.setScoreDetails(scoreDetails);
+        return item;
+    }
+
+    private RecommendationEvidence basisEvidence(
+            Long id, Long itemId, Long merchantId, String snapshot) {
+        RecommendationEvidence evidence = new RecommendationEvidence();
+        evidence.setId(id);
+        evidence.setRecommendationItemId(itemId);
+        evidence.setSourceType("REVIEW");
+        evidence.setSourceMerchantId(merchantId);
+        evidence.setSourceTextSnapshot(snapshot);
+        return evidence;
+    }
+
+    private Merchant historicalMerchant(Long merchantId) {
+        Merchant merchant = new Merchant();
+        merchant.setId(merchantId);
+        merchant.setName("historical merchant " + merchantId);
+        merchant.setOperationStatus("OPERATING");
+        return merchant;
     }
 
     private void assertEmptyMessage(String content) {

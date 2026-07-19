@@ -10,6 +10,17 @@
     </header>
 
     <main class="dialogue-shell">
+      <div class="location-toolbar">
+        <button
+          type="button"
+          class="location-button"
+          :disabled="locationStatus === 'LOCATING'"
+          @click="requestCurrentLocation"
+        >
+          {{ locationButtonText() }}
+        </button>
+        <span class="location-status">{{ locationStatusText() }}</span>
+      </div>
       <section ref="messageListRef" class="message-list" aria-live="polite">
         <div v-if="initializing" class="state-panel">正在加载会话...</div>
         <div v-else-if="messages.length === 0" class="empty-panel">
@@ -29,12 +40,14 @@
             <p>{{ message.content }}</p>
 
             <div v-if="message.recommendations.length" class="merchant-grid">
-              <button
+              <div
                 v-for="merchant in message.recommendations"
                 :key="merchant.merchantId"
-                type="button"
                 class="merchant-card"
+                role="button"
+                tabindex="0"
                 @click="openMerchant(merchant.merchantId)"
+                @keydown.enter="openMerchant(merchant.merchantId)"
               >
                 <div class="merchant-card-header">
                   <span class="rank-badge">#{{ merchant.rankNo || '-' }}</span>
@@ -48,7 +61,30 @@
                   <span>{{ distanceText(merchant.distanceKm) }}</span>
                 </div>
                 <p class="reason">{{ textOr(merchant.reason, '暂无推荐理由') }}</p>
-              </button>
+                <div
+                  v-if="Array.isArray(merchant.matchedDishes) && merchant.matchedDishes.length"
+                  class="matched-dishes"
+                >
+                  <span class="matched-dishes-title">匹配菜品：</span>
+                  <span
+                    v-for="dish in merchant.matchedDishes.slice(0, 3)"
+                    :key="dish.dishId"
+                    class="matched-dish"
+                  >
+                    {{ textOr(dish.dishName, '菜品名称暂无') }}
+                    {{ dish.dishPrice == null ? '价格暂无' : `¥${dish.dishPrice}` }}
+                  </span>
+                </div>
+                <button
+                  v-if="(Array.isArray(merchant.recommendationBases) && merchant.recommendationBases.length)
+                    || (Array.isArray(merchant.matchedDishes) && merchant.matchedDishes.length)"
+                  type="button"
+                  class="evidence-button"
+                  @click.stop="openEvidence(message, merchant)"
+                >
+                  查看依据
+                </button>
+              </div>
             </div>
 
             <div v-if="message.suggestions.length" class="suggestion-panel">
@@ -108,6 +144,24 @@
         </div>
       </form>
     </main>
+    <div v-if="evidenceDialogOpen" class="dialog-mask" @click.self="closeEvidence">
+      <section class="evidence-dialog" role="dialog" aria-modal="true">
+        <header>
+          <h2>推荐依据</h2>
+          <button type="button" @click="closeEvidence">关闭</button>
+        </header>
+        <div v-if="evidenceLoading" class="state-panel">正在加载推荐依据...</div>
+        <div v-else-if="evidenceError" class="error-banner">{{ evidenceError }}</div>
+        <div v-else-if="!evidences.length" class="state-panel">暂无可查看依据</div>
+        <article v-for="(evidence, index) in evidences" :key="index" class="evidence-item">
+          <strong>{{ evidenceTypeText(evidence.sourceType) }}</strong>
+          <span>{{ evidence.merchantName }}</span>
+          <p v-if="evidence.available">{{ evidence.excerpt || '暂无详细内容' }}</p>
+          <p v-else>{{ evidence.unavailableReason || '该来源已删除或无权查看' }}</p>
+          <small v-if="evidence.available && evidence.reviewTime">{{ evidence.reviewTime }}</small>
+        </article>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -118,6 +172,7 @@ import {
   adjustDiningRecommendation,
   createDiningSession,
   getDiningMessages,
+  getRecommendationEvidences,
   sendDiningMessage
 } from '../../api/aiDining'
 
@@ -131,6 +186,12 @@ const adjustingSuggestionKey = ref('')
 const errorMessage = ref('')
 const messageListRef = ref(null)
 const currentConstraints = ref({})
+const locationStatus = ref('NOT_REQUESTED')
+const currentLocation = ref(null)
+const evidenceDialogOpen = ref(false)
+const evidenceLoading = ref(false)
+const evidenceError = ref('')
+const evidences = ref([])
 
 const currentUserId = () => {
   const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
@@ -156,6 +217,60 @@ const distanceText = value => value === null || value === undefined ? '距离未
 const operationStatusText = value => {
   const labels = { OPERATING: '营业中', SUSPENDED: '暂停营业', CLOSED_PERMANENTLY: '已停业' }
   return labels[value] || '营业状态未知'
+}
+
+const locationButtonText = () =>
+  locationStatus.value === 'LOCATING'
+    ? '正在获取位置...'
+    : locationStatus.value === 'READY'
+      ? '重新获取当前位置'
+      : '使用当前位置'
+
+const locationStatusText = () => {
+  const labels = {
+    NOT_REQUESTED: '未获取位置',
+    LOCATING: '正在获取',
+    READY: '已获取当前位置',
+    DENIED: '位置权限已拒绝',
+    UNSUPPORTED: '当前浏览器不支持定位'
+  }
+  return labels[locationStatus.value] || '未获取位置'
+}
+
+const requestCurrentLocation = () => {
+  if (!navigator.geolocation) {
+    locationStatus.value = 'UNSUPPORTED'
+    currentLocation.value = null
+    return
+  }
+
+  locationStatus.value = 'LOCATING'
+  errorMessage.value = ''
+  navigator.geolocation.getCurrentPosition(
+    position => {
+      currentLocation.value = {
+        userLatitude: position.coords.latitude,
+        userLongitude: position.coords.longitude
+      }
+      locationStatus.value = 'READY'
+    },
+    error => {
+      currentLocation.value = null
+      locationStatus.value =
+        error.code === error.PERMISSION_DENIED
+          ? 'DENIED'
+          : 'NOT_REQUESTED'
+      errorMessage.value =
+        error.code === error.PERMISSION_DENIED
+          ? '您已拒绝位置权限；普通推荐仍可使用，距离推荐需要授权当前位置'
+          : '当前位置获取失败，请稍后重试'
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 300000
+    }
+  )
 }
 
 const normalizeHistoryMessage = item => ({
@@ -230,8 +345,16 @@ const submitMessage = async () => {
   sending.value = true
   errorMessage.value = ''
   try {
-    const response = await sendDiningMessage(sessionId.value, content, requestId)
+    const response = await sendDiningMessage(
+      sessionId.value,
+      content,
+      requestId,
+      currentLocation.value
+    )
     if (!response.success || !response.data) {
+      if (response.message?.includes('缺少当前位置')) {
+        throw new Error('该需求包含距离条件，请先点击“使用当前位置”并授权定位')
+      }
       throw new Error(response.message || '消息发送失败')
     }
 
@@ -290,7 +413,8 @@ const applySuggestion = async (message, suggestion) => {
       sessionId.value,
       message.id,
       suggestion.field,
-      suggestion.suggestedValue
+      suggestion.suggestedValue,
+      currentLocation.value
     )
     if (!response.success || !response.data) {
       throw new Error(response.message || '调整条件后重新推荐失败')
@@ -335,6 +459,36 @@ const openMerchant = merchantId => {
   if (merchantId) router.push(`/diner/merchant/${merchantId}`)
 }
 
+const evidenceTypeText = type => ({
+  REVIEW: '用户评价',
+  MERCHANT: '商家资料',
+  DISH: '菜单菜品'
+}[type] || '推荐依据')
+
+const openEvidence = async (message, merchant) => {
+  if (!message.recommendationId) return
+  evidenceDialogOpen.value = true
+  evidenceLoading.value = true
+  evidenceError.value = ''
+  evidences.value = []
+  try {
+    const response = await getRecommendationEvidences(
+      message.recommendationId,
+      merchant.merchantId
+    )
+    if (!response.success) throw new Error(response.message || '推荐依据加载失败')
+    evidences.value = response.data || []
+  } catch (error) {
+    evidenceError.value = error.message || '推荐依据加载失败，请稍后重试'
+  } finally {
+    evidenceLoading.value = false
+  }
+}
+
+const closeEvidence = () => {
+  evidenceDialogOpen.value = false
+}
+
 onMounted(initialize)
 </script>
 
@@ -346,6 +500,10 @@ onMounted(initialize)
 .back-button { justify-self: start; border: 0; background: transparent; color: #5b5bd6; cursor: pointer; font-size: 15px; }
 .session-state { justify-self: end; color: #667085; font-size: 13px; }
 .dialogue-shell { max-width: 1120px; margin: 0 auto; overflow: hidden; border-radius: 20px; background: #fff; box-shadow: 0 12px 36px rgba(31, 41, 55, .1); }
+.location-toolbar { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid #eaecf0; background: #fafafa; }
+.location-button { min-width: 132px; padding: 8px 13px; border: 1px solid #8b5cf6; border-radius: 9px; color: #6d28d9; background: #fff; cursor: pointer; }
+.location-button:disabled { opacity: .6; cursor: wait; }
+.location-status { color: #667085; font-size: 13px; }
 .message-list { height: calc(100vh - 280px); min-height: 430px; overflow-y: auto; padding: 28px; }
 .empty-panel, .state-panel { height: 100%; display: grid; place-content: center; text-align: center; color: #667085; }
 .empty-panel h2 { color: #1f2937; margin: 12px 0 4px; }
@@ -359,12 +517,22 @@ onMounted(initialize)
 .merchant-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
 .merchant-card { padding: 16px; text-align: left; border: 1px solid #e5e7eb; border-radius: 14px; background: #fff; cursor: pointer; }
 .merchant-card:hover { border-color: #8b5cf6; box-shadow: 0 5px 18px rgba(91, 91, 214, .12); }
+.evidence-button { margin-top: 12px; padding: 7px 12px; border: 1px solid #7c3aed; border-radius: 8px; color: #6d28d9; background: #fff; cursor: pointer; }
+.dialog-mask { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(17, 24, 39, .45); }
+.evidence-dialog { width: min(680px, 100%); max-height: 78vh; overflow-y: auto; padding: 20px; border-radius: 16px; background: #fff; }
+.evidence-dialog header { display: flex; align-items: center; justify-content: space-between; }
+.evidence-dialog h2 { margin: 0; }
+.evidence-item { margin-top: 14px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 10px; }
+.evidence-item span, .evidence-item small { display: block; margin-top: 5px; color: #667085; }
 .merchant-card-header { display: flex; justify-content: space-between; font-size: 12px; color: #667085; }
 .rank-badge { color: #7c3aed; font-weight: 700; }
 .merchant-card h3 { margin: 9px 0; color: #111827; }
 .merchant-meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .merchant-meta span { padding: 3px 7px; border-radius: 6px; background: #f3f4f6; color: #4b5563; font-size: 12px; }
 .reason { margin-top: 12px !important; color: #374151; font-size: 14px; }
+.matched-dishes { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.matched-dishes-title { color: #6b7280; font-size: 13px; }
+.matched-dish { padding: 4px 8px; border-radius: 999px; background: #fff7ed; color: #9a3412; font-size: 13px; }
 .suggestion-panel { margin-top: 14px; padding: 12px; border-radius: 10px; background: #fff7ed; color: #9a3412; }
 .suggestion-list { display: grid; gap: 8px; margin-top: 9px; }
 .suggestion-button { display: flex; justify-content: space-between; gap: 14px; align-items: center; width: 100%; padding: 10px 12px; text-align: left; border: 1px solid #fdba74; border-radius: 9px; color: #9a3412; background: #fff; cursor: pointer; }

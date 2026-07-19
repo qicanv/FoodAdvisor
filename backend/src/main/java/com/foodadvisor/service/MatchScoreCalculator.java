@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
+import com.foodadvisor.dto.recommendation.MatchedDishVO;
 import com.foodadvisor.dto.recommendation.RecommendationScoreItemVO;
 import com.foodadvisor.dto.recommendation.RecommendationWeights;
 import com.foodadvisor.entity.Merchant;
@@ -88,14 +89,12 @@ public class MatchScoreCalculator {
 
         if (hasValues(safeConstraints.getTasteRestrictions())) {
             riskNotes.add(
-                    "口味限制缺少结构化菜品数据，需要进一步向商家确认"
-            );
-        }
-
-        if (safeConstraints.getBusinessTime() != null
-                && !safeConstraints.getBusinessTime().isBlank()) {
-            riskNotes.add(
-                    "本次仅校验商家经营状态，尚未接入具体营业时段判断"
+                    "现有菜单没有完整配料或认证信息，无法确认"
+                            + String.join(
+                            "、",
+                            safeConstraints.getTasteRestrictions()
+                    )
+                            + "要求，请下单前向商家确认"
             );
         }
 
@@ -253,6 +252,39 @@ public class MatchScoreCalculator {
         result.setReason(buildReason(result));
 
         return Optional.of(result);
+    }
+
+    public void addDishEvidence(
+            RecommendationItemVO result,
+            List<MatchedDishVO> matchedDishes
+    ) {
+        if (result == null || matchedDishes == null
+                || matchedDishes.isEmpty()) {
+            return;
+        }
+        result.setMatchedDishes(new ArrayList<>(matchedDishes));
+        MatchedDishVO best = matchedDishes.get(0);
+        StringBuilder evidence = new StringBuilder("菜单中有")
+                .append(best.getDishName());
+        if (best.getDishPrice() != null) {
+            evidence.append("，价格¥")
+                    .append(best.getDishPrice().stripTrailingZeros()
+                            .toPlainString());
+        }
+        result.getMatchedConditions().add(0, evidence.toString());
+        result.setReason(buildReason(result));
+    }
+
+    public void addBusinessHoursEvidence(
+            RecommendationItemVO result,
+            String evidence
+    ) {
+        if (result == null || evidence == null || evidence.isBlank()) {
+            return;
+        }
+        result.getMatchedConditions().remove(evidence);
+        result.getMatchedConditions().add(0, evidence);
+        result.setReason(buildReason(result));
     }
 
     /**

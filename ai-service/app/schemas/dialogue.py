@@ -13,6 +13,7 @@ ALLOWED_FIELDS = {
     "cuisines",
     "tastePreferences",
     "tasteRestrictions",
+    "dishKeywords",
     "excludedCuisines",
     "excludedMerchantTypes",
     "distanceKm",
@@ -20,6 +21,8 @@ ALLOWED_FIELDS = {
     "scenes",
     "environmentRequirements",
     "businessTime",
+    "businessTargetTime",
+    "businessTargetNextDay",
 }
 
 
@@ -40,6 +43,7 @@ class ConstraintStateModel(BaseModel):
     cuisines: list[str] = Field(default_factory=list)
     tastePreferences: list[str] = Field(default_factory=list)
     tasteRestrictions: list[str] = Field(default_factory=list)
+    dishKeywords: list[str] = Field(default_factory=list)
     excludedCuisines: list[str] = Field(default_factory=list)
     excludedMerchantTypes: list[str] = Field(default_factory=list)
     distanceKm: Optional[float] = Field(default=None, gt=0, le=100)
@@ -47,6 +51,11 @@ class ConstraintStateModel(BaseModel):
     scenes: list[str] = Field(default_factory=list)
     environmentRequirements: list[str] = Field(default_factory=list)
     businessTime: Optional[str] = None
+    businessTargetTime: Optional[str] = Field(
+        default=None,
+        pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+    )
+    businessTargetNextDay: Optional[bool] = None
 
     @field_validator("totalBudget", "perCapitaBudget", "distanceKm", "minRating")
     @classmethod
@@ -60,6 +69,7 @@ class ConstraintStateModel(BaseModel):
         "cuisines",
         "tastePreferences",
         "tasteRestrictions",
+        "dishKeywords",
         "excludedCuisines",
         "excludedMerchantTypes",
         "scenes",
@@ -127,6 +137,8 @@ class DialogueExtractResponse(BaseModel):
     confidence: float = Field(default=0.0, ge=0, le=1)
     extractor: str = "AI_MODEL"
     degraded: bool = False
+    modelName: Optional[str] = None
+    provider: Optional[str] = None
 
     @field_validator("clearedFields", mode="before")
     @classmethod

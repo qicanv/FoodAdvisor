@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
@@ -12,49 +13,85 @@ from app.services.llm_service import llm_service
 
 SYSTEM_PROMPT = """
 You are a dining constraint extraction system for FoodAdvisor.
-You must return ONLY a valid JSON object, no markdown, no extra text.
+Return strict JSON only. Do not use Markdown, code blocks, or extra text.
 
-The JSON MUST have this structure:
+The JSON must use this exact top-level structure:
 {
   "intent": "MERCHANT_RECOMMENDATION",
-  "extractedConstraints": {
-    "partySize": null,
-    "totalBudget": null,
-    "perCapitaBudget": null,
-    "merchantTypes": [],
-    "cuisines": [],
-    "tastePreferences": [],
-    "tasteRestrictions": [],
-    "excludedCuisines": [],
-    "excludedMerchantTypes": [],
-    "distanceKm": null,
-    "minRating": null,
-    "scenes": [],
-    "environmentRequirements": [],
-    "businessTime": null
-  },
+  "extractedConstraints": {},
   "clearedFields": [],
-  "confidence": 1.0,
-  "extractor": "AI_MODEL",
-  "degraded": false
+  "confidence": 0.0
 }
 
-Allowed "intent" values (exact match required):
-- MERCHANT_RECOMMENDATION: user wants restaurant recommendations
-- CONSTRAINT_UPDATE: user is updating their constraints
-- GENERAL_CHAT: casual chat, not about finding restaurants
-- UNKNOWN: cannot determine intent
+Allowed top-level fields:
+intent, extractedConstraints, clearedFields, confidence.
+
+Allowed intents:
+MERCHANT_RECOMMENDATION, CONSTRAINT_UPDATE, GENERAL_CHAT, UNKNOWN.
+
+Allowed constraint fields:
+partySize, totalBudget, perCapitaBudget, merchantTypes, cuisines,
+tastePreferences, tasteRestrictions, dishKeywords, excludedCuisines,
+excludedMerchantTypes, distanceKm, minRating, scenes,
+environmentRequirements, businessTime, businessTargetTime,
+businessTargetNextDay.
 
 Rules:
-1. intent MUST be one of the 4 values above. Do NOT invent new intents.
-2. extractedConstraints: only fill fields the user actually mentioned. Leave others as null or empty [].
-3. "两个人100元火锅" → partySize=2, totalBudget=100, merchantTypes=["火锅"]
-4. "别太远，5公里以内吧" → distanceKm=5
-5. "不要火锅" → excludedCuisines=["火锅"] OR clearedFields=["cuisines"] if previously set
-6. clearedFields: list fields the user wants to remove/reset.
-7. confidence: 0-1, your confidence in this extraction.
-8. Do NOT output merchantId, merchantName, latitude, or longitude.
+1. Always use the top-level field extractedConstraints.
+2. Never use constraints as a top-level field.
+3. intent must be one of the four allowed values.
+4. Only extract conditions explicitly expressed by the user.
+5. Missing constraint fields must be null, empty arrays, or omitted.
+6. Put conditions the user explicitly removes or resets into clearedFields.
+7. Only use allowed top-level fields and allowed constraint fields.
+8. Do not recommend merchants.
+9. Do not output merchantId, merchantName, latitude, or longitude.
+10. Put explicit dishes or main ingredients in dishKeywords.
+11. Never put negated foods such as "不吃香菜" in dishKeywords.
+12. Do not treat cuisines, budgets, distances, or party size as dishes.
+13. confidence must be a number between 0 and 1.
+
+Examples:
+- "两个人100元吃火锅"
+  means partySize=2, totalBudget=100, and a hot-pot dining preference.
+- "别太远，5公里以内吧"
+  means distanceKm=5.
+- "不要火锅"
+  means excludedCuisines=["火锅"], or clearedFields=["cuisines"]
+  when the user is explicitly removing a previously selected cuisine.
+- "四个人，人均八十元，想吃川菜，距离三公里以内"
+  means partySize=4, perCapitaBudget=80, cuisines=["川菜"],
+  and distanceKm=3.
 """
+
+
+def normalize_model_result(result: Any) -> dict[str, Any]:
+    """
+    Normalize known model-output aliases before strict Pydantic validation.
+
+    The official response field is extractedConstraints. Some models may
+    return constraints despite the prompt, so it is converted here.
+    """
+    if not isinstance(result, dict):
+        raise ValueError(
+            "Dialogue extraction result must be a JSON object, "
+            f"but received {type(result).__name__}"
+        )
+
+    normalized = dict(result)
+
+    if "constraints" in normalized:
+        if (
+            "extractedConstraints" not in normalized
+            or normalized["extractedConstraints"] is None
+        ):
+            normalized["extractedConstraints"] = normalized["constraints"]
+
+        # Remove the non-standard alias so strict extra-field validation
+        # can continue to reject unrelated unexpected fields.
+        normalized.pop("constraints", None)
+
+    return normalized
 
 
 class DialogueExtractionService:
@@ -84,14 +121,34 @@ class DialogueExtractionService:
                 temperature=0.1,
                 max_tokens=1200,
             )
-            return DialogueExtractResponse.model_validate(result)
+
+            normalized_result = normalize_model_result(result)
+
+            response = DialogueExtractResponse.model_validate(
+                normalized_result
+            )
+
+            # These fields are controlled by the service rather than trusted
+            # from model-generated output.
+            response.extractor = "AI_MODEL"
+            response.degraded = False
+            response.modelName = llm_service.model
+            response.provider = llm_service.provider
+
+            return response
+
         except (ValueError, ValidationError) as exception:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Invalid dialogue extraction result: {exception}",
+                detail=(
+                    "Invalid dialogue extraction result: "
+                    f"{exception}"
+                ),
             ) from exception
+
         except HTTPException:
             raise
+
         except Exception as exception:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
