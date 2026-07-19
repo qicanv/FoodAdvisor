@@ -300,11 +300,14 @@ def deactivate_documents(
             }
         }
 
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     script = {
         "source": "ctx._source.isActive = false; ctx._source.updatedAt = params.now",
         "lang": "painless",
         "params": {
-            "now": "now",
+            "now": now_iso,
         },
     }
 
