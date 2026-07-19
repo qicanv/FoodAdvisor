@@ -13,6 +13,7 @@ class LLMService:
         self.api_key = settings.llm_api_key
         self.base_url = (settings.llm_base_url or "https://api.deepseek.com").rstrip("/")
         self.model = settings.llm_model or "deepseek-v4-pro"
+        self.provider = settings.llm_provider
 
     def is_configured(self) -> bool:
         """检查LLM是否已配置"""
@@ -26,7 +27,12 @@ class LLMService:
         if not self.is_configured():
             raise RuntimeError("LLM API Key 未配置，请在 .env 中设置 LLM_API_KEY")
 
-        url = f"{self.base_url}/v1/chat/completions"
+        api_root = (
+            self.base_url
+            if self.base_url.endswith("/v1")
+            else f"{self.base_url}/v1"
+        )
+        url = f"{api_root}/chat/completions"
 
         payload = {
             "model": self.model,
@@ -44,7 +50,9 @@ class LLMService:
         }
 
         # 推理模型（deepseek-v4-pro）带思维链，长输入下 60 秒不够用
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        async with httpx.AsyncClient(
+            timeout=float(settings.request_timeout_seconds)
+        ) as client:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()

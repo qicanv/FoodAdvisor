@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
+    llm_provider: str = "OPENAI_COMPATIBLE"
 
     sentiment_low_confidence_threshold: float = 0.6
 

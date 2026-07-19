@@ -192,6 +192,44 @@ def test_dialogue_accepts_dish_keywords_and_budget(monkeypatch):
     assert body["extractedConstraints"]["perCapitaBudget"] == 80
 
 
+def test_dialogue_accepts_business_target_time_and_model_metadata(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={
+                "businessTargetTime": "22:00",
+                "businessTargetNextDay": False,
+            }
+        ),
+    )
+    monkeypatch.setattr(service_module.llm_service, "model", "mock-model")
+    monkeypatch.setattr(
+        service_module.llm_service,
+        "provider",
+        "OPENAI_COMPATIBLE",
+    )
+
+    body = post_extract(request_body("晚上十点后还营业")).json()
+
+    assert body["extractedConstraints"]["businessTargetTime"] == "22:00"
+    assert body["extractedConstraints"]["businessTargetNextDay"] is False
+    assert body["extractor"] == "AI_MODEL"
+    assert body["degraded"] is False
+    assert body["modelName"] == "mock-model"
+    assert body["provider"] == "OPENAI_COMPATIBLE"
+
+
+def test_dialogue_rejects_invalid_business_target_time(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={"businessTargetTime": "25:99"}
+        ),
+    )
+
+    assert post_extract(request_body("深夜营业")).status_code == 502
+
+
 def test_dialogue_rejects_invalid_dish_keywords(monkeypatch):
     mock_model(
         monkeypatch,

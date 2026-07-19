@@ -21,4 +21,8 @@ public class DialogueExtractAiResponse {
     private String extractor;
 
     private Boolean degraded;
+
+    private String modelName;
+
+    private String provider;
 }

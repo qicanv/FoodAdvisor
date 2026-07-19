@@ -21,7 +21,7 @@ public class ModelConnectionTester {
     }
 
     public ConnectionTestResponse test(ModelConfig config) {
-        String endpoint = normalizeBaseUrl(config.getBaseUrl()) + "/models";
+        String endpoint = buildModelsEndpoint(config.getBaseUrl());
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(config.getTimeoutMs()))
                 .build();
@@ -82,5 +82,12 @@ public class ModelConnectionTester {
             return trimmed.substring(0, trimmed.length() - 1);
         }
         return trimmed;
+    }
+
+    private String buildModelsEndpoint(String baseUrl) {
+        String normalized = normalizeBaseUrl(baseUrl);
+        return (normalized.endsWith("/v1")
+                ? normalized
+                : normalized + "/v1") + "/models";
     }
 }

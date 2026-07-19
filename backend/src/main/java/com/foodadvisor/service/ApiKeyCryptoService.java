@@ -31,21 +31,14 @@ public class ApiKeyCryptoService {
             @Value("${foodadvisor.crypto.model-key-secret:}")
             String secret
     ) {
-        if (secret == null || secret.isBlank()) {
-            throw new ApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "MODEL_KEY_SECRET_MISSING",
-                    "Model API key encryption secret is not configured"
-            );
-        }
-
-        this.secretKeySpec = new SecretKeySpec(
-                sha256(secret),
-                "AES"
-        );
+        this.secretKeySpec =
+                secret == null || secret.isBlank()
+                        ? null
+                        : new SecretKeySpec(sha256(secret), "AES");
     }
 
     public String encrypt(String plainText) {
+        requireSecret();
         try {
             byte[] iv = new byte[GCM_IV_LENGTH];
             secureRandom.nextBytes(iv);
@@ -79,6 +72,7 @@ public class ApiKeyCryptoService {
     }
 
     public String decrypt(String encryptedText) {
+        requireSecret();
         if (encryptedText == null
                 || !encryptedText.startsWith(ENCRYPTED_VALUE_PREFIX)) {
             throw new ApiException(
@@ -146,6 +140,16 @@ public class ApiKeyCryptoService {
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "MODEL_KEY_SECRET_INVALID",
                     "Model API key encryption secret is invalid"
+            );
+        }
+    }
+
+    private void requireSecret() {
+        if (secretKeySpec == null) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "MODEL_KEY_SECRET_MISSING",
+                    "Model API key encryption secret is not configured"
             );
         }
     }

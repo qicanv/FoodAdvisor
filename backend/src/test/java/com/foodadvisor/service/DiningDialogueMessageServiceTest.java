@@ -115,6 +115,7 @@ class DiningDialogueMessageServiceTest {
                                 "MERCHANT_RECOMMENDATION",
                                 "RULE_FALLBACK",
                                 true,
+                                null,
                                 List.of()
                         ));
         lenient().when(dialogueService.continueDialogue(
