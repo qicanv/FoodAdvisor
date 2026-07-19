@@ -23,7 +23,7 @@ public class RecommendationWeights {
             inclusive = true,
             message = "cuisine权重不能小于0"
     )
-    private BigDecimal cuisine = new BigDecimal("25");
+    private BigDecimal cuisine = new BigDecimal("15");
 
     @NotNull(message = "rating权重不能为空")
     @DecimalMin(
@@ -31,7 +31,7 @@ public class RecommendationWeights {
             inclusive = true,
             message = "rating权重不能小于0"
     )
-    private BigDecimal rating = new BigDecimal("20");
+    private BigDecimal rating = new BigDecimal("15");
 
     @NotNull(message = "price权重不能为空")
     @DecimalMin(
@@ -39,7 +39,7 @@ public class RecommendationWeights {
             inclusive = true,
             message = "price权重不能小于0"
     )
-    private BigDecimal price = new BigDecimal("20");
+    private BigDecimal price = new BigDecimal("15");
 
     @NotNull(message = "distance权重不能为空")
     @DecimalMin(
@@ -47,7 +47,7 @@ public class RecommendationWeights {
             inclusive = true,
             message = "distance权重不能小于0"
     )
-    private BigDecimal distance = new BigDecimal("15");
+    private BigDecimal distance = new BigDecimal("10");
 
     @NotNull(message = "environment权重不能为空")
     @DecimalMin(
@@ -65,6 +65,14 @@ public class RecommendationWeights {
     )
     private BigDecimal reputation = new BigDecimal("10");
 
+    @NotNull(message = "semantic权重不能为空")
+    @DecimalMin(
+            value = "0.0",
+            inclusive = true,
+            message = "semantic权重不能小于0"
+    )
+    private BigDecimal semantic = new BigDecimal("25");
+
     @JsonIgnore
     public BigDecimal totalWeight() {
         return safe(cuisine)
@@ -72,7 +80,8 @@ public class RecommendationWeights {
                 .add(safe(price))
                 .add(safe(distance))
                 .add(safe(environment))
-                .add(safe(reputation));
+                .add(safe(reputation))
+                .add(safe(semantic));
     }
 
     @AssertTrue(message = "推荐权重总和必须等于100")
@@ -83,7 +92,8 @@ public class RecommendationWeights {
                 || price == null
                 || distance == null
                 || environment == null
-                || reputation == null) {
+                || reputation == null
+                || semantic == null) {
             return false;
         }
 
