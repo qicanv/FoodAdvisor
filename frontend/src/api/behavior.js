@@ -9,25 +9,25 @@ export const getBehaviorLogs = (params) => {
 }
 
 export const logSearch = (data) => {
-  return request.post('/api/admin/behavior/log/search', data)
+  return request.post('/api/behavior/log/search', data)
 }
 
 export const logMerchantClick = (data) => {
-  return request.post('/api/admin/behavior/log/merchant-click', data)
+  return request.post('/api/behavior/log/merchant-click', data)
 }
 
 export const logSceneEntry = (data) => {
-  return request.post('/api/admin/behavior/log/scene-entry', data)
+  return request.post('/api/behavior/log/scene-entry', data)
 }
 
 export const logTopicClick = (data) => {
-  return request.post('/api/admin/behavior/log/topic-click', data)
+  return request.post('/api/behavior/log/topic-click', data)
 }
 
 export const logTagClick = (data) => {
-  return request.post('/api/admin/behavior/log/tag-click', data)
+  return request.post('/api/behavior/log/tag-click', data)
 }
 
 export const logFeedback = (data) => {
-  return request.post('/api/admin/behavior/log/feedback', data)
+  return request.post('/api/behavior/log/feedback', data)
 }
