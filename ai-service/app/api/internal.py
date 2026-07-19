@@ -9,6 +9,7 @@ FastAPI 内部接口 — 供 Spring Boot 后端调用
 - POST /internal/content/query             查询/导出处理结果
 - POST /internal/knowledge/upsert          知识向量化与存储
 - POST /internal/knowledge/deactivate      停用知识文档
+- POST /internal/search/semantic           语义检索
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,6 +34,8 @@ from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
 from app.services.review_summary_service import review_summary_service
 from app.services.content_processing_service import content_processing_service
 from app.services.knowledge_service import get_knowledge_service
+from app.schemas.search import SearchRequest, SearchResponse
+from app.services.search_service import get_search_service
 from app.models.schemas import HighlightGenerateRequest, HighlightGenerateResponse
 from app.services.highlight_service import highlight_service
 
@@ -241,6 +244,45 @@ async def deactivate_knowledge(request: KnowledgeDeactivateRequest):
         "停用完成: sourceType=%s, deactivated=%d",
         request.sourceType,
         result.deactivatedCount,
+    )
+    return result
+
+
+# ---- 语义检索 ----
+
+@router.post(
+    "/search/semantic",
+    response_model=SearchResponse,
+    summary="语义检索",
+)
+async def semantic_search(request: SearchRequest):
+    """
+    将用户查询转换为向量，从 OpenSearch 中检索最相关的知识文档。
+
+    流程：
+    1. 将查询文本通过 BGE 模型转为 768 维查询向量（带指令前缀）
+    2. 在 OpenSearch 中执行 k-NN 向量检索
+    3. 过滤 isActive=true + 可选的 merchantIds/sourceTypes
+    4. 返回 Top-K 相关文档及相似度分数
+
+    OpenSearch 不可用时返回 searchMode=KEYWORD_FALLBACK。
+    """
+    if not request.query.strip():
+        raise HTTPException(status_code=422, detail="查询文本不能为空")
+
+    logger.info(
+        "语义检索: query='%s', topK=%d",
+        request.query[:100],
+        request.topK,
+    )
+
+    service = get_search_service()
+    result = service.search(request)
+
+    logger.info(
+        "语义检索完成: mode=%s, results=%d",
+        result.data.searchMode,
+        len(result.data.results),
     )
     return result
 
