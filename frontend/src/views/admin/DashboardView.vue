@@ -245,7 +245,7 @@ const stats = ref([
   },
 ])
 
-const QUICK_ACTIONS_VERSION = '2'
+const QUICK_ACTIONS_VERSION = '3'
 
 const defaultQuickActions = [
   {
@@ -270,31 +270,37 @@ const defaultQuickActions = [
     bgClass: 'action-card-purple',
   },
   {
-    label: '系统审计日志',
-    description: '查询系统和重要操作的审计日志',
-    path: '/admin/logs',
-    emoji: '📋',
-    bgClass: 'action-card-purple',
+    label: '管理食客',
+    description: '管理平台注册用户和食客信息',
+    path: '/admin/diners',
+    emoji: '👥',
+    bgClass: 'action-card-blue',
   },
 ]
 
-const quickActions = ref([])
-const showEditModal = ref(false)
-
-const loadQuickActions = () => {
+const getInitialQuickActions = () => {
   const savedVersion = localStorage.getItem('adminQuickActionsVersion')
   const saved = localStorage.getItem('adminQuickActions')
   
   if (saved && savedVersion === QUICK_ACTIONS_VERSION) {
     try {
-      quickActions.value = JSON.parse(saved)
+      return JSON.parse(saved)
     } catch {
-      quickActions.value = [...defaultQuickActions]
+      return [...defaultQuickActions]
     }
   } else {
-    quickActions.value = [...defaultQuickActions]
-    saveQuickActions()
+    const defaultActions = [...defaultQuickActions]
+    localStorage.setItem('adminQuickActions', JSON.stringify(defaultActions))
+    localStorage.setItem('adminQuickActionsVersion', QUICK_ACTIONS_VERSION)
+    return defaultActions
   }
+}
+
+const quickActions = ref(getInitialQuickActions())
+const showEditModal = ref(false)
+
+const loadQuickActions = () => {
+  quickActions.value = getInitialQuickActions()
 }
 
 const saveQuickActions = () => {
@@ -319,6 +325,7 @@ const availableActions = computed(() => {
     { label: '模型配置', description: '管理 AI 模型服务配置', path: '/admin/model-configs', emoji: '🤖', bgClass: 'action-card-blue' },
     { label: '运营数据', description: '查看平台核心运营数据', path: '/admin/dashboard', emoji: '📊', bgClass: 'action-card-orange' },
     { label: '商家统计', description: '查看商家使用平台功能情况', path: '/admin/merchant-statistics', emoji: '📈', bgClass: 'action-card-purple' },
+    { label: '管理食客', description: '管理平台注册用户和食客信息', path: '/admin/diners', emoji: '👥', bgClass: 'action-card-blue' },
     { label: '审计日志', description: '查询系统和重要操作的审计日志', path: '/admin/logs', emoji: '📋', bgClass: 'action-card-purple' },
   ].filter(a => !usedLabels.includes(a.label))
 })
@@ -402,7 +409,6 @@ const formatTime = dateString => {
 }
 
 onMounted(() => {
-  loadQuickActions()
   loadData()
 })
 </script>
@@ -427,9 +433,27 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   padding: 24px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px);
   border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(24, 144, 255, 0.15);
+  box-shadow: 
+    0 4px 20px rgba(24, 144, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(24, 144, 255, 0.08) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
 }
 
 .stat-icon {
@@ -439,32 +463,40 @@ onMounted(() => {
   width: 56px;
   height: 56px;
   border-radius: 14px;
+  position: relative;
+  z-index: 1;
 }
 
 .stat-icon-blue {
   color: #1890ff;
-  background: rgba(24, 144, 255, 0.1);
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.2) 0%, rgba(64, 169, 255, 0.1) 100%);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.2);
 }
 
 .stat-icon-green {
   color: #52c41a;
-  background: rgba(82, 196, 26, 0.1);
+  background: linear-gradient(135deg, rgba(82, 196, 26, 0.2) 0%, rgba(115, 209, 61, 0.1) 100%);
+  box-shadow: 0 4px 12px rgba(82, 196, 26, 0.2);
 }
 
 .stat-icon-orange {
   color: #ff6700;
-  background: rgba(255, 103, 0, 0.1);
+  background: linear-gradient(135deg, rgba(255, 103, 0, 0.2) 0%, rgba(255, 149, 64, 0.1) 100%);
+  box-shadow: 0 4px 12px rgba(255, 103, 0, 0.2);
 }
 
 .stat-icon-purple {
   color: #722ed1;
-  background: rgba(114, 46, 209, 0.1);
+  background: linear-gradient(135deg, rgba(114, 46, 209, 0.2) 0%, rgba(146, 84, 222, 0.1) 100%);
+  box-shadow: 0 4px 12px rgba(114, 46, 209, 0.2);
 }
 
 .stat-info {
   display: flex;
   flex: 1;
   flex-direction: column;
+  position: relative;
+  z-index: 1;
 }
 
 .stat-value {
@@ -497,23 +529,39 @@ onMounted(() => {
   cursor: pointer;
   border-radius: 16px;
   transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.action-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+  pointer-events: none;
 }
 
 .action-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
 }
 
 .action-card-green {
   background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
+  border: 1px solid rgba(82, 196, 26, 0.3);
 }
 
 .action-card-blue {
   background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+  border: 1px solid rgba(24, 144, 255, 0.3);
 }
 
 .action-card-purple {
   background: linear-gradient(135deg, #722ed1 0%, #9254de 100%);
+  border: 1px solid rgba(114, 46, 209, 0.3);
 }
 
 .action-info {
@@ -538,9 +586,13 @@ onMounted(() => {
 
 .recent-section {
   padding: 24px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px);
   border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(24, 144, 255, 0.15);
+  box-shadow: 
+    0 4px 20px rgba(24, 144, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .section-header {
@@ -575,13 +627,16 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 16px;
-  background: #fafafa;
+  background: rgba(24, 144, 255, 0.03);
   border-radius: 12px;
-  transition: background 0.2s;
+  border: 1px solid rgba(24, 144, 255, 0.08);
+  transition: all 0.2s;
 }
 
 .recent-item:hover {
-  background: #f5f5f5;
+  background: rgba(24, 144, 255, 0.06);
+  border-color: rgba(24, 144, 255, 0.15);
+  transform: translateX(4px);
 }
 
 .recent-info h4 {
@@ -634,6 +689,9 @@ onMounted(() => {
   padding: 40px;
   color: #999999;
   text-align: center;
+  background: rgba(24, 144, 255, 0.03);
+  border-radius: 12px;
+  border: 1px dashed rgba(24, 144, 255, 0.2);
 }
 
 .empty-state p {
@@ -695,6 +753,7 @@ onMounted(() => {
 
 .action-card-orange {
   background: linear-gradient(135deg, #fa8c16 0%, #ffa940 100%);
+  border: 1px solid rgba(250, 140, 22, 0.3);
 }
 
 .empty-actions {
@@ -703,9 +762,9 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   padding: 40px;
-  background: #fafafa;
+  background: rgba(24, 144, 255, 0.03);
   border-radius: 16px;
-  border: 1px dashed #d9d9d9;
+  border: 1px dashed rgba(24, 144, 255, 0.2);
 }
 
 .empty-actions p {
