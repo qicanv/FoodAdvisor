@@ -31,6 +31,8 @@ from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
 from app.services.review_summary_service import review_summary_service
 from app.services.content_processing_service import content_processing_service
 from app.services.knowledge_service import get_knowledge_service
+from app.models.schemas import HighlightGenerateRequest, HighlightGenerateResponse
+from app.services.highlight_service import highlight_service
 
 logger = logging.getLogger(__name__)
 
@@ -232,3 +234,23 @@ async def generate_review_summary(request: ReviewSummaryRequest):
 async def regional_hot_words(region: str, days: int = 7):
     """区域热词（后续实现）"""
     raise HTTPException(status_code=501, detail="区域热词功能尚未实现")
+
+
+# ---- 商家亮点挖掘（EPIC-02 Story 5） ----
+
+@router.post(
+    "/merchants/highlights",
+    response_model=HighlightGenerateResponse,
+)
+async def generate_merchant_highlights(request: HighlightGenerateRequest):
+    """
+    商家亮点挖掘（EPIC-02 Story 5）
+
+    由 Spring Boot 传入正面评论列表，返回结构化亮点。
+    正面评论不足时返回 highlightStatus=INSUFFICIENT_DATA，不调用大模型。
+    """
+    logger.info(
+        f"生成商家亮点 merchantId={request.merchantId}, "
+        f"positiveReviewCount={len(request.reviews)}"
+    )
+    return await highlight_service.generate(request)
