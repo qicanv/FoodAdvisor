@@ -9,6 +9,11 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+# 合法的 sourceType（upsert 只接受具体来源，deactivate 还接受 MERCHANT）
+_VALID_SOURCE_TYPES = {"MERCHANT_INTRO", "MENU", "REVIEW"}
+_VALID_DEACTIVATE_SOURCE_TYPES = {"MERCHANT_INTRO", "MENU", "REVIEW", "MERCHANT"}
+
+
 class KnowledgeDocument(BaseModel):
     """单条待写入知识文档 — 来自 content/process 的清洗后文本 + 元数据"""
 
@@ -29,9 +34,8 @@ class KnowledgeDocument(BaseModel):
     @field_validator("sourceType")
     @classmethod
     def validate_source_type(cls, v: str) -> str:
-        allowed = {"MERCHANT_INTRO", "MENU", "REVIEW"}
-        if v not in allowed:
-            raise ValueError(f"sourceType must be one of {allowed}, got: {v}")
+        if v not in _VALID_SOURCE_TYPES:
+            raise ValueError(f"sourceType must be one of {_VALID_SOURCE_TYPES}, got: {v}")
         return v
 
 
@@ -70,3 +74,45 @@ class KnowledgeUpsertResponse(BaseModel):
     skipCount: int = Field(default=0, ge=0, description="内容未变化跳过的数量")
     failCount: int = Field(default=0, ge=0)
     results: list[KnowledgeDocumentResult] = Field(default_factory=list)
+
+
+# ============================================
+# Deactivate — 停用知识文档
+# ============================================
+
+
+class KnowledgeDeactivateRequest(BaseModel):
+    """批量停用知识文档请求
+
+    sourceType 为 MERCHANT 时，按 merchantId 停用该商家下的全部文档；
+    为 MERCHANT_INTRO / MENU / REVIEW 时，按 sourceType + sourceId 精确停用。
+    """
+
+    requestId: Optional[str] = Field(default=None, description="请求追踪 ID")
+    sourceType: str = Field(
+        ..., min_length=1,
+        description="来源类型：MERCHANT（按商家停用全部）/ MERCHANT_INTRO / MENU / REVIEW"
+    )
+    sourceIds: list[int] = Field(
+        ..., min_length=1, max_length=500,
+        description="要停用的来源 ID 列表"
+    )
+
+    @field_validator("sourceType")
+    @classmethod
+    def validate_source_type(cls, v: str) -> str:
+        if v not in _VALID_DEACTIVATE_SOURCE_TYPES:
+            raise ValueError(
+                f"sourceType must be one of {_VALID_DEACTIVATE_SOURCE_TYPES}, got: {v}"
+            )
+        return v
+
+
+class KnowledgeDeactivateResponse(BaseModel):
+    """批量停用结果"""
+
+    requestId: Optional[str] = None
+    sourceType: str
+    sourceIds: list[int]
+    deactivatedCount: int = Field(default=0, ge=0, description="实际停用的文档数")
+    error: Optional[str] = Field(default=None, description="失败原因（成功时为空）")

@@ -254,3 +254,81 @@ def check_document_exists(
     except Exception:
         pass
     return None
+
+
+# ============================================
+# 文档停用
+# ============================================
+
+
+def deactivate_documents(
+    client: OpenSearch,
+    index_name: str,
+    source_type: str,
+    source_ids: list[int],
+) -> int:
+    """
+    批量停用知识文档（将 isActive 设为 false）。
+
+    - sourceType=MERCHANT：停用 merchantId 在 source_ids 中的全部文档
+    - sourceType=MERCHANT_INTRO/MENU/REVIEW：精确停用 sourceType + sourceId
+
+    Args:
+        client: OpenSearch 客户端
+        index_name: 索引名
+        source_type: MERCHANT / MERCHANT_INTRO / MENU / REVIEW
+        source_ids: 要停用的来源 ID 列表
+
+    Returns:
+        实际更新的文档数
+    """
+    if source_type == "MERCHANT":
+        query = {
+            "bool": {
+                "must": [
+                    {"terms": {"merchantId": source_ids}}
+                ]
+            }
+        }
+    else:
+        query = {
+            "bool": {
+                "must": [
+                    {"term": {"sourceType": source_type}},
+                    {"terms": {"sourceId": source_ids}},
+                ]
+            }
+        }
+
+    script = {
+        "source": "ctx._source.isActive = false; ctx._source.updatedAt = params.now",
+        "lang": "painless",
+        "params": {
+            "now": "now",
+        },
+    }
+
+    try:
+        response = client.update_by_query(
+            index=index_name,
+            body={
+                "script": script,
+                "query": query,
+            },
+            refresh=True,
+        )
+        updated = response.get("updated", 0)
+        logger.info(
+            "Deactivated %d documents: sourceType=%s, sourceIds=%s",
+            updated,
+            source_type,
+            source_ids,
+        )
+        return updated
+    except Exception as exc:
+        logger.error(
+            "Failed to deactivate documents: sourceType=%s, error=%s",
+            source_type,
+            exc,
+        )
+        raise

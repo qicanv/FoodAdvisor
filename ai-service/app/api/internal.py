@@ -8,6 +8,7 @@ FastAPI 内部接口 — 供 Spring Boot 后端调用
 - POST /internal/content/process           内容清洗与切分
 - POST /internal/content/query             查询/导出处理结果
 - POST /internal/knowledge/upsert          知识向量化与存储
+- POST /internal/knowledge/deactivate      停用知识文档
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,6 +25,7 @@ from app.schemas.content_processing import (
 )
 from app.schemas.knowledge import (
     KnowledgeUpsertRequest, KnowledgeUpsertResponse,
+    KnowledgeDeactivateRequest, KnowledgeDeactivateResponse,
 )
 from app.services.dialogue_extraction_service import dialogue_extraction_service
 from app.services.review_analysis_service import review_analysis_service
@@ -203,6 +205,42 @@ async def upsert_knowledge(request: KnowledgeUpsertRequest):
         result.successCount,
         result.skipCount,
         result.failCount,
+    )
+    return result
+
+
+@router.post(
+    "/knowledge/deactivate",
+    response_model=KnowledgeDeactivateResponse,
+    summary="停用知识文档",
+)
+async def deactivate_knowledge(request: KnowledgeDeactivateRequest):
+    """
+    批量停用知识文档（将 isActive 设为 false），使其不再参与公开检索。
+
+    - sourceType=MERCHANT：停用该商家下的全部文档（介绍+菜品+评价）
+    - sourceType=MERCHANT_INTRO / MENU / REVIEW：精确停用匹配的文档
+
+    停用的文档在 OpenSearch 中保留，可后续恢复。
+    """
+    if not request.sourceIds:
+        raise HTTPException(status_code=422, detail="sourceIds 不能为空")
+    if len(request.sourceIds) > 500:
+        raise HTTPException(status_code=422, detail="单次最多停用500个 ID")
+
+    logger.info(
+        "停用知识文档: sourceType=%s, sourceIds=%s",
+        request.sourceType,
+        request.sourceIds[:10],
+    )
+
+    service = get_knowledge_service()
+    result = service.deactivate(request)
+
+    logger.info(
+        "停用完成: sourceType=%s, deactivated=%d",
+        request.sourceType,
+        result.deactivatedCount,
     )
     return result
 
