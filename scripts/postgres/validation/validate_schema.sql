@@ -66,6 +66,20 @@ BEGIN
         RAISE EXCEPTION 'reviews.review_time must be nullable TIMESTAMPTZ';
     END IF;
 
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_indexes
+         WHERE schemaname = 'public'
+           AND tablename = 'chat_messages'
+           AND indexname = 'uk_chat_messages_session_request'
+           AND indexdef ~* 'CREATE UNIQUE INDEX'
+           AND indexdef ~* '\(session_id, request_id, role\)'
+           AND indexdef ~* 'WHERE \(request_id IS NOT NULL\)'
+    ) THEN
+        RAISE EXCEPTION
+            'uk_chat_messages_session_request must uniquely index (session_id, request_id, role) where request_id is not null';
+    END IF;
+
     SELECT count(*) INTO invalid_fk_count
       FROM pg_constraint c
       JOIN pg_class t ON t.oid = c.conrelid

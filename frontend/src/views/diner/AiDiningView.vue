@@ -53,9 +53,31 @@
 
             <div v-if="message.suggestions.length" class="suggestion-panel">
               <strong>可以尝试调整：</strong>
+              <div class="suggestion-list">
+                <button
+                  v-for="suggestion in message.suggestions"
+                  :key="suggestion.id || suggestion.displayText"
+                  type="button"
+                  class="suggestion-button"
+                  :disabled="adjustingSuggestionKey !== ''"
+                  @click="applySuggestion(message, suggestion)"
+                >
+                  <span>{{ suggestion.displayText || suggestion.reason }}</span>
+                  <small>
+                    {{ isAdjusting(message, suggestion) ? '重新推荐中...' : '点击调整并重新推荐' }}
+                  </small>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="message.limitingConditions.length" class="limiting-panel">
+              <strong>当前限制条件</strong>
               <ul>
-                <li v-for="suggestion in message.suggestions" :key="suggestion.id || suggestion.displayText">
-                  {{ suggestion.displayText || suggestion.reason }}
+                <li
+                  v-for="condition in message.limitingConditions"
+                  :key="condition.field || condition.type || JSON.stringify(condition)"
+                >
+                  {{ condition.description || condition.field }}
                 </li>
               </ul>
             </div>
@@ -92,7 +114,12 @@
 <script setup>
 import { nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { createDiningSession, getDiningMessages, sendDiningMessage } from '../../api/aiDining'
+import {
+  adjustDiningRecommendation,
+  createDiningSession,
+  getDiningMessages,
+  sendDiningMessage
+} from '../../api/aiDining'
 
 const router = useRouter()
 const sessionId = ref(null)
@@ -100,8 +127,10 @@ const messages = ref([])
 const draft = ref('')
 const initializing = ref(true)
 const sending = ref(false)
+const adjustingSuggestionKey = ref('')
 const errorMessage = ref('')
 const messageListRef = ref(null)
+const currentConstraints = ref({})
 
 const currentUserId = () => {
   const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
@@ -131,13 +160,15 @@ const operationStatusText = value => {
 
 const normalizeHistoryMessage = item => ({
   key: `history-${item.id}`,
+  id: item.id,
   role: item.role,
   content: item.content || '',
   requestId: item.requestId,
   responseType: item.responseType,
   recommendationId: item.recommendationId,
   recommendations: Array.isArray(item.recommendations) ? item.recommendations : [],
-  suggestions: Array.isArray(item.adjustmentSuggestions) ? item.adjustmentSuggestions : []
+  suggestions: Array.isArray(item.adjustmentSuggestions) ? item.adjustmentSuggestions : [],
+  limitingConditions: Array.isArray(item.limitingConditions) ? item.limitingConditions : []
 })
 
 const scrollToBottom = async () => {
@@ -211,23 +242,91 @@ const submitMessage = async () => {
       content,
       requestId,
       recommendations: [],
-      suggestions: []
+      suggestions: [],
+      limitingConditions: []
     })
     messages.value.push({
       key: `assistant-${data.assistantMessageId || requestId}`,
+      id: data.assistantMessageId,
       role: 'ASSISTANT',
       content: data.assistantText || data.recommendation?.message || '请求已处理',
       requestId,
       responseType: data.responseType,
       recommendationId: data.recommendation?.recommendationId,
       recommendations: data.recommendation?.results || [],
-      suggestions: data.recommendation?.adjustmentSuggestions || []
+      suggestions: data.recommendation?.adjustmentSuggestions || [],
+      limitingConditions: data.recommendation?.limitingConditions || []
     })
+    currentConstraints.value =
+      data.recommendation?.currentConstraints ||
+      data.currentConstraints ||
+      currentConstraints.value
     draft.value = ''
   } catch (error) {
     errorMessage.value = error.message || '网络或 AI 服务异常，请稍后重新发送'
   } finally {
     sending.value = false
+    scrollToBottom()
+  }
+}
+
+const suggestionKey = (message, suggestion) =>
+  `${message.key}:${suggestion.id || suggestion.field || suggestion.displayText}`
+
+const isAdjusting = (message, suggestion) =>
+  adjustingSuggestionKey.value === suggestionKey(message, suggestion)
+
+const applySuggestion = async (message, suggestion) => {
+  if (adjustingSuggestionKey.value || !sessionId.value) return
+  if (!suggestion?.field || suggestion.suggestedValue === undefined) {
+    errorMessage.value = '该调整建议缺少有效参数，请刷新后重试'
+    return
+  }
+
+  adjustingSuggestionKey.value = suggestionKey(message, suggestion)
+  errorMessage.value = ''
+  try {
+    const response = await adjustDiningRecommendation(
+      sessionId.value,
+      message.id,
+      suggestion.field,
+      suggestion.suggestedValue
+    )
+    if (!response.success || !response.data) {
+      throw new Error(response.message || '调整条件后重新推荐失败')
+    }
+
+    const recommendation = response.data
+    currentConstraints.value =
+      recommendation.currentConstraints ||
+      recommendation.constraints ||
+      {}
+    message.responseType = recommendation.status
+    message.recommendationId = recommendation.recommendationId
+    message.content =
+      recommendation.message ||
+      (recommendation.status === 'SUCCESS'
+        ? `已为你找到 ${recommendation.resultCount || 0} 家符合条件的商家`
+        : '当前仍没有完全匹配的结果')
+    message.recommendations =
+      recommendation.status === 'SUCCESS' && Array.isArray(recommendation.results)
+        ? recommendation.results
+        : []
+    message.suggestions =
+      recommendation.status === 'NO_MATCH' &&
+      Array.isArray(recommendation.adjustmentSuggestions)
+        ? recommendation.adjustmentSuggestions
+        : []
+    message.limitingConditions =
+      recommendation.status === 'NO_MATCH' &&
+      Array.isArray(recommendation.limitingConditions)
+        ? recommendation.limitingConditions
+        : []
+  } catch (error) {
+    errorMessage.value =
+      error.message || '调整条件后重新推荐失败，请稍后重试'
+  } finally {
+    adjustingSuggestionKey.value = ''
     scrollToBottom()
   }
 }
@@ -267,7 +366,13 @@ onMounted(initialize)
 .merchant-meta span { padding: 3px 7px; border-radius: 6px; background: #f3f4f6; color: #4b5563; font-size: 12px; }
 .reason { margin-top: 12px !important; color: #374151; font-size: 14px; }
 .suggestion-panel { margin-top: 14px; padding: 12px; border-radius: 10px; background: #fff7ed; color: #9a3412; }
-.suggestion-panel ul { margin: 7px 0 0; padding-left: 20px; }
+.suggestion-list { display: grid; gap: 8px; margin-top: 9px; }
+.suggestion-button { display: flex; justify-content: space-between; gap: 14px; align-items: center; width: 100%; padding: 10px 12px; text-align: left; border: 1px solid #fdba74; border-radius: 9px; color: #9a3412; background: #fff; cursor: pointer; }
+.suggestion-button:hover:not(:disabled) { border-color: #f97316; box-shadow: 0 3px 12px rgba(249, 115, 22, .14); }
+.suggestion-button:disabled { opacity: .6; cursor: wait; }
+.suggestion-button small { flex: none; color: #c2410c; }
+.limiting-panel { margin-top: 12px; padding: 12px; border-radius: 10px; color: #475467; background: #f8fafc; }
+.limiting-panel ul { margin: 7px 0 0; padding-left: 20px; }
 .typing-indicator { color: #7c3aed; font-size: 14px; }
 .error-banner { margin: 0 28px 12px; padding: 11px 14px; border-radius: 9px; color: #b42318; background: #fef3f2; }
 .composer { padding: 18px 22px; border-top: 1px solid #eaecf0; background: #fff; }

@@ -189,6 +189,45 @@ public class AIClientService {
     }
 
     /**
+     * 调用商家亮点挖掘接口（EPIC-02 Story 5）
+     *
+     * @param merchantId          商家ID
+     * @param version             亮点版本号
+     * @param reviews             正面评价列表 [{reviewId, rating, content, reviewTime, keywords, sentiment}]
+     * @param minimumPositiveCount 最少正面评价数阈值
+     * @return AI 服务返回的亮点 JSON
+     */
+    public JsonNode generateMerchantHighlights(
+            Long merchantId,
+            Integer version,
+            List<Map<String, Object>> reviews,
+            int minimumPositiveCount
+    ) {
+        String url =
+                aiServiceBaseUrl
+                        + "/internal/merchants/highlights";
+
+        Map<String, Object> request = Map.of(
+                "requestId",
+                "highlights-" + merchantId + "-v" + version,
+                "merchantId",
+                merchantId,
+                "version",
+                version,
+                "reviews",
+                reviews,
+                "minimumPositiveCount",
+                minimumPositiveCount
+        );
+
+        return post(
+                url,
+                request,
+                "MERCHANT_HIGHLIGHT_GENERATION"
+        );
+    }
+
+    /**
      * 健康检查
      */
     public boolean isHealthy() {

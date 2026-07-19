@@ -9,6 +9,7 @@ import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.service.RecommendationRankingService;
+import com.foodadvisor.service.DiningDialogueMessageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +39,9 @@ class RecommendationControllerTest {
     @Mock
     private RecommendationRankingService recommendationRankingService;
 
+    @Mock
+    private DiningDialogueMessageService diningDialogueMessageService;
+
     private MockMvc mockMvc;
 
     private ObjectMapper objectMapper;
@@ -48,7 +52,8 @@ class RecommendationControllerTest {
         mockMvc = MockMvcBuilders
                 .standaloneSetup(
                         new RecommendationController(
-                                recommendationRankingService
+                                recommendationRankingService,
+                                diningDialogueMessageService
                         )
                 )
                 .setControllerAdvice(
@@ -158,7 +163,7 @@ class RecommendationControllerTest {
 
     @Test
     void shouldMapInvalidAdjustmentToHttp400() throws Exception {
-        when(recommendationRankingService.adjustAndRank(
+        when(diningDialogueMessageService.adjustRecommendation(
                 eq(1L),
                 any()
         )).thenThrow(new ApiException(
@@ -175,6 +180,8 @@ class RecommendationControllerTest {
                                 Map.of(
                                         "userId",
                                         1,
+                                        "sourceMessageId",
+                                        71,
                                         "field",
                                         "distanceKm",
                                         "value",
@@ -188,7 +195,7 @@ class RecommendationControllerTest {
 
     @Test
     void shouldReturnFullRecommendationAfterAdjust() throws Exception {
-        when(recommendationRankingService.adjustAndRank(
+        when(diningDialogueMessageService.adjustRecommendation(
                 eq(1L),
                 any()
         )).thenReturn(successResponse());
@@ -201,6 +208,8 @@ class RecommendationControllerTest {
                                 Map.of(
                                         "userId",
                                         1,
+                                        "sourceMessageId",
+                                        71,
                                         "field",
                                         "perCapitaBudget",
                                         "value",
@@ -246,7 +255,7 @@ class RecommendationControllerTest {
     @Test
     void shouldUseJwtUserIdForAdjustAndIgnoreBodyUserId()
             throws Exception {
-        when(recommendationRankingService.adjustAndRank(
+        when(diningDialogueMessageService.adjustRecommendation(
                 eq(1L),
                 any()
         )).thenReturn(successResponse());
@@ -259,13 +268,14 @@ class RecommendationControllerTest {
                         .content(objectMapper.writeValueAsString(
                                 Map.of(
                                         "userId", 999,
+                                        "sourceMessageId", 71,
                                         "field", "perCapitaBudget",
                                         "value", 120
                                 )
                         )))
                 .andExpect(status().isOk());
 
-        verify(recommendationRankingService).adjustAndRank(
+        verify(diningDialogueMessageService).adjustRecommendation(
                 eq(1L),
                 org.mockito.ArgumentMatchers.argThat(
                         value -> Long.valueOf(7L)

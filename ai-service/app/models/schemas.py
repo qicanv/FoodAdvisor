@@ -181,3 +181,67 @@ class ReviewSummaryResponse(BaseModel):
     modelName: Optional[str] = None
     businessTraceId: Optional[str] = None
     errorMessage: Optional[str] = None
+
+
+# ============================================
+# 商家亮点挖掘（EPIC-02 Story 5）
+# ============================================
+
+class HighlightTypeEnum(str, Enum):
+    """亮点类型枚举"""
+    SIGNATURE_DISH = "SIGNATURE_DISH"    # 招牌菜
+    ENVIRONMENT = "ENVIRONMENT"          # 环境特色
+    SERVICE = "SERVICE"                  # 服务特点
+    PRICE = "PRICE"                      # 价格优势
+    BRAND_FEATURE = "BRAND_FEATURE"      # 品牌特色
+
+
+class HighlightReviewItem(BaseModel):
+    """送入亮点挖掘的单条正面评价"""
+    reviewId: int
+    rating: int = Field(ge=1, le=5)
+    content: str = Field(..., min_length=1)
+    reviewTime: Optional[str] = Field(default=None, description="ISO 时间字符串")
+    # 已有的分析结果，辅助模型更准确挖掘
+    keywords: List[str] = Field(default_factory=list)
+    sentiment: Optional[str] = Field(default=None)
+
+
+class HighlightGenerateRequest(BaseModel):
+    """亮点生成请求 — 由 Spring Boot 传入正面评论列表"""
+    requestId: Optional[str] = None
+    merchantId: int
+    version: int = Field(default=1, ge=1)
+    reviews: List[HighlightReviewItem] = Field(default_factory=list)
+    minimumPositiveCount: int = Field(default=5, ge=1)
+
+
+class HighlightItem(BaseModel):
+    """单条亮点"""
+    highlightType: str = Field(description="SIGNATURE_DISH/ENVIRONMENT/SERVICE/PRICE/BRAND_FEATURE")
+    title: str = Field(description="亮点标题，如'招牌拿铁广受好评'")
+    description: str = Field(description="亮点详细描述")
+    mentionCount: int = Field(default=1, ge=1)
+    positiveRatio: float = Field(ge=0, le=1, description="好评占比0~1")
+    reviewIds: List[int] = Field(default_factory=list, description="支撑该亮点的评价ID列表")
+
+
+class HighlightEvidence(BaseModel):
+    """亮点依据"""
+    reviewId: int
+    highlightType: str
+    evidenceExcerpt: Optional[str] = None
+
+
+class HighlightGenerateResponse(BaseModel):
+    """亮点生成结果"""
+    merchantId: int
+    version: int = 1
+    highlightStatus: str = Field(default="SUCCESS", description="SUCCESS/INSUFFICIENT_DATA/FAILED")
+    highlights: List[HighlightItem] = Field(default_factory=list)
+    reviewCount: int = 0
+    minimumPositiveCount: int = 5
+    evidences: List[HighlightEvidence] = Field(default_factory=list)
+    modelName: Optional[str] = None
+    businessTraceId: Optional[str] = None
+    errorMessage: Optional[str] = None

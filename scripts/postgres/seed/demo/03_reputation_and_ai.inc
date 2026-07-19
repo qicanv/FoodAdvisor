@@ -129,7 +129,3 @@ INSERT INTO audit_logs (
 ) VALUES
 ('LOGIN',1,'demo_admin','ADMIN','AUTH','INFO','SUCCESS','USER','1','{"demo":true}','2026-05-06 09:00+08'),
 ('ADMIN_OPERATION',1,'demo_admin','ADMIN','MERCHANT','INFO','SUCCESS','MERCHANT','1','{"demo":true}','2026-05-06 09:05+08');
-
-SELECT setval(pg_get_serial_sequence('chat_sessions','id'),3,true);
-SELECT setval(pg_get_serial_sequence('chat_messages','id'),12,true);
-SELECT setval(pg_get_serial_sequence('recommendations','id'),3,true);
