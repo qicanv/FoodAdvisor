@@ -148,6 +148,12 @@ const routes = [
     component: () => import('../views/admin/AnalyticsView.vue'),
     meta: { requiresAuth: true, role: 'admin' },
   },
+  {
+    path: '/admin/regional-hotspots',
+    name: 'admin-regional-hotspots',
+    component: () => import('../views/admin/RegionalHotspotView.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
 ]
 
 const router = createRouter({

@@ -175,6 +175,7 @@ import {
   getRecommendationEvidences,
   sendDiningMessage
 } from '../../api/aiDining'
+import { logMerchantClick, logSearch } from '../../api/behavior'
 
 const router = useRouter()
 const sessionId = ref(null)
@@ -341,6 +342,9 @@ const submitMessage = async () => {
     return
   }
 
+  const userId = currentUserId()
+  logSearch({ userId: userId !== 'anonymous' ? userId : undefined, keyword: content }).catch(() => {})
+
   const requestId = createRequestId()
   sending.value = true
   errorMessage.value = ''
@@ -456,7 +460,11 @@ const applySuggestion = async (message, suggestion) => {
 }
 
 const openMerchant = merchantId => {
-  if (merchantId) router.push(`/diner/merchant/${merchantId}`)
+  if (merchantId) {
+    const userId = currentUserId()
+    logMerchantClick({ userId: userId !== 'anonymous' ? userId : undefined, merchantId }).catch(() => {})
+    router.push(`/diner/merchant/${merchantId}`)
+  }
 }
 
 const evidenceTypeText = type => ({
