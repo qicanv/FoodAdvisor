@@ -15,11 +15,13 @@ import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Recommendation;
 import com.foodadvisor.entity.RecommendationItem;
+import com.foodadvisor.entity.RecommendationEvidence;
 import com.foodadvisor.mapper.ChatMessageMapper;
 import com.foodadvisor.mapper.ChatSessionMapper;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.RecommendationItemMapper;
 import com.foodadvisor.mapper.RecommendationMapper;
+import com.foodadvisor.mapper.RecommendationEvidenceMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -64,6 +66,9 @@ class DiningDialogueMessageServiceTest {
 
     @Mock
     private RecommendationItemMapper recommendationItemMapper;
+
+    @Mock
+    private RecommendationEvidenceMapper recommendationEvidenceMapper;
 
     @Mock
     private MerchantMapper merchantMapper;
@@ -127,6 +132,7 @@ class DiningDialogueMessageServiceTest {
                 chatMessageMapper,
                 recommendationMapper,
                 recommendationItemMapper,
+                recommendationEvidenceMapper,
                 merchantMapper,
                 dialogueService,
                 constraintExtractionService,
@@ -975,6 +981,61 @@ class DiningDialogueMessageServiceTest {
                                 .getRecommendations().get(1)
                                 .getDistanceKm()
                 )
+        );
+    }
+
+    @Test
+    void shouldRestoreMatchedDishesFromEvidenceSnapshot() {
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        when(chatMessageMapper.selectList(any()))
+                .thenReturn(List.of(message(
+                        21L,
+                        "ASSISTANT",
+                        "req-dish-history",
+                        "{\"recommendationId\":100}"
+                )));
+        RecommendationItem item =
+                historicalItem(201L, "{}");
+        item.setId(301L);
+        when(recommendationItemMapper.selectList(any()))
+                .thenReturn(List.of(item));
+        when(merchantMapper.selectById(201L))
+                .thenReturn(historicalMerchant(201L));
+        RecommendationEvidence evidence =
+                new RecommendationEvidence();
+        evidence.setId(401L);
+        evidence.setRecommendationItemId(301L);
+        evidence.setSourceType("DISH");
+        evidence.setSourceMerchantId(201L);
+        evidence.setDishId(501L);
+        evidence.setSourceTextSnapshot(
+                """
+                {"dishId":501,"merchantId":201,
+                 "dishName":"水煮鱼","dishPrice":68,
+                 "matchType":"NAME","matchedKeyword":"水煮鱼",
+                 "matchReason":"菜名匹配"}
+                """
+        );
+        when(recommendationEvidenceMapper.selectList(any()))
+                .thenReturn(List.of(evidence));
+
+        DialogueHistoryResponse history =
+                service.listMessages(1L, 1L);
+
+        assertEquals(
+                "水煮鱼",
+                history.getMessages().get(0)
+                        .getRecommendations().get(0)
+                        .getMatchedDishes().get(0)
+                        .getDishName()
+        );
+        assertEquals(
+                new BigDecimal("68"),
+                history.getMessages().get(0)
+                        .getRecommendations().get(0)
+                        .getMatchedDishes().get(0)
+                        .getDishPrice()
         );
     }
 

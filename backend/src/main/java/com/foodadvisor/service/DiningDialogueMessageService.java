@@ -17,16 +17,20 @@ import com.foodadvisor.dto.recommendation.LimitingConditionVO;
 import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
+import com.foodadvisor.dto.recommendation.MatchedDishVO;
 import com.foodadvisor.entity.ChatMessage;
 import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Recommendation;
 import com.foodadvisor.entity.RecommendationItem;
+import com.foodadvisor.entity.RecommendationEvidence;
 import com.foodadvisor.mapper.ChatMessageMapper;
 import com.foodadvisor.mapper.ChatSessionMapper;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.RecommendationItemMapper;
 import com.foodadvisor.mapper.RecommendationMapper;
+import com.foodadvisor.mapper.RecommendationEvidenceMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -46,6 +50,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
+@Slf4j
 @Service
 public class DiningDialogueMessageService {
 
@@ -77,6 +82,8 @@ public class DiningDialogueMessageService {
     private final ChatMessageMapper chatMessageMapper;
     private final RecommendationMapper recommendationMapper;
     private final RecommendationItemMapper recommendationItemMapper;
+    private final RecommendationEvidenceMapper
+            recommendationEvidenceMapper;
     private final MerchantMapper merchantMapper;
     private final DialogueService dialogueService;
     private final ConstraintExtractionService
@@ -91,6 +98,7 @@ public class DiningDialogueMessageService {
             ChatMessageMapper chatMessageMapper,
             RecommendationMapper recommendationMapper,
             RecommendationItemMapper recommendationItemMapper,
+            RecommendationEvidenceMapper recommendationEvidenceMapper,
             MerchantMapper merchantMapper,
             DialogueService dialogueService,
             ConstraintExtractionService constraintExtractionService,
@@ -103,6 +111,8 @@ public class DiningDialogueMessageService {
         this.chatMessageMapper = chatMessageMapper;
         this.recommendationMapper = recommendationMapper;
         this.recommendationItemMapper = recommendationItemMapper;
+        this.recommendationEvidenceMapper =
+                recommendationEvidenceMapper;
         this.merchantMapper = merchantMapper;
         this.dialogueService = dialogueService;
         this.constraintExtractionService =
@@ -1191,6 +1201,9 @@ public class DiningDialogueMessageService {
             return results;
         }
 
+        Map<Long, List<MatchedDishVO>> matchedDishes =
+                loadDishEvidence(items);
+
         for (RecommendationItem item : items) {
             Merchant merchant =
                     merchantMapper.selectById(
@@ -1227,10 +1240,94 @@ public class DiningDialogueMessageService {
                     readDistanceKm(item.getScoreDetails())
             );
             vo.setReason(item.getReason());
+            vo.setMatchedDishes(
+                    matchedDishes.getOrDefault(
+                            item.getMerchantId(),
+                            new ArrayList<>()
+                    )
+            );
             results.add(vo);
         }
 
         return results;
+    }
+
+    private Map<Long, List<MatchedDishVO>> loadDishEvidence(
+            List<RecommendationItem> items
+    ) {
+        Map<Long, List<MatchedDishVO>> result =
+                new LinkedHashMap<>();
+        List<Long> itemIds = items.stream()
+                .map(RecommendationItem::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (itemIds.isEmpty()) {
+            return result;
+        }
+        Map<Long, Long> itemMerchants = new LinkedHashMap<>();
+        for (RecommendationItem item : items) {
+            itemMerchants.put(item.getId(), item.getMerchantId());
+        }
+        List<RecommendationEvidence> evidences =
+                recommendationEvidenceMapper.selectList(
+                        new LambdaQueryWrapper
+                                <RecommendationEvidence>()
+                                .in(
+                                        RecommendationEvidence
+                                                ::getRecommendationItemId,
+                                        itemIds
+                                )
+                                .eq(
+                                        RecommendationEvidence
+                                                ::getSourceType,
+                                        "DISH"
+                                )
+                                .orderByAsc(
+                                        RecommendationEvidence::getId
+                                )
+                );
+        for (RecommendationEvidence evidence :
+                evidences == null
+                        ? List.<RecommendationEvidence>of()
+                        : evidences) {
+            try {
+                MatchedDishVO dish = objectMapper.readValue(
+                        evidence.getSourceTextSnapshot(),
+                        MatchedDishVO.class
+                );
+                Long expectedMerchant =
+                        itemMerchants.get(
+                                evidence.getRecommendationItemId()
+                        );
+                if (expectedMerchant == null
+                        || !expectedMerchant.equals(
+                        evidence.getSourceMerchantId()
+                )
+                        || !expectedMerchant.equals(
+                        dish.getMerchantId()
+                )) {
+                    log.warn(
+                            "Ignoring cross-merchant dish evidence id={}",
+                            evidence.getId()
+                    );
+                    continue;
+                }
+                List<MatchedDishVO> merchantDishes =
+                        result.computeIfAbsent(
+                                expectedMerchant,
+                                ignored -> new ArrayList<>()
+                        );
+                if (merchantDishes.size() < 3) {
+                    merchantDishes.add(dish);
+                }
+            } catch (Exception exception) {
+                log.warn(
+                        "Ignoring invalid dish evidence snapshot id={}",
+                        evidence.getId()
+                );
+            }
+        }
+        return result;
     }
 
     private BigDecimal readDistanceKm(String scoreDetails) {

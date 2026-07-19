@@ -239,6 +239,63 @@ class ConstraintExtractionServiceAiTest {
     }
 
     @Test
+    void shouldExtractDishKeywordsByRulesWithoutFalsePositives() {
+        stubSessionAndPersistence(null);
+
+        assertAll(
+                () -> assertEquals(
+                        List.of("水煮鱼"),
+                        extractRules(
+                                "想吃水煮鱼",
+                                "req-dish-fish"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of("牛肉"),
+                        extractRules(
+                                "想吃牛肉，人均50",
+                                "req-dish-beef"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of("小龙虾"),
+                        extractRules(
+                                "来点小龙虾",
+                                "req-dish-crayfish"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of("水煮鱼", "烤鱼"),
+                        extractRules(
+                                "水煮鱼或者烤鱼",
+                                "req-dish-or"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of(),
+                        extractRules(
+                                "不想吃烤鱼",
+                                "req-dish-negated"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of(),
+                        extractRules(
+                                "不吃香菜",
+                                "req-dish-coriander"
+                        ).getDishKeywords()
+                ),
+                () -> assertEquals(
+                        List.of(),
+                        extractRules(
+                                "人均80元",
+                                "req-dish-budget"
+                        ).getDishKeywords()
+                )
+        );
+    }
+
+    @Test
     void shouldIgnoreInvalidAiBudgetAndDistance()
             throws Exception {
         stubSessionAndPersistence(null);

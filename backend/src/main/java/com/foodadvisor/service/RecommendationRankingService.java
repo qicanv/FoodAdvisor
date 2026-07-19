@@ -10,6 +10,7 @@ import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
 import com.foodadvisor.dto.recommendation.LimitingConditionVO;
 import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
+import com.foodadvisor.dto.recommendation.MatchedDishVO;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.dto.recommendation.RecommendationWeights;
@@ -17,11 +18,15 @@ import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.ChatSessionState;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.MerchantBusinessHours;
+import com.foodadvisor.entity.Dish;
 import com.foodadvisor.entity.Recommendation;
+import com.foodadvisor.entity.RecommendationEvidence;
 import com.foodadvisor.entity.RecommendationItem;
 import com.foodadvisor.mapper.ChatSessionMapper;
 import com.foodadvisor.mapper.ChatSessionStateMapper;
 import com.foodadvisor.mapper.MerchantMapper;
+import com.foodadvisor.mapper.DishMapper;
+import com.foodadvisor.mapper.RecommendationEvidenceMapper;
 import com.foodadvisor.mapper.RecommendationItemMapper;
 import com.foodadvisor.mapper.RecommendationMapper;
 import org.springframework.dao.DataAccessException;
@@ -89,6 +94,9 @@ public class RecommendationRankingService {
     private final MerchantMapper merchantMapper;
     private final RecommendationMapper recommendationMapper;
     private final RecommendationItemMapper recommendationItemMapper;
+    private final DishMapper dishMapper;
+    private final RecommendationEvidenceMapper recommendationEvidenceMapper;
+    private final DishMatchingService dishMatchingService;
     private final MatchScoreCalculator matchScoreCalculator;
     private final MerchantBusinessHoursService businessHoursService;
     private final ObjectMapper objectMapper;
@@ -99,6 +107,9 @@ public class RecommendationRankingService {
             MerchantMapper merchantMapper,
             RecommendationMapper recommendationMapper,
             RecommendationItemMapper recommendationItemMapper,
+            DishMapper dishMapper,
+            RecommendationEvidenceMapper recommendationEvidenceMapper,
+            DishMatchingService dishMatchingService,
             MatchScoreCalculator matchScoreCalculator,
             MerchantBusinessHoursService businessHoursService,
             ObjectMapper objectMapper
@@ -108,6 +119,10 @@ public class RecommendationRankingService {
         this.merchantMapper = merchantMapper;
         this.recommendationMapper = recommendationMapper;
         this.recommendationItemMapper = recommendationItemMapper;
+        this.dishMapper = dishMapper;
+        this.recommendationEvidenceMapper =
+                recommendationEvidenceMapper;
+        this.dishMatchingService = dishMatchingService;
         this.matchScoreCalculator = matchScoreCalculator;
         this.businessHoursService = businessHoursService;
         this.objectMapper = objectMapper;
@@ -235,6 +250,12 @@ public class RecommendationRankingService {
                         request.getUserLongitude(),
                         businessHours
                 );
+
+        applyDishKeywordFilter(
+                candidates,
+                constraints,
+                results
+        );
 
         results.sort(this::compareResults);
         assignRanks(results);
@@ -658,6 +679,58 @@ public class RecommendationRankingService {
         return results;
     }
 
+    private void applyDishKeywordFilter(
+            List<Merchant> candidates,
+            ConstraintState constraints,
+            List<RecommendationItemVO> results
+    ) {
+        boolean hasDishKeywords =
+                constraints.getDishKeywords() != null
+                        && !constraints.getDishKeywords().isEmpty();
+        boolean hasTastePreferences =
+                constraints.getTastePreferences() != null
+                        && !constraints.getTastePreferences().isEmpty();
+        if (!hasDishKeywords && !hasTastePreferences) {
+            return;
+        }
+        List<Long> merchantIds = candidates.stream()
+                .map(Merchant::getId)
+                .toList();
+        if (merchantIds.isEmpty()) {
+            results.clear();
+            return;
+        }
+        List<Dish> dishes =
+                dishMapper.selectActiveByMerchantIds(merchantIds);
+        Map<Long, List<Dish>> grouped = new java.util.LinkedHashMap<>();
+        for (Dish dish : dishes == null ? List.<Dish>of() : dishes) {
+            grouped.computeIfAbsent(
+                    dish.getMerchantId(),
+                    ignored -> new ArrayList<>()
+            ).add(dish);
+        }
+        Map<Long, List<MatchedDishVO>> matches =
+                dishMatchingService.match(constraints, grouped);
+        if (hasDishKeywords) {
+            results.removeIf(result ->
+                    !matches.containsKey(result.getMerchantId()));
+        }
+        for (RecommendationItemVO result : results) {
+            if (!matches.containsKey(result.getMerchantId())) {
+                continue;
+            }
+            result.setMatchedDishes(
+                    new ArrayList<>(
+                            matches.get(result.getMerchantId())
+                    )
+            );
+            matchScoreCalculator.addDishEvidence(
+                    result,
+                    matches.get(result.getMerchantId())
+            );
+        }
+    }
+
     private Map<Long, List<MerchantBusinessHours>> loadBusinessHours(
             List<Merchant> candidates,
             ConstraintState constraints
@@ -744,6 +817,30 @@ public class RecommendationRankingService {
                 limitingConditions,
                 suggestions
         );
+
+        if (constraints.getDishKeywords() != null
+                && !constraints.getDishKeywords().isEmpty()) {
+            limitingConditions.add(
+                    new LimitingConditionVO(
+                            "dishKeywords",
+                            "DISH",
+                            constraints.getDishKeywords(),
+                            0,
+                            "当前有效菜单中没有命中指定菜品"
+                    )
+            );
+            suggestions.add(
+                    new AdjustmentSuggestionVO(
+                            "remove-dish-keywords",
+                            "RELAX_DISH",
+                            "dishKeywords",
+                            constraints.getDishKeywords(),
+                            List.of(),
+                            "暂时取消菜品限制并重新搜索",
+                            "放宽菜品要求后可继续按其他条件推荐"
+                    )
+            );
+        }
 
         limitingConditions.sort(
                 Comparator.comparing(
@@ -1498,6 +1595,48 @@ public class RecommendationRankingService {
                         "推荐结果明细保存失败"
                 );
             }
+            saveDishEvidence(item, result);
+        }
+    }
+
+    private void saveDishEvidence(
+            RecommendationItem item,
+            RecommendationItemVO result
+    ) {
+        if (result.getMatchedDishes() == null) {
+            return;
+        }
+        for (MatchedDishVO dish : result.getMatchedDishes()) {
+            if (!result.getMerchantId().equals(dish.getMerchantId())) {
+                throw new ApiException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "DISH_EVIDENCE_MERCHANT_MISMATCH",
+                        "菜品证据与推荐商家不一致"
+                );
+            }
+            RecommendationEvidence evidence =
+                    new RecommendationEvidence();
+            evidence.setRecommendationItemId(item.getId());
+            evidence.setSourceType("DISH");
+            evidence.setSourceMerchantId(result.getMerchantId());
+            evidence.setDishId(dish.getDishId());
+            evidence.setEvidenceExcerpt(dish.getMatchReason());
+            evidence.setSourceTextSnapshot(
+                    serializeToJson(
+                            dish,
+                            "DISH_SNAPSHOT_SERIALIZE_FAILED",
+                            "菜品证据快照序列化失败"
+                    )
+            );
+            evidence.setRelevanceScore(dish.getMatchScore());
+            evidence.setCreatedAt(OffsetDateTime.now());
+            if (recommendationEvidenceMapper.insert(evidence) != 1) {
+                throw new ApiException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "DISH_EVIDENCE_CREATE_FAILED",
+                        "菜品推荐证据保存失败"
+                );
+            }
         }
     }
 
@@ -1674,6 +1813,10 @@ public class RecommendationRankingService {
                     );
             case "cuisines" ->
                     constraints.setCuisines(
+                            readStringList(value)
+                    );
+            case "dishKeywords" ->
+                    constraints.setDishKeywords(
                             readStringList(value)
                     );
             case "scenes" ->
@@ -1944,6 +2087,9 @@ public class RecommendationRankingService {
         );
         copy.setTasteRestrictions(
                 copyList(source.getTasteRestrictions())
+        );
+        copy.setDishKeywords(
+                copyList(source.getDishKeywords())
         );
         copy.setExcludedCuisines(
                 copyList(source.getExcludedCuisines())

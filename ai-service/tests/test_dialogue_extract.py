@@ -175,6 +175,39 @@ def test_dialogue_extracts_environment(monkeypatch):
     assert body["extractedConstraints"]["environmentRequirements"] == ["安静"]
 
 
+def test_dialogue_accepts_dish_keywords_and_budget(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={
+                "dishKeywords": ["水煮鱼"],
+                "perCapitaBudget": 80,
+            }
+        ),
+    )
+
+    body = post_extract(request_body("想吃水煮鱼，人均80元")).json()
+
+    assert body["extractedConstraints"]["dishKeywords"] == ["水煮鱼"]
+    assert body["extractedConstraints"]["perCapitaBudget"] == 80
+
+
+def test_dialogue_rejects_invalid_dish_keywords(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(extractedConstraints={"dishKeywords": "水煮鱼"}),
+    )
+    assert post_extract(request_body("想吃水煮鱼")).status_code == 502
+
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={"dishKeywords": ["超" * 31]}
+        ),
+    )
+    assert post_extract(request_body("想吃菜")).status_code == 502
+
+
 def test_dialogue_detects_constraint_update(monkeypatch):
     mock_model(
         monkeypatch,
