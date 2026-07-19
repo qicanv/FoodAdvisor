@@ -18,6 +18,7 @@ from app.clients.opensearch_client import (
     ensure_knowledge_index,
     check_document_exists,
     upsert_knowledge_document,
+    deactivate_documents,
 )
 from app.core.config import settings
 from app.schemas.knowledge import (
@@ -25,6 +26,8 @@ from app.schemas.knowledge import (
     KnowledgeUpsertRequest,
     KnowledgeUpsertResponse,
     KnowledgeDocumentResult,
+    KnowledgeDeactivateRequest,
+    KnowledgeDeactivateResponse,
 )
 from app.services.embedding_service import get_embedding_service
 
@@ -137,6 +140,46 @@ class KnowledgeService:
             failCount=fail_count,
             results=results,
         )
+
+    # ============================================
+    # 停用知识文档
+    # ============================================
+
+    def deactivate(self, request: KnowledgeDeactivateRequest) -> KnowledgeDeactivateResponse:
+        """
+        批量停用知识文档（将 isActive 设为 false）。
+
+        - sourceType=MERCHANT：停用该商家下的全部文档（介绍+菜单+评价）
+        - sourceType=MERCHANT_INTRO/MENU/REVIEW：精确停用匹配来源
+        """
+        try:
+            count = deactivate_documents(
+                self.client,
+                self._index_name,
+                request.sourceType,
+                request.sourceIds,
+            )
+            logger.info(
+                "Deactivate: sourceType=%s, sourceIds=%s, deactivated=%d",
+                request.sourceType,
+                request.sourceIds,
+                count,
+            )
+            return KnowledgeDeactivateResponse(
+                requestId=request.requestId,
+                sourceType=request.sourceType,
+                sourceIds=request.sourceIds,
+                deactivatedCount=count,
+            )
+        except Exception as exc:
+            logger.error("Deactivate failed: %s", exc, exc_info=True)
+            return KnowledgeDeactivateResponse(
+                requestId=request.requestId,
+                sourceType=request.sourceType,
+                sourceIds=request.sourceIds,
+                deactivatedCount=0,
+                error=str(exc)[:500],
+            )
 
     # ============================================
     # 内部：Embedding + 写入

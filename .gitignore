@@ -82,7 +82,7 @@ logs/
 # =========================
 # Model / large local artifacts
 # =========================
-
+ai-service/app/local_models/
 models/
 model/
 checkpoints/

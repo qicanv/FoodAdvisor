@@ -36,6 +36,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -88,6 +89,7 @@ public class RecommendationRankingService {
     private final RecommendationMapper recommendationMapper;
     private final RecommendationItemMapper recommendationItemMapper;
     private final MatchScoreCalculator matchScoreCalculator;
+    private final AIClientService aiClientService;
     private final ObjectMapper objectMapper;
 
     public RecommendationRankingService(
@@ -97,6 +99,7 @@ public class RecommendationRankingService {
             RecommendationMapper recommendationMapper,
             RecommendationItemMapper recommendationItemMapper,
             MatchScoreCalculator matchScoreCalculator,
+            AIClientService aiClientService,
             ObjectMapper objectMapper
     ) {
         this.chatSessionMapper = chatSessionMapper;
@@ -105,6 +108,7 @@ public class RecommendationRankingService {
         this.recommendationMapper = recommendationMapper;
         this.recommendationItemMapper = recommendationItemMapper;
         this.matchScoreCalculator = matchScoreCalculator;
+        this.aiClientService = aiClientService;
         this.objectMapper = objectMapper;
     }
 
@@ -618,6 +622,9 @@ public class RecommendationRankingService {
             BigDecimal userLatitude,
             BigDecimal userLongitude
     ) {
+        Map<Long, BigDecimal> semanticScores =
+                performSemanticSearch(candidates, constraints);
+
         List<RecommendationItemVO> results =
                 new ArrayList<>();
 
@@ -627,11 +634,100 @@ public class RecommendationRankingService {
                     constraints,
                     weights,
                     userLatitude,
-                    userLongitude
+                    userLongitude,
+                    semanticScores
             ).ifPresent(results::add);
         }
 
         return results;
+    }
+
+    private Map<Long, BigDecimal> performSemanticSearch(
+            List<Merchant> candidates,
+            ConstraintState constraints
+    ) {
+        String query = buildSemanticQuery(constraints);
+        if (query.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> merchantIds = candidates.stream()
+                .map(Merchant::getId)
+                .toList();
+
+        try {
+            JsonNode response = aiClientService.semanticSearch(
+                    query,
+                    merchantIds,
+                    List.of("REVIEW", "MERCHANT_INTRO", "MENU")
+            );
+
+            return parseSemanticScores(response);
+        } catch (Exception exception) {
+            return Map.of();
+        }
+    }
+
+    private String buildSemanticQuery(ConstraintState constraints) {
+        StringBuilder query = new StringBuilder();
+
+        if (hasValues(constraints.getScenes())) {
+            query.append(String.join("、", constraints.getScenes()));
+        }
+
+        if (hasValues(constraints.getEnvironmentRequirements())) {
+            if (!query.isEmpty()) {
+                query.append(" ");
+            }
+            query.append(String.join("、",
+                    constraints.getEnvironmentRequirements()));
+        }
+
+        if (hasValues(constraints.getCuisines())) {
+            if (!query.isEmpty()) {
+                query.append(" ");
+            }
+            query.append(String.join("、", constraints.getCuisines()));
+        }
+
+        if (hasValues(constraints.getTastePreferences())) {
+            if (!query.isEmpty()) {
+                query.append(" ");
+            }
+            query.append(String.join("、",
+                    constraints.getTastePreferences()));
+        }
+
+        return query.toString().trim();
+    }
+
+    private Map<Long, BigDecimal> parseSemanticScores(
+            JsonNode response
+    ) {
+        Map<Long, BigDecimal> scores = new java.util.HashMap<>();
+
+        JsonNode results = response.path("data").path("results");
+        if (!results.isArray()) {
+            return scores;
+        }
+
+        for (JsonNode hit : results) {
+            long merchantId = hit.path("merchantId").asLong();
+            BigDecimal score = new BigDecimal(
+                    hit.path("score").asDouble()
+            );
+
+            scores.merge(
+                    merchantId,
+                    score,
+                    (existing, incoming) ->
+                            existing.compareTo(incoming) >= 0
+                                    ? existing
+                                    : incoming
+            );
+        }
+
+        return scores;
     }
 
     private NoMatchAnalysis analyzeNoMatch(
