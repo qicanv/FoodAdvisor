@@ -116,7 +116,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
     ON chat_messages(session_id, created_at, id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_chat_messages_session_request
-    ON chat_messages(session_id, request_id)
+    ON chat_messages(session_id, request_id, role)
     WHERE request_id IS NOT NULL;
 
 -- === constraint_extractions ===
