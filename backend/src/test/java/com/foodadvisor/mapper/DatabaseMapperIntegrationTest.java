@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.foodadvisor.entity.ChatMessage;
 import com.foodadvisor.entity.MerchantBusinessHours;
 import com.foodadvisor.entity.Dish;
+import com.foodadvisor.entity.MerchantHighlight;
+import com.foodadvisor.entity.MerchantHighlightEvidence;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
@@ -50,6 +52,10 @@ class DatabaseMapperIntegrationTest {
 
     @Autowired
     private DishMapper dishMapper;
+    @Autowired
+    private MerchantHighlightMapper merchantHighlightMapper;
+    @Autowired
+    private MerchantHighlightEvidenceMapper merchantHighlightEvidenceMapper;
 
     @Test
     void auditLogCountQueryUsesCurrentDatabaseColumns() {
@@ -306,6 +312,64 @@ class DatabaseMapperIntegrationTest {
                         && dish.getPrice() == null));
     }
 
+    @Test
+    @Transactional
+    void highlightMappersBatchQueryRealPostgresWithStableIsolation() {
+        Long merchantA = insertMerchant("HIGHLIGHT_MAPPER_A");
+        Long merchantB = insertMerchant("HIGHLIGHT_MAPPER_B");
+        Long excludedMerchant = insertMerchant("HIGHLIGHT_MAPPER_EXCLUDED");
+        Long reviewA1 = insertReview(merchantA, "A公开评价一，真实测试内容");
+        Long reviewA2 = insertReview(merchantA, "A公开评价二，真实测试内容");
+        Long reviewB = insertReview(merchantB, "B公开评价，真实测试内容");
+
+        Long aLower = insertHighlight(merchantA, "ACTIVE",
+                "环境舒适", 2, "0.80");
+        Long excludedStatus = insertHighlight(merchantA, "OUTDATED",
+                "过期亮点", 99, "1.00");
+        Long bActive = insertHighlight(merchantB, "ACTIVE",
+                "服务快捷", 3, "0.90");
+        Long excludedMerchantHighlight = insertHighlight(
+                excludedMerchant, "ACTIVE", "其他商家亮点", 20, "0.99");
+        Long aHigher = insertHighlight(merchantA, "ACTIVE",
+                "环境安静", 5, "0.95");
+
+        insertHighlightEvidence(aLower, reviewA1, "A证据一");
+        insertHighlightEvidence(excludedStatus, reviewA2, "过期证据");
+        insertHighlightEvidence(bActive, reviewB, "B证据");
+        insertHighlightEvidence(excludedMerchantHighlight, reviewB, "其他证据");
+        insertHighlightEvidence(aHigher, reviewA2, "A证据二");
+
+        List<MerchantHighlight> highlights =
+                merchantHighlightMapper.selectActiveByMerchantIds(
+                        List.of(merchantB, merchantA));
+
+        assertEquals(List.of(aHigher, aLower, bActive),
+                highlights.stream().map(MerchantHighlight::getId).toList());
+        assertEquals(Set.of(merchantA, merchantB),
+                highlights.stream().map(MerchantHighlight::getMerchantId)
+                        .collect(Collectors.toSet()));
+        assertTrue(highlights.stream().allMatch(value ->
+                "ACTIVE".equals(value.getStatus())));
+
+        List<MerchantHighlightEvidence> evidences =
+                merchantHighlightEvidenceMapper.selectByHighlightIds(
+                        List.of(aHigher, bActive));
+
+        assertEquals(2, evidences.size());
+        assertEquals(Set.of(aHigher, bActive),
+                evidences.stream()
+                        .map(MerchantHighlightEvidence::getHighlightId)
+                        .collect(Collectors.toSet()));
+        assertEquals(Set.of(reviewA2, reviewB),
+                evidences.stream()
+                        .map(MerchantHighlightEvidence::getReviewId)
+                        .collect(Collectors.toSet()));
+        assertTrue(evidences.stream().noneMatch(value ->
+                value.getHighlightId().equals(aLower)
+                        || value.getHighlightId().equals(excludedStatus)
+                        || value.getHighlightId().equals(excludedMerchantHighlight)));
+    }
+
     private Long insertSession() {
         return jdbcTemplate.queryForObject(
                 """
@@ -403,6 +467,52 @@ class DatabaseMapperIntegrationTest {
                 status,
                 deleted
         );
+    }
+
+    private Long insertReview(Long merchantId, String content) {
+        return jdbcTemplate.queryForObject(
+                """
+                INSERT INTO reviews (
+                    merchant_id, review_type, rating, content, source,
+                    current_version, status, moderation_status, risk_level,
+                    published_at, created_at, updated_at
+                )
+                VALUES (?, 'ORIGINAL', 5, ?, 'SYSTEM',
+                        1, 'PUBLISHED', 'APPROVED', 'LOW',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+                """,
+                Long.class, merchantId, content);
+    }
+
+    private Long insertHighlight(
+            Long merchantId, String status, String title,
+            int mentionCount, String positiveRatio) {
+        return jdbcTemplate.queryForObject(
+                """
+                INSERT INTO merchant_highlights (
+                    merchant_id, highlight_type, title, description,
+                    mention_count, positive_ratio, version, status, generated_at
+                )
+                VALUES (?, 'ENVIRONMENT', ?, ?, ?, ?::numeric, 1, ?,
+                        CURRENT_TIMESTAMP)
+                RETURNING id
+                """,
+                Long.class, merchantId, title, title + "描述",
+                mentionCount, positiveRatio, status);
+    }
+
+    private void insertHighlightEvidence(
+            Long highlightId, Long reviewId, String excerpt) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO merchant_highlight_evidences (
+                    highlight_id, review_id, review_version,
+                    evidence_excerpt, created_at
+                )
+                VALUES (?, ?, 1, ?, CURRENT_TIMESTAMP)
+                """,
+                highlightId, reviewId, excerpt);
     }
 
     private void assertBusinessHours(

@@ -13,6 +13,7 @@ import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.dto.recommendation.MatchedDishVO;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
+import com.foodadvisor.dto.recommendation.RecommendationBasisVO;
 import com.foodadvisor.dto.recommendation.RecommendationWeights;
 import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.ChatSessionState;
@@ -22,6 +23,9 @@ import com.foodadvisor.entity.Dish;
 import com.foodadvisor.entity.Recommendation;
 import com.foodadvisor.entity.RecommendationEvidence;
 import com.foodadvisor.entity.RecommendationItem;
+import com.foodadvisor.entity.MerchantHighlight;
+import com.foodadvisor.entity.MerchantHighlightEvidence;
+import com.foodadvisor.entity.Review;
 import com.foodadvisor.mapper.ChatSessionMapper;
 import com.foodadvisor.mapper.ChatSessionStateMapper;
 import com.foodadvisor.mapper.MerchantMapper;
@@ -29,6 +33,9 @@ import com.foodadvisor.mapper.DishMapper;
 import com.foodadvisor.mapper.RecommendationEvidenceMapper;
 import com.foodadvisor.mapper.RecommendationItemMapper;
 import com.foodadvisor.mapper.RecommendationMapper;
+import com.foodadvisor.mapper.MerchantHighlightMapper;
+import com.foodadvisor.mapper.MerchantHighlightEvidenceMapper;
+import com.foodadvisor.mapper.ReviewMapper;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -97,6 +104,10 @@ public class RecommendationRankingService {
     private final DishMapper dishMapper;
     private final RecommendationEvidenceMapper recommendationEvidenceMapper;
     private final DishMatchingService dishMatchingService;
+    private final MerchantHighlightMapper merchantHighlightMapper;
+    private final MerchantHighlightEvidenceMapper merchantHighlightEvidenceMapper;
+    private final ReviewMapper reviewMapper;
+    private final MerchantHighlightMatchingService merchantHighlightMatchingService;
     private final MatchScoreCalculator matchScoreCalculator;
     private final MerchantBusinessHoursService businessHoursService;
     private final ObjectMapper objectMapper;
@@ -110,6 +121,10 @@ public class RecommendationRankingService {
             DishMapper dishMapper,
             RecommendationEvidenceMapper recommendationEvidenceMapper,
             DishMatchingService dishMatchingService,
+            MerchantHighlightMapper merchantHighlightMapper,
+            MerchantHighlightEvidenceMapper merchantHighlightEvidenceMapper,
+            ReviewMapper reviewMapper,
+            MerchantHighlightMatchingService merchantHighlightMatchingService,
             MatchScoreCalculator matchScoreCalculator,
             MerchantBusinessHoursService businessHoursService,
             ObjectMapper objectMapper
@@ -123,6 +138,10 @@ public class RecommendationRankingService {
         this.recommendationEvidenceMapper =
                 recommendationEvidenceMapper;
         this.dishMatchingService = dishMatchingService;
+        this.merchantHighlightMapper = merchantHighlightMapper;
+        this.merchantHighlightEvidenceMapper = merchantHighlightEvidenceMapper;
+        this.reviewMapper = reviewMapper;
+        this.merchantHighlightMatchingService = merchantHighlightMatchingService;
         this.matchScoreCalculator = matchScoreCalculator;
         this.businessHoursService = businessHoursService;
         this.objectMapper = objectMapper;
@@ -256,6 +275,7 @@ public class RecommendationRankingService {
                 constraints,
                 results
         );
+        applyHighlightEvidence(candidates, constraints, results);
 
         results.sort(this::compareResults);
         assignRanks(results);
@@ -729,6 +749,90 @@ public class RecommendationRankingService {
                     matches.get(result.getMerchantId())
             );
         }
+    }
+
+    private void applyHighlightEvidence(
+            List<Merchant> candidates,
+            ConstraintState constraints,
+            List<RecommendationItemVO> results
+    ) {
+        if (!merchantHighlightMatchingService.isRelevant(constraints)
+                || results.isEmpty()) {
+            return;
+        }
+        List<Long> merchantIds = results.stream()
+                .map(RecommendationItemVO::getMerchantId).distinct().toList();
+        List<MerchantHighlight> highlights =
+                merchantHighlightMapper.selectActiveByMerchantIds(merchantIds);
+        highlights = highlights == null ? List.of() : highlights;
+        List<Long> highlightIds = highlights.stream()
+                .map(MerchantHighlight::getId).toList();
+        List<MerchantHighlightEvidence> links =
+                highlightIds.isEmpty() ? List.of()
+                        : merchantHighlightEvidenceMapper
+                        .selectByHighlightIds(highlightIds);
+        List<Long> reviewIds = (links == null ? List.<MerchantHighlightEvidence>of() : links)
+                .stream().map(MerchantHighlightEvidence::getReviewId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        Map<Long, Review> reviews = reviewIds.isEmpty()
+                ? Map.of()
+                : reviewMapper.selectByIds(reviewIds).stream()
+                .collect(java.util.stream.Collectors.toMap(Review::getId, review -> review));
+        Map<Long, List<RecommendationBasisVO>> matches =
+                merchantHighlightMatchingService.match(
+                        constraints, highlights, links, reviews);
+        Map<Long, Merchant> merchantMap = candidates.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Merchant::getId, merchant -> merchant));
+        for (RecommendationItemVO result : results) {
+            List<RecommendationBasisVO> bases = new ArrayList<>(
+                    matches.getOrDefault(result.getMerchantId(), List.of()));
+            addMerchantBasis(constraints, merchantMap.get(result.getMerchantId()), bases);
+            if (bases.isEmpty()) continue;
+            result.setRecommendationBases(new ArrayList<>(bases));
+            long reviewBasisCount = bases.stream()
+                    .filter(basis -> "REVIEW".equals(basis.getSourceType()))
+                    .count();
+            BigDecimal boost = BigDecimal.valueOf(
+                    Math.min(3, reviewBasisCount));
+            result.setFinalScore(result.getFinalScore().add(boost)
+                    .min(ONE_HUNDRED));
+            result.getMatchedConditions().add(0,
+                    "评价亮点：" + bases.get(0).getTitle());
+            result.setReason(result.getMerchantName() + "满足"
+                    + result.getMatchedConditions().stream().limit(2)
+                    .collect(java.util.stream.Collectors.joining("、"))
+                    + "，综合匹配分为"
+                    + result.getFinalScore().stripTrailingZeros().toPlainString()
+                    + "分。");
+        }
+    }
+
+    private void addMerchantBasis(
+            ConstraintState constraints,
+            Merchant merchant,
+            List<RecommendationBasisVO> bases
+    ) {
+        if (merchant == null || bases.size() >= 3) return;
+        String condition = null;
+        String summary = null;
+        if (constraints.getEnvironmentRequirements() != null
+                && merchant.getEnvironmentTags() != null
+                && constraints.getEnvironmentRequirements().stream()
+                .anyMatch(merchant.getEnvironmentTags()::contains)) {
+            condition = "environmentRequirements";
+            summary = "商家资料中的环境标签：" + merchant.getEnvironmentTags();
+        }
+        if (summary == null) return;
+        RecommendationBasisVO basis = new RecommendationBasisVO();
+        basis.setSourceType("MERCHANT");
+        basis.setSourceId(merchant.getId());
+        basis.setMerchantId(merchant.getId());
+        basis.setTitle("商家资料");
+        basis.setSummary(summary);
+        basis.setMatchedCondition(condition);
+        basis.setRelevanceScore(new BigDecimal("1.0"));
+        bases.add(basis);
     }
 
     private Map<Long, List<MerchantBusinessHours>> loadBusinessHours(
@@ -1596,6 +1700,44 @@ public class RecommendationRankingService {
                 );
             }
             saveDishEvidence(item, result);
+            saveRecommendationBases(item, result);
+        }
+    }
+
+    private void saveRecommendationBases(
+            RecommendationItem item,
+            RecommendationItemVO result
+    ) {
+        for (RecommendationBasisVO basis :
+                result.getRecommendationBases() == null
+                        ? List.<RecommendationBasisVO>of()
+                        : result.getRecommendationBases()) {
+            if (!result.getMerchantId().equals(basis.getMerchantId())
+                    || (!"REVIEW".equals(basis.getSourceType())
+                    && !"MERCHANT".equals(basis.getSourceType()))) {
+                throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "RECOMMENDATION_EVIDENCE_MERCHANT_MISMATCH",
+                        "推荐依据与推荐商家不一致");
+            }
+            RecommendationEvidence evidence = new RecommendationEvidence();
+            evidence.setRecommendationItemId(item.getId());
+            evidence.setSourceType(basis.getSourceType());
+            evidence.setSourceMerchantId(result.getMerchantId());
+            if ("REVIEW".equals(basis.getSourceType())) {
+                evidence.setReviewId(basis.getSourceId());
+            }
+            evidence.setEvidenceExcerpt(basis.getSummary());
+            evidence.setSourceTextSnapshot(serializeToJson(
+                    basis, "EVIDENCE_SNAPSHOT_SERIALIZE_FAILED",
+                    "推荐依据快照序列化失败"));
+            evidence.setRelevanceScore(basis.getRelevanceScore());
+            evidence.setCreatedAt(OffsetDateTime.now());
+            if (recommendationEvidenceMapper.insert(evidence) != 1) {
+                throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR,
+                        "RECOMMENDATION_EVIDENCE_CREATE_FAILED",
+                        "推荐依据保存失败");
+            }
+            basis.setEvidenceId(evidence.getId());
         }
     }
 

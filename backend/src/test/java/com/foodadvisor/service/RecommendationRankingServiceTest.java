@@ -22,6 +22,9 @@ import com.foodadvisor.mapper.RecommendationItemMapper;
 import com.foodadvisor.mapper.RecommendationMapper;
 import com.foodadvisor.mapper.DishMapper;
 import com.foodadvisor.mapper.RecommendationEvidenceMapper;
+import com.foodadvisor.mapper.MerchantHighlightMapper;
+import com.foodadvisor.mapper.MerchantHighlightEvidenceMapper;
+import com.foodadvisor.mapper.ReviewMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -74,6 +77,12 @@ class RecommendationRankingServiceTest {
 
     @Mock
     private RecommendationEvidenceMapper recommendationEvidenceMapper;
+    @Mock
+    private MerchantHighlightMapper merchantHighlightMapper;
+    @Mock
+    private MerchantHighlightEvidenceMapper merchantHighlightEvidenceMapper;
+    @Mock
+    private ReviewMapper reviewMapper;
 
     private DishMatchingService dishMatchingService;
 
@@ -103,6 +112,10 @@ class RecommendationRankingServiceTest {
                 dishMapper,
                 recommendationEvidenceMapper,
                 dishMatchingService,
+                merchantHighlightMapper,
+                merchantHighlightEvidenceMapper,
+                reviewMapper,
+                new MerchantHighlightMatchingService(),
                 matchScoreCalculator,
                 businessHoursService,
                 new ObjectMapper()

@@ -40,12 +40,14 @@
             <p>{{ message.content }}</p>
 
             <div v-if="message.recommendations.length" class="merchant-grid">
-              <button
+              <div
                 v-for="merchant in message.recommendations"
                 :key="merchant.merchantId"
-                type="button"
                 class="merchant-card"
+                role="button"
+                tabindex="0"
                 @click="openMerchant(merchant.merchantId)"
+                @keydown.enter="openMerchant(merchant.merchantId)"
               >
                 <div class="merchant-card-header">
                   <span class="rank-badge">#{{ merchant.rankNo || '-' }}</span>
@@ -73,7 +75,16 @@
                     {{ dish.dishPrice == null ? '价格暂无' : `¥${dish.dishPrice}` }}
                   </span>
                 </div>
-              </button>
+                <button
+                  v-if="(Array.isArray(merchant.recommendationBases) && merchant.recommendationBases.length)
+                    || (Array.isArray(merchant.matchedDishes) && merchant.matchedDishes.length)"
+                  type="button"
+                  class="evidence-button"
+                  @click.stop="openEvidence(message, merchant)"
+                >
+                  查看依据
+                </button>
+              </div>
             </div>
 
             <div v-if="message.suggestions.length" class="suggestion-panel">
@@ -133,6 +144,24 @@
         </div>
       </form>
     </main>
+    <div v-if="evidenceDialogOpen" class="dialog-mask" @click.self="closeEvidence">
+      <section class="evidence-dialog" role="dialog" aria-modal="true">
+        <header>
+          <h2>推荐依据</h2>
+          <button type="button" @click="closeEvidence">关闭</button>
+        </header>
+        <div v-if="evidenceLoading" class="state-panel">正在加载推荐依据...</div>
+        <div v-else-if="evidenceError" class="error-banner">{{ evidenceError }}</div>
+        <div v-else-if="!evidences.length" class="state-panel">暂无可查看依据</div>
+        <article v-for="(evidence, index) in evidences" :key="index" class="evidence-item">
+          <strong>{{ evidenceTypeText(evidence.sourceType) }}</strong>
+          <span>{{ evidence.merchantName }}</span>
+          <p v-if="evidence.available">{{ evidence.excerpt || '暂无详细内容' }}</p>
+          <p v-else>{{ evidence.unavailableReason || '该来源已删除或无权查看' }}</p>
+          <small v-if="evidence.available && evidence.reviewTime">{{ evidence.reviewTime }}</small>
+        </article>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -143,6 +172,7 @@ import {
   adjustDiningRecommendation,
   createDiningSession,
   getDiningMessages,
+  getRecommendationEvidences,
   sendDiningMessage
 } from '../../api/aiDining'
 
@@ -158,6 +188,10 @@ const messageListRef = ref(null)
 const currentConstraints = ref({})
 const locationStatus = ref('NOT_REQUESTED')
 const currentLocation = ref(null)
+const evidenceDialogOpen = ref(false)
+const evidenceLoading = ref(false)
+const evidenceError = ref('')
+const evidences = ref([])
 
 const currentUserId = () => {
   const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
@@ -425,6 +459,36 @@ const openMerchant = merchantId => {
   if (merchantId) router.push(`/diner/merchant/${merchantId}`)
 }
 
+const evidenceTypeText = type => ({
+  REVIEW: '用户评价',
+  MERCHANT: '商家资料',
+  DISH: '菜单菜品'
+}[type] || '推荐依据')
+
+const openEvidence = async (message, merchant) => {
+  if (!message.recommendationId) return
+  evidenceDialogOpen.value = true
+  evidenceLoading.value = true
+  evidenceError.value = ''
+  evidences.value = []
+  try {
+    const response = await getRecommendationEvidences(
+      message.recommendationId,
+      merchant.merchantId
+    )
+    if (!response.success) throw new Error(response.message || '推荐依据加载失败')
+    evidences.value = response.data || []
+  } catch (error) {
+    evidenceError.value = error.message || '推荐依据加载失败，请稍后重试'
+  } finally {
+    evidenceLoading.value = false
+  }
+}
+
+const closeEvidence = () => {
+  evidenceDialogOpen.value = false
+}
+
 onMounted(initialize)
 </script>
 
@@ -453,6 +517,13 @@ onMounted(initialize)
 .merchant-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
 .merchant-card { padding: 16px; text-align: left; border: 1px solid #e5e7eb; border-radius: 14px; background: #fff; cursor: pointer; }
 .merchant-card:hover { border-color: #8b5cf6; box-shadow: 0 5px 18px rgba(91, 91, 214, .12); }
+.evidence-button { margin-top: 12px; padding: 7px 12px; border: 1px solid #7c3aed; border-radius: 8px; color: #6d28d9; background: #fff; cursor: pointer; }
+.dialog-mask { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(17, 24, 39, .45); }
+.evidence-dialog { width: min(680px, 100%); max-height: 78vh; overflow-y: auto; padding: 20px; border-radius: 16px; background: #fff; }
+.evidence-dialog header { display: flex; align-items: center; justify-content: space-between; }
+.evidence-dialog h2 { margin: 0; }
+.evidence-item { margin-top: 14px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 10px; }
+.evidence-item span, .evidence-item small { display: block; margin-top: 5px; color: #667085; }
 .merchant-card-header { display: flex; justify-content: space-between; font-size: 12px; color: #667085; }
 .rank-badge { color: #7c3aed; font-weight: 700; }
 .merchant-card h3 { margin: 9px 0; color: #111827; }

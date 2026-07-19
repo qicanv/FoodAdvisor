@@ -18,6 +18,7 @@ import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.dto.recommendation.MatchedDishVO;
+import com.foodadvisor.dto.recommendation.RecommendationBasisVO;
 import com.foodadvisor.entity.ChatMessage;
 import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.Merchant;
@@ -1203,6 +1204,8 @@ public class DiningDialogueMessageService {
 
         Map<Long, List<MatchedDishVO>> matchedDishes =
                 loadDishEvidence(items);
+        Map<Long, List<RecommendationBasisVO>> recommendationBases =
+                loadRecommendationBases(items);
 
         for (RecommendationItem item : items) {
             Merchant merchant =
@@ -1246,10 +1249,53 @@ public class DiningDialogueMessageService {
                             new ArrayList<>()
                     )
             );
+            vo.setRecommendationBases(
+                    recommendationBases.getOrDefault(
+                            item.getMerchantId(), new ArrayList<>()));
             results.add(vo);
         }
 
         return results;
+    }
+
+    private Map<Long, List<RecommendationBasisVO>> loadRecommendationBases(
+            List<RecommendationItem> items
+    ) {
+        Map<Long, List<RecommendationBasisVO>> result = new LinkedHashMap<>();
+        List<Long> itemIds = items.stream().map(RecommendationItem::getId)
+                .filter(Objects::nonNull).toList();
+        if (itemIds.isEmpty()) return result;
+        Map<Long, Long> merchants = items.stream().collect(
+                java.util.stream.Collectors.toMap(
+                        RecommendationItem::getId,
+                        RecommendationItem::getMerchantId));
+        List<RecommendationEvidence> evidences =
+                recommendationEvidenceMapper.selectList(
+                        new LambdaQueryWrapper<RecommendationEvidence>()
+                                .in(RecommendationEvidence::getRecommendationItemId, itemIds)
+                                .in(RecommendationEvidence::getSourceType,
+                                        List.of("REVIEW", "MERCHANT"))
+                                .orderByAsc(RecommendationEvidence::getId));
+        for (RecommendationEvidence evidence :
+                evidences == null ? List.<RecommendationEvidence>of() : evidences) {
+            try {
+                Long merchantId = merchants.get(evidence.getRecommendationItemId());
+                if (merchantId == null
+                        || !merchantId.equals(evidence.getSourceMerchantId())) continue;
+                RecommendationBasisVO basis = objectMapper.readValue(
+                        evidence.getSourceTextSnapshot(),
+                        RecommendationBasisVO.class);
+                if (!merchantId.equals(basis.getMerchantId())) continue;
+                basis.setEvidenceId(evidence.getId());
+                List<RecommendationBasisVO> list =
+                        result.computeIfAbsent(merchantId, ignored -> new ArrayList<>());
+                if (list.size() < 3) list.add(basis);
+            } catch (Exception exception) {
+                log.warn("Ignoring invalid recommendation evidence id={}",
+                        evidence.getId());
+            }
+        }
+        return result;
     }
 
     private Map<Long, List<MatchedDishVO>> loadDishEvidence(
