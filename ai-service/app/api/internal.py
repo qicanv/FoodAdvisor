@@ -9,6 +9,7 @@ FastAPI 内部接口 — 供 Spring Boot 后端调用
 - POST /internal/content/query             查询/导出处理结果
 - POST /internal/knowledge/upsert          知识向量化与存储
 - POST /internal/knowledge/deactivate      停用知识文档
+- POST /internal/search/semantic           语义检索
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,8 +34,12 @@ from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
 from app.services.review_summary_service import review_summary_service
 from app.services.content_processing_service import content_processing_service
 from app.services.knowledge_service import get_knowledge_service
+from app.schemas.search import SearchRequest, SearchResponse
+from app.services.search_service import get_search_service
 from app.models.schemas import HighlightGenerateRequest, HighlightGenerateResponse
 from app.services.highlight_service import highlight_service
+from app.models.schemas import GenerateReplyRequest, GenerateReplyResponse
+from app.services.reply_draft_service import reply_draft_service
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +250,45 @@ async def deactivate_knowledge(request: KnowledgeDeactivateRequest):
     return result
 
 
+# ---- 语义检索 ----
+
+@router.post(
+    "/search/semantic",
+    response_model=SearchResponse,
+    summary="语义检索",
+)
+async def semantic_search(request: SearchRequest):
+    """
+    将用户查询转换为向量，从 OpenSearch 中检索最相关的知识文档。
+
+    流程：
+    1. 将查询文本通过 BGE 模型转为 768 维查询向量（带指令前缀）
+    2. 在 OpenSearch 中执行 k-NN 向量检索
+    3. 过滤 isActive=true + 可选的 merchantIds/sourceTypes
+    4. 返回 Top-K 相关文档及相似度分数
+
+    OpenSearch 不可用时返回 searchMode=KEYWORD_FALLBACK。
+    """
+    if not request.query.strip():
+        raise HTTPException(status_code=422, detail="查询文本不能为空")
+
+    logger.info(
+        "语义检索: query='%s', topK=%d",
+        request.query[:100],
+        request.topK,
+    )
+
+    service = get_search_service()
+    result = service.search(request)
+
+    logger.info(
+        "语义检索完成: mode=%s, results=%d",
+        result.data.searchMode,
+        len(result.data.results),
+    )
+    return result
+
+
 # ---- 以下为后续 Sprint 接口骨架，仅定义路由签名 ----
 
 @router.post("/rag/recommend")
@@ -292,3 +336,26 @@ async def generate_merchant_highlights(request: HighlightGenerateRequest):
         f"positiveReviewCount={len(request.reviews)}"
     )
     return await highlight_service.generate(request)
+
+
+# ---- 评价辅助回复（EPIC-02 故事7） ----
+
+@router.post(
+    "/reviews/generate-reply",
+    response_model=GenerateReplyResponse,
+)
+async def generate_review_reply(request: GenerateReplyRequest):
+    """
+    评价辅助回复生成（EPIC-02 故事7）
+
+    由 Spring Boot 传入评价内容和策略（POSITIVE/NEGATIVE），
+    返回 AI 生成的回复建议。商家确认或编辑后才能发布为正式回复。
+
+    好评策略：表达感谢 + 回应具体优点
+    差评策略：道歉 + 问题说明 + 改进承诺
+    """
+    logger.info(
+        f"生成评价回复 reviewId={request.reviewId}, "
+        f"strategy={request.strategy.value}, rating={request.rating}"
+    )
+    return await reply_draft_service.generate(request)

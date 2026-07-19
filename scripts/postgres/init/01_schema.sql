@@ -21,5 +21,6 @@ $canonical_preflight$;
 \ir 01_model_config.inc
 \ir 01_review_images.inc
 \ir 01_review_communication.inc
+\ir 01_reply_draft.inc
 \ir 01_audit_logs.inc
 \ir 01_region_hot_words.inc

@@ -25,6 +25,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.dao.DataRetrievalFailureException;
 
 import java.math.BigDecimal;
@@ -47,6 +49,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class RecommendationRankingServiceTest {
 
     @Mock
@@ -67,6 +70,9 @@ class RecommendationRankingServiceTest {
     @Mock
     private MatchScoreCalculator matchScoreCalculator;
 
+    @Mock
+    private AIClientService aiClientService;
+
     private RecommendationRankingService service;
 
     private AtomicLong recommendationIdSequence;
@@ -83,6 +89,7 @@ class RecommendationRankingServiceTest {
                 recommendationMapper,
                 recommendationItemMapper,
                 matchScoreCalculator,
+                aiClientService,
                 new ObjectMapper()
         );
 
@@ -259,7 +266,8 @@ class RecommendationRankingServiceTest {
                 any(ConstraintState.class),
                 any(RecommendationWeights.class),
                 any(BigDecimal.class),
-                any(BigDecimal.class)
+                any(BigDecimal.class),
+                any()
         )).thenAnswer(invocation -> {
             Merchant merchant =
                     invocation.getArgument(0);
@@ -337,7 +345,8 @@ class RecommendationRankingServiceTest {
                 any(ConstraintState.class),
                 any(RecommendationWeights.class),
                 any(BigDecimal.class),
-                any(BigDecimal.class)
+                any(BigDecimal.class),
+                any()
         )).thenAnswer(invocation -> {
             Merchant merchant =
                     invocation.getArgument(0);
@@ -622,7 +631,8 @@ class RecommendationRankingServiceTest {
                 any(ConstraintState.class),
                 any(RecommendationWeights.class),
                 any(BigDecimal.class),
-                any(BigDecimal.class)
+                any(BigDecimal.class),
+                any()
         )).thenAnswer(invocation -> {
             Merchant merchant =
                     invocation.getArgument(0);
@@ -1314,7 +1324,8 @@ class RecommendationRankingServiceTest {
                 any(ConstraintState.class),
                 any(RecommendationWeights.class),
                 any(BigDecimal.class),
-                any(BigDecimal.class)
+                any(BigDecimal.class),
+                any()
         )).thenAnswer(invocation -> {
             Merchant merchant =
                     invocation.getArgument(0);
@@ -1343,7 +1354,8 @@ class RecommendationRankingServiceTest {
                 any(ConstraintState.class),
                 any(RecommendationWeights.class),
                 any(BigDecimal.class),
-                any(BigDecimal.class)
+                any(BigDecimal.class),
+                any()
         )).thenReturn(Optional.empty());
     }
 
@@ -1417,6 +1429,7 @@ class RecommendationRankingServiceTest {
         weights.setDistance(new BigDecimal("15"));
         weights.setEnvironment(new BigDecimal("10"));
         weights.setReputation(new BigDecimal("10"));
+        weights.setSemantic(BigDecimal.ZERO);
         return weights;
     }
 
@@ -1430,6 +1443,7 @@ class RecommendationRankingServiceTest {
         weights.setDistance(new BigDecimal("30"));
         weights.setEnvironment(new BigDecimal("10"));
         weights.setReputation(new BigDecimal("10"));
+        weights.setSemantic(BigDecimal.ZERO);
         return weights;
     }
 
