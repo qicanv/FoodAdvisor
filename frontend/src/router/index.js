@@ -107,6 +107,18 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin' },
   },
   {
+    path: '/admin/diners',
+    name: 'admin-diners',
+    component: () => import('../views/admin/AdminDinerView.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
+  {
+    path: '/admin/topics',
+    name: 'admin-topics',
+    component: () => import('../views/admin/TopicManagement.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
+  {
     path: '/admin/model-configs',
     name: 'model-configs',
     component: () => import('../views/admin/ModelConfigView.vue'),

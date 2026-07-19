@@ -2,15 +2,17 @@
   <AdminLayout title="商家管理" subtitle="维护商家基础资料，为搜索、推荐和口碑分析提供准确数据">
     <template #sidebar>
       <div class="page-sidebar-nav">
-        <span class="page-sidebar-title" style="color: #ffffff;">商家管理</span>
-        <div 
-          v-for="item in sidebarItems" 
-          :key="item.key"
-          :class="['page-sidebar-item', { active: activeTab === item.key }]"
-          @click="activeTab = item.key"
-        >
-          <span class="menu-icon">{{ item.icon }}</span>
-          <span style="color: #ffffff;">{{ item.label }}</span>
+        <span class="page-sidebar-title">商家管理</span>
+        <div class="page-sidebar-items-wrapper">
+          <div 
+            v-for="item in sidebarItems" 
+            :key="item.key"
+            :class="['page-sidebar-item', { active: activeTab === item.key }]"
+            @click="activeTab = item.key"
+          >
+            <span class="menu-icon">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </div>
         </div>
       </div>
     </template>
@@ -1219,13 +1221,6 @@ onMounted(() => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-.menu-icon {
-  font-size: 20px;
-  width: 28px;
-  text-align: center;
-  flex-shrink: 0;
 }
 
 .pagination {

@@ -8,6 +8,8 @@ FastAPI 内部接口 — 供 Spring Boot 后端调用
 - POST /internal/content/process           内容清洗与切分
 - POST /internal/content/query             查询/导出处理结果
 - POST /internal/knowledge/upsert          知识向量化与存储
+- POST /internal/knowledge/deactivate      停用知识文档
+- POST /internal/search/semantic           语义检索
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,6 +26,7 @@ from app.schemas.content_processing import (
 )
 from app.schemas.knowledge import (
     KnowledgeUpsertRequest, KnowledgeUpsertResponse,
+    KnowledgeDeactivateRequest, KnowledgeDeactivateResponse,
 )
 from app.services.dialogue_extraction_service import dialogue_extraction_service
 from app.services.review_analysis_service import review_analysis_service
@@ -31,6 +34,8 @@ from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
 from app.services.review_summary_service import review_summary_service
 from app.services.content_processing_service import content_processing_service
 from app.services.knowledge_service import get_knowledge_service
+from app.schemas.search import SearchRequest, SearchResponse
+from app.services.search_service import get_search_service
 from app.models.schemas import HighlightGenerateRequest, HighlightGenerateResponse
 from app.services.highlight_service import highlight_service
 
@@ -203,6 +208,81 @@ async def upsert_knowledge(request: KnowledgeUpsertRequest):
         result.successCount,
         result.skipCount,
         result.failCount,
+    )
+    return result
+
+
+@router.post(
+    "/knowledge/deactivate",
+    response_model=KnowledgeDeactivateResponse,
+    summary="停用知识文档",
+)
+async def deactivate_knowledge(request: KnowledgeDeactivateRequest):
+    """
+    批量停用知识文档（将 isActive 设为 false），使其不再参与公开检索。
+
+    - sourceType=MERCHANT：停用该商家下的全部文档（介绍+菜品+评价）
+    - sourceType=MERCHANT_INTRO / MENU / REVIEW：精确停用匹配的文档
+
+    停用的文档在 OpenSearch 中保留，可后续恢复。
+    """
+    if not request.sourceIds:
+        raise HTTPException(status_code=422, detail="sourceIds 不能为空")
+    if len(request.sourceIds) > 500:
+        raise HTTPException(status_code=422, detail="单次最多停用500个 ID")
+
+    logger.info(
+        "停用知识文档: sourceType=%s, sourceIds=%s",
+        request.sourceType,
+        request.sourceIds[:10],
+    )
+
+    service = get_knowledge_service()
+    result = service.deactivate(request)
+
+    logger.info(
+        "停用完成: sourceType=%s, deactivated=%d",
+        request.sourceType,
+        result.deactivatedCount,
+    )
+    return result
+
+
+# ---- 语义检索 ----
+
+@router.post(
+    "/search/semantic",
+    response_model=SearchResponse,
+    summary="语义检索",
+)
+async def semantic_search(request: SearchRequest):
+    """
+    将用户查询转换为向量，从 OpenSearch 中检索最相关的知识文档。
+
+    流程：
+    1. 将查询文本通过 BGE 模型转为 768 维查询向量（带指令前缀）
+    2. 在 OpenSearch 中执行 k-NN 向量检索
+    3. 过滤 isActive=true + 可选的 merchantIds/sourceTypes
+    4. 返回 Top-K 相关文档及相似度分数
+
+    OpenSearch 不可用时返回 searchMode=KEYWORD_FALLBACK。
+    """
+    if not request.query.strip():
+        raise HTTPException(status_code=422, detail="查询文本不能为空")
+
+    logger.info(
+        "语义检索: query='%s', topK=%d",
+        request.query[:100],
+        request.topK,
+    )
+
+    service = get_search_service()
+    result = service.search(request)
+
+    logger.info(
+        "语义检索完成: mode=%s, results=%d",
+        result.data.searchMode,
+        len(result.data.results),
     )
     return result
 
