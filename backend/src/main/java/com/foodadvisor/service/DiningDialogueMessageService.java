@@ -1286,6 +1286,12 @@ public class DiningDialogueMessageService {
                         evidence.getSourceTextSnapshot(),
                         RecommendationBasisVO.class);
                 if (!merchantId.equals(basis.getMerchantId())) continue;
+                if (evidence.getConditionKey() != null
+                        && !evidence.getConditionKey().isBlank()) {
+                    basis.setMatchedCondition(evidence.getConditionKey());
+                }
+                if (basis.getMatchedCondition() == null
+                        || basis.getMatchedCondition().isBlank()) continue;
                 basis.setEvidenceId(evidence.getId());
                 List<RecommendationBasisVO> list =
                         result.computeIfAbsent(merchantId, ignored -> new ArrayList<>());

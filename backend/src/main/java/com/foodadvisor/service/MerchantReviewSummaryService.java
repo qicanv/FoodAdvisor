@@ -17,6 +17,8 @@ import com.foodadvisor.mapper.MerchantSummaryEvidenceMapper;
 import com.foodadvisor.mapper.ReviewMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -36,6 +38,14 @@ import java.util.stream.Collectors;
  */
 @Service
 public class MerchantReviewSummaryService {
+    private static final Logger log =
+            LoggerFactory.getLogger(MerchantReviewSummaryService.class);
+    private static final String REVIEW_SOURCE_TYPE = "REVIEW";
+    private static final String SOURCE_UNAVAILABLE = "SOURCE_UNAVAILABLE";
+    private static final Set<String> EVIDENCE_TYPES = Set.of(
+            "ADVANTAGE", "DISADVANTAGE", "DISH",
+            "ENVIRONMENT", "SERVICE", "RECENT_CHANGE"
+    );
 
     /** 生成摘要所需的最少有效评论数（验收准则 1/5） */
     private static final int MIN_REVIEW_COUNT = 5;
@@ -230,29 +240,52 @@ public class MerchantReviewSummaryService {
         Set<Long> sentReviewIds = reviews.stream()
                 .map(Review::getId)
                 .collect(Collectors.toSet());
+        Map<Long, Review> sentReviews = reviews.stream()
+                .collect(Collectors.toMap(Review::getId, review -> review));
 
         if (result.has("evidences") && result.get("evidences").isArray()) {
             for (JsonNode ev : result.get("evidences")) {
                 long reviewId = ev.has("reviewId") ? ev.get("reviewId").asLong() : -1;
+                String evidenceType = textOrNull(ev, "evidenceType");
+                evidenceType = evidenceType == null
+                        ? null : evidenceType.toUpperCase();
+                Review sourceReview = sentReviews.get(reviewId);
 
-                // 防止模型编造 reviewId：不在送入集合中的一律丢弃
-                if (!sentReviewIds.contains(reviewId)) {
+                if (!sentReviewIds.contains(reviewId)
+                        || sourceReview == null
+                        || !merchantId.equals(sourceReview.getMerchantId())
+                        || !isPublicReview(sourceReview)
+                        || !EVIDENCE_TYPES.contains(evidenceType)) {
+                    log.warn(
+                            "Discarding invalid summary evidence: summaryId={}, "
+                                    + "reviewId={}, expectedMerchantId={}, "
+                                    + "actualMerchantId={}",
+                            summaryId,
+                            reviewId,
+                            merchantId,
+                            sourceReview == null
+                                    ? null : sourceReview.getMerchantId()
+                    );
                     continue;
                 }
 
                 jdbcTemplate.update(
                         """
                         INSERT INTO merchant_summary_evidences (
-                            summary_id, review_id, evidence_type,
-                            evidence_excerpt, created_at
+                            summary_id, review_id, source_type,
+                            source_merchant_id, review_version,
+                            evidence_type, evidence_excerpt, created_at
                         )
-                        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                         ON CONFLICT (summary_id, review_id, evidence_type)
                         DO NOTHING
                         """,
                         summaryId,
                         reviewId,
-                        textOrNull(ev, "evidenceType"),
+                        REVIEW_SOURCE_TYPE,
+                        merchantId,
+                        sourceReview.getCurrentVersion(),
+                        evidenceType,
                         textOrNull(ev, "evidenceExcerpt")
                 );
             }
@@ -314,23 +347,47 @@ public class MerchantReviewSummaryService {
         Map<Long, Review> reviewMap = reviewMapper.selectBatchIds(reviewIds)
                 .stream()
                 .collect(Collectors.toMap(Review::getId, r -> r));
+        Merchant merchant = merchantMapper.selectById(summary.getMerchantId());
+        String merchantName = merchant == null ? null : merchant.getName();
 
         List<SummaryEvidenceVO> vos = new ArrayList<>();
         for (MerchantSummaryEvidence evidence : evidences) {
             SummaryEvidenceVO vo = new SummaryEvidenceVO();
-            vo.setReviewId(evidence.getReviewId());
+            vo.setEvidenceId(evidence.getId());
+            vo.setSourceType(REVIEW_SOURCE_TYPE);
+            vo.setMerchantId(summary.getMerchantId());
+            vo.setMerchantName(merchantName);
             vo.setEvidenceType(evidence.getEvidenceType());
-            vo.setEvidenceExcerpt(evidence.getEvidenceExcerpt());
 
             Review review = reviewMap.get(evidence.getReviewId());
-            // 原评价被删除/隐藏后不再返回正文（Story 9 验收准则 7）
-            boolean available = review != null
-                    && "PUBLISHED".equals(review.getStatus());
+            boolean sourceMerchantMatches =
+                    summary.getMerchantId().equals(evidence.getSourceMerchantId());
+            boolean available = sourceMerchantMatches
+                    && review != null
+                    && summary.getMerchantId().equals(review.getMerchantId())
+                    && isPublicReview(review);
             vo.setReviewAvailable(available);
+            vo.setAvailable(available);
             if (available) {
+                vo.setSourceId(evidence.getReviewId());
+                vo.setReviewId(evidence.getReviewId());
                 vo.setRating(review.getRating());
                 vo.setReviewContent(review.getContent());
-                vo.setPublishedAt(review.getPublishedAt());
+                vo.setEvidenceExcerpt(evidence.getEvidenceExcerpt());
+                vo.setReviewTime(review.getPublishedAt() != null
+                        ? review.getPublishedAt() : review.getReviewTime());
+            } else {
+                vo.setUnavailableReason(SOURCE_UNAVAILABLE);
+                log.warn(
+                        "Unavailable summary evidence: evidenceId={}, "
+                                + "summaryId={}, reviewId={}, "
+                                + "expectedMerchantId={}, actualMerchantId={}",
+                        evidence.getId(),
+                        summary.getId(),
+                        evidence.getReviewId(),
+                        summary.getMerchantId(),
+                        review == null ? null : review.getMerchantId()
+                );
             }
             vos.add(vo);
         }
@@ -391,6 +448,13 @@ public class MerchantReviewSummaryService {
                         .orderByDesc(Review::getPublishedAt)
                         .last("LIMIT " + MAX_REVIEWS_FOR_SUMMARY)
         );
+    }
+
+    private boolean isPublicReview(Review review) {
+        return review != null
+                && "PUBLISHED".equals(review.getStatus())
+                && "APPROVED".equals(review.getModerationStatus())
+                && review.getDeletedAt() == null;
     }
 
     /**

@@ -84,6 +84,10 @@ logs/
 # =========================
 ai-service/app/local_models/
 models/
+!ai-service/app/models/
+!ai-service/app/models/**
+ai-service/app/models/__pycache__/
+ai-service/app/models/**/*.pyc
 model/
 checkpoints/
 *.pt

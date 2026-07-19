@@ -23,6 +23,7 @@ public class RecommendationEvidence {
     private String knowledgeDocumentId;
     private String evidenceExcerpt;
     private String sourceTextSnapshot;
+    private String conditionKey;
     private BigDecimal relevanceScore;
 
     @TableField(fill = FieldFill.INSERT)
