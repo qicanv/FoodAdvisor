@@ -29,6 +29,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -70,6 +72,9 @@ class DiningDialogueMessageServiceTest {
     private DialogueService dialogueService;
 
     @Mock
+    private ConstraintExtractionService constraintExtractionService;
+
+    @Mock
     private RecommendationRankingService recommendationRankingService;
 
     @Mock
@@ -77,6 +82,9 @@ class DiningDialogueMessageServiceTest {
 
     @Mock
     private ValueOperations<String, Object> valueOperations;
+
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     private DiningDialogueMessageService service;
 
@@ -88,6 +96,31 @@ class DiningDialogueMessageServiceTest {
 
         lenient().when(redisTemplate.opsForValue())
                 .thenReturn(valueOperations);
+        lenient().when(transactionManager.getTransaction(any()))
+                .thenReturn(new SimpleTransactionStatus());
+        lenient().when(chatMessageMapper.nextId())
+                .thenReturn(10L);
+        lenient().when(constraintExtractionService
+                .prepareExtraction(any(), any(), any(), any()))
+                .thenReturn(new ConstraintExtractionService
+                        .PreparedExtraction(
+                                new ConstraintState(),
+                                List.of(),
+                                "MERCHANT_RECOMMENDATION",
+                                "RULE_FALLBACK",
+                                true,
+                                List.of()
+                        ));
+        lenient().when(dialogueService.continueDialogue(
+                any(), any(), any(), any(), any(), any()
+        )).thenAnswer(invocation ->
+                dialogueService.continueDialogue(
+                        invocation.getArgument(0),
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3)
+                )
+        );
 
         service = new DiningDialogueMessageService(
                 chatSessionMapper,
@@ -96,9 +129,11 @@ class DiningDialogueMessageServiceTest {
                 recommendationItemMapper,
                 merchantMapper,
                 dialogueService,
+                constraintExtractionService,
                 recommendationRankingService,
                 redisTemplate,
-                objectMapper
+                objectMapper,
+                transactionManager
         );
     }
 
@@ -327,6 +362,44 @@ class DiningDialogueMessageServiceTest {
 
         service.sendMessage(1L, request("req-5"));
 
+        verify(redisTemplate).delete(anyString());
+        verify(transactionManager).commit(any());
+    }
+
+    @Test
+    void shouldRollbackAtomicStageWhenAssistantSaveFails() {
+        AtomicReference<Object> token =
+                new AtomicReference<>();
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        when(chatMessageMapper.selectOne(any()))
+                .thenReturn(null, null, null);
+        when(valueOperations.setIfAbsent(
+                anyString(), any(), any()
+        )).thenAnswer(invocation -> {
+            token.set(invocation.getArgument(1));
+            return true;
+        });
+        when(valueOperations.get(anyString()))
+                .thenAnswer(invocation -> token.get());
+        when(dialogueService.continueDialogue(
+                any(), any(), any(), any()
+        )).thenReturn(readyDialogue());
+        when(recommendationRankingService.rank(any(), any()))
+                .thenReturn(successRecommendation());
+        when(chatMessageMapper.insert(any(ChatMessage.class)))
+                .thenReturn(0);
+
+        assertThrows(
+                ApiException.class,
+                () -> service.sendMessage(
+                        1L,
+                        request("req-atomic-failure")
+                )
+        );
+
+        verify(transactionManager).rollback(any());
+        verify(transactionManager, never()).commit(any());
         verify(redisTemplate).delete(anyString());
     }
 
@@ -769,6 +842,10 @@ class DiningDialogueMessageServiceTest {
         item.setMerchantId(200L);
         item.setRankNo(1);
         item.setReason("category and operating status");
+        item.setScoreDetails(
+                "{\"distanceKm\":2.35,"
+                        + "\"distance\":{\"score\":10}}"
+        );
 
         when(recommendationItemMapper.selectList(any()))
                 .thenReturn(List.of(item));
@@ -829,6 +906,16 @@ class DiningDialogueMessageServiceTest {
                                 .getOperationStatus()
                 ),
                 () -> assertEquals(
+                        0,
+                        new BigDecimal("2.35").compareTo(
+                                history.getMessages()
+                                        .get(1)
+                                        .getRecommendations()
+                                        .get(0)
+                                        .getDistanceKm()
+                        )
+                ),
+                () -> assertEquals(
                         "放宽距离",
                         history.getMessages()
                                 .get(1)
@@ -837,6 +924,78 @@ class DiningDialogueMessageServiceTest {
                                 .getDisplayText()
                  )
          );
+    }
+
+    @Test
+    void shouldTolerateMissingOrMalformedHistoricalDistance() {
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        ChatMessage assistant =
+                message(
+                        21L,
+                        "ASSISTANT",
+                        "req-distance-invalid",
+                        "{\"recommendationId\":100}"
+                );
+        when(chatMessageMapper.selectList(any()))
+                .thenReturn(List.of(assistant));
+
+        RecommendationItem missing =
+                historicalItem(201L, "{}");
+        RecommendationItem malformed =
+                historicalItem(
+                        202L,
+                        "{\"distanceKm\":\"not-a-number\"}"
+                );
+        when(recommendationItemMapper.selectList(any()))
+                .thenReturn(List.of(missing, malformed));
+        when(merchantMapper.selectById(201L))
+                .thenReturn(historicalMerchant(201L));
+        when(merchantMapper.selectById(202L))
+                .thenReturn(historicalMerchant(202L));
+
+        DialogueHistoryResponse history =
+                service.listMessages(1L, 1L);
+
+        assertAll(
+                () -> assertEquals(
+                        2,
+                        history.getMessages().get(0)
+                                .getRecommendations().size()
+                ),
+                () -> assertEquals(
+                        null,
+                        history.getMessages().get(0)
+                                .getRecommendations().get(0)
+                                .getDistanceKm()
+                ),
+                () -> assertEquals(
+                        null,
+                        history.getMessages().get(0)
+                                .getRecommendations().get(1)
+                                .getDistanceKm()
+                )
+        );
+    }
+
+    private RecommendationItem historicalItem(
+            Long merchantId,
+            String scoreDetails
+    ) {
+        RecommendationItem item = new RecommendationItem();
+        item.setRecommendationId(100L);
+        item.setMerchantId(merchantId);
+        item.setRankNo(merchantId.intValue());
+        item.setScoreDetails(scoreDetails);
+        return item;
+    }
+
+    private Merchant historicalMerchant(Long merchantId) {
+        Merchant merchant = new Merchant();
+        merchant.setId(merchantId);
+        merchant.setName("historical merchant " + merchantId);
+        merchant.setOperationStatus("OPERATING");
+        return merchant;
     }
 
     private void assertEmptyMessage(String content) {

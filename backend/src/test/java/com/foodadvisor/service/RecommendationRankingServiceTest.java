@@ -215,6 +215,12 @@ class RecommendationRankingServiceTest {
                                         .getScore()
                         )
         );
+        assertTrue(
+                itemCaptor.getAllValues()
+                        .get(0)
+                        .getScoreDetails()
+                        .contains("\"distanceKm\":1.00")
+        );
     }
 
     @Test

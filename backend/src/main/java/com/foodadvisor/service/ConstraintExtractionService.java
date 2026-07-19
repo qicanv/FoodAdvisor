@@ -338,6 +338,121 @@ public class ConstraintExtractionService {
         return response;
     }
 
+    public PreparedExtraction prepareExtraction(
+            Long sessionId,
+            Long userId,
+            String message,
+            Long messageId
+    ) {
+        validateActiveSession(sessionId, userId);
+        if (message == null || message.isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "MESSAGE_REQUIRED",
+                    "message不能为空"
+            );
+        }
+
+        ConstraintState currentState =
+                loadCurrentState(sessionId);
+        AiExtractionResult aiExtraction =
+                tryExtractByAi(
+                        sessionId,
+                        messageId,
+                        message,
+                        currentState
+                );
+
+        if (aiExtraction == null) {
+            return new PreparedExtraction(
+                    extractByRules(message),
+                    List.of(),
+                    "MERCHANT_RECOMMENDATION",
+                    "RULE_FALLBACK",
+                    true,
+                    detectConflicts(message)
+            );
+        }
+
+        return new PreparedExtraction(
+                aiExtraction.extracted(),
+                aiExtraction.clearedFields(),
+                aiExtraction.intent(),
+                aiExtraction.extractor(),
+                aiExtraction.degraded(),
+                detectConflicts(message)
+        );
+    }
+
+    public ConstraintExtractResponse extractAndMergePrepared(
+            Long sessionId,
+            Long userId,
+            String message,
+            String requestId,
+            Long messageId,
+            PreparedExtraction prepared
+    ) {
+        validateActiveSession(sessionId, userId);
+        if (prepared == null) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "EXTRACTION_NOT_PREPARED",
+                    "消费需求提取结果尚未准备"
+            );
+        }
+
+        ChatMessage savedMessage =
+                saveUserMessage(
+                        sessionId,
+                        message,
+                        requestId,
+                        messageId
+                );
+        ConstraintState oldState =
+                loadCurrentState(sessionId);
+        ConstraintState extracted =
+                prepared.extracted();
+        List<ConstraintConflictVO> conflicts =
+                prepared.conflicts();
+        ConstraintState merged;
+        List<String> changes;
+
+        if (conflicts.isEmpty()) {
+            merged = merge(oldState, extracted, message);
+            applyClearedFields(
+                    merged,
+                    prepared.clearedFields()
+            );
+            changes = detectChanges(oldState, merged);
+        } else {
+            merged = copyState(oldState);
+            changes = new ArrayList<>();
+        }
+
+        saveSessionState(sessionId, merged, conflicts);
+        saveExtraction(
+                sessionId,
+                savedMessage.getId(),
+                extracted,
+                merged,
+                changes,
+                conflicts
+        );
+
+        ConstraintExtractResponse response =
+                new ConstraintExtractResponse();
+        response.setSessionId(sessionId);
+        response.setMessageId(savedMessage.getId());
+        response.setExtracted(extracted);
+        response.setMerged(merged);
+        response.setChanges(changes);
+        response.setConflicts(conflicts);
+        response.setIntent(prepared.intent());
+        response.setExtractor(prepared.extractor());
+        response.setDegraded(prepared.degraded());
+        return response;
+    }
+
     /**
      * 校验会话是否存在、是否属于当前用户，以及是否仍可继续使用。
      *
@@ -407,6 +522,20 @@ public class ConstraintExtractionService {
             String message,
             String requestId
     ) {
+        return saveUserMessage(
+                sessionId,
+                message,
+                requestId,
+                null
+        );
+    }
+
+    private ChatMessage saveUserMessage(
+            Long sessionId,
+            String message,
+            String requestId,
+            Long messageId
+    ) {
         if (message == null || message.isBlank()) {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,
@@ -416,6 +545,7 @@ public class ConstraintExtractionService {
         }
 
         ChatMessage chatMessage = new ChatMessage();
+        chatMessage.setId(messageId);
         chatMessage.setSessionId(sessionId);
         chatMessage.setRole("USER");
         chatMessage.setContent(message.trim());
@@ -434,7 +564,11 @@ public class ConstraintExtractionService {
         chatMessage.setCreatedAt(OffsetDateTime.now());
 
         int affectedRows =
-                chatMessageMapper.insert(chatMessage);
+                messageId == null
+                        ? chatMessageMapper.insert(chatMessage)
+                        : chatMessageMapper.insertReserved(
+                                chatMessage
+                        );
 
         if (affectedRows != 1 || chatMessage.getId() == null) {
             throw new ApiException(
@@ -445,6 +579,16 @@ public class ConstraintExtractionService {
         }
 
         return chatMessage;
+    }
+
+    public record PreparedExtraction(
+            ConstraintState extracted,
+            List<String> clearedFields,
+            String intent,
+            String extractor,
+            boolean degraded,
+            List<ConstraintConflictVO> conflicts
+    ) {
     }
 
     /**

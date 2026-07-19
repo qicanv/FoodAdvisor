@@ -10,6 +10,17 @@
     </header>
 
     <main class="dialogue-shell">
+      <div class="location-toolbar">
+        <button
+          type="button"
+          class="location-button"
+          :disabled="locationStatus === 'LOCATING'"
+          @click="requestCurrentLocation"
+        >
+          {{ locationButtonText() }}
+        </button>
+        <span class="location-status">{{ locationStatusText() }}</span>
+      </div>
       <section ref="messageListRef" class="message-list" aria-live="polite">
         <div v-if="initializing" class="state-panel">正在加载会话...</div>
         <div v-else-if="messages.length === 0" class="empty-panel">
@@ -131,6 +142,8 @@ const adjustingSuggestionKey = ref('')
 const errorMessage = ref('')
 const messageListRef = ref(null)
 const currentConstraints = ref({})
+const locationStatus = ref('NOT_REQUESTED')
+const currentLocation = ref(null)
 
 const currentUserId = () => {
   const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
@@ -156,6 +169,60 @@ const distanceText = value => value === null || value === undefined ? '距离未
 const operationStatusText = value => {
   const labels = { OPERATING: '营业中', SUSPENDED: '暂停营业', CLOSED_PERMANENTLY: '已停业' }
   return labels[value] || '营业状态未知'
+}
+
+const locationButtonText = () =>
+  locationStatus.value === 'LOCATING'
+    ? '正在获取位置...'
+    : locationStatus.value === 'READY'
+      ? '重新获取当前位置'
+      : '使用当前位置'
+
+const locationStatusText = () => {
+  const labels = {
+    NOT_REQUESTED: '未获取位置',
+    LOCATING: '正在获取',
+    READY: '已获取当前位置',
+    DENIED: '位置权限已拒绝',
+    UNSUPPORTED: '当前浏览器不支持定位'
+  }
+  return labels[locationStatus.value] || '未获取位置'
+}
+
+const requestCurrentLocation = () => {
+  if (!navigator.geolocation) {
+    locationStatus.value = 'UNSUPPORTED'
+    currentLocation.value = null
+    return
+  }
+
+  locationStatus.value = 'LOCATING'
+  errorMessage.value = ''
+  navigator.geolocation.getCurrentPosition(
+    position => {
+      currentLocation.value = {
+        userLatitude: position.coords.latitude,
+        userLongitude: position.coords.longitude
+      }
+      locationStatus.value = 'READY'
+    },
+    error => {
+      currentLocation.value = null
+      locationStatus.value =
+        error.code === error.PERMISSION_DENIED
+          ? 'DENIED'
+          : 'NOT_REQUESTED'
+      errorMessage.value =
+        error.code === error.PERMISSION_DENIED
+          ? '您已拒绝位置权限；普通推荐仍可使用，距离推荐需要授权当前位置'
+          : '当前位置获取失败，请稍后重试'
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 300000
+    }
+  )
 }
 
 const normalizeHistoryMessage = item => ({
@@ -230,8 +297,16 @@ const submitMessage = async () => {
   sending.value = true
   errorMessage.value = ''
   try {
-    const response = await sendDiningMessage(sessionId.value, content, requestId)
+    const response = await sendDiningMessage(
+      sessionId.value,
+      content,
+      requestId,
+      currentLocation.value
+    )
     if (!response.success || !response.data) {
+      if (response.message?.includes('缺少当前位置')) {
+        throw new Error('该需求包含距离条件，请先点击“使用当前位置”并授权定位')
+      }
       throw new Error(response.message || '消息发送失败')
     }
 
@@ -290,7 +365,8 @@ const applySuggestion = async (message, suggestion) => {
       sessionId.value,
       message.id,
       suggestion.field,
-      suggestion.suggestedValue
+      suggestion.suggestedValue,
+      currentLocation.value
     )
     if (!response.success || !response.data) {
       throw new Error(response.message || '调整条件后重新推荐失败')
@@ -346,6 +422,10 @@ onMounted(initialize)
 .back-button { justify-self: start; border: 0; background: transparent; color: #5b5bd6; cursor: pointer; font-size: 15px; }
 .session-state { justify-self: end; color: #667085; font-size: 13px; }
 .dialogue-shell { max-width: 1120px; margin: 0 auto; overflow: hidden; border-radius: 20px; background: #fff; box-shadow: 0 12px 36px rgba(31, 41, 55, .1); }
+.location-toolbar { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid #eaecf0; background: #fafafa; }
+.location-button { min-width: 132px; padding: 8px 13px; border: 1px solid #8b5cf6; border-radius: 9px; color: #6d28d9; background: #fff; cursor: pointer; }
+.location-button:disabled { opacity: .6; cursor: wait; }
+.location-status { color: #667085; font-size: 13px; }
 .message-list { height: calc(100vh - 280px); min-height: 430px; overflow-y: auto; padding: 28px; }
 .empty-panel, .state-panel { height: 100%; display: grid; place-content: center; text-align: center; color: #667085; }
 .empty-panel h2 { color: #1f2937; margin: 12px 0 4px; }

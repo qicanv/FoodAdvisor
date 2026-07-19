@@ -32,7 +32,9 @@ import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -77,9 +79,12 @@ public class DiningDialogueMessageService {
     private final RecommendationItemMapper recommendationItemMapper;
     private final MerchantMapper merchantMapper;
     private final DialogueService dialogueService;
+    private final ConstraintExtractionService
+            constraintExtractionService;
     private final RecommendationRankingService recommendationRankingService;
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     public DiningDialogueMessageService(
             ChatSessionMapper chatSessionMapper,
@@ -88,9 +93,11 @@ public class DiningDialogueMessageService {
             RecommendationItemMapper recommendationItemMapper,
             MerchantMapper merchantMapper,
             DialogueService dialogueService,
+            ConstraintExtractionService constraintExtractionService,
             RecommendationRankingService recommendationRankingService,
             RedisTemplate<String, Object> redisTemplate,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager
     ) {
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
@@ -98,10 +105,14 @@ public class DiningDialogueMessageService {
         this.recommendationItemMapper = recommendationItemMapper;
         this.merchantMapper = merchantMapper;
         this.dialogueService = dialogueService;
+        this.constraintExtractionService =
+                constraintExtractionService;
         this.recommendationRankingService =
                 recommendationRankingService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.transactionTemplate =
+                new TransactionTemplate(transactionManager);
     }
 
     public DialogueMessageResponse sendMessage(
@@ -161,7 +172,42 @@ public class DiningDialogueMessageService {
         }
 
         try {
-            return processMessage(sessionId, request);
+            Long messageId = chatMessageMapper.nextId();
+            if (messageId == null || messageId <= 0) {
+                throw new ApiException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "MESSAGE_ID_RESERVE_FAILED",
+                        "用户消息编号预留失败"
+                );
+            }
+
+            ConstraintExtractionService.PreparedExtraction
+                    preparedExtraction =
+                    constraintExtractionService
+                            .prepareExtraction(
+                                    sessionId,
+                                    request.getUserId(),
+                                    request.getContent(),
+                                    messageId
+                            );
+
+            DialogueMessageResponse response =
+                    transactionTemplate.execute(status ->
+                            processMessage(
+                                    sessionId,
+                                    request,
+                                    messageId,
+                                    preparedExtraction
+                            )
+                    );
+            if (response == null) {
+                throw new ApiException(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "MESSAGE_PROCESSING_FAILED",
+                        "消息处理失败"
+                );
+            }
+            return response;
         } finally {
             releaseLock(lockKey, lockToken);
         }
@@ -279,13 +325,37 @@ public class DiningDialogueMessageService {
             Long sessionId,
             DialogueMessageRequest request
     ) {
+        return processMessage(
+                sessionId,
+                request,
+                null,
+                null
+        );
+    }
+
+    private DialogueMessageResponse processMessage(
+            Long sessionId,
+            DialogueMessageRequest request,
+            Long messageId,
+            ConstraintExtractionService.PreparedExtraction
+                    preparedExtraction
+    ) {
         DialogueContinueResponse dialogue =
-                dialogueService.continueDialogue(
-                        sessionId,
-                        request.getUserId(),
-                        request.getContent(),
-                        request.getRequestId()
-                );
+                preparedExtraction == null
+                        ? dialogueService.continueDialogue(
+                                sessionId,
+                                request.getUserId(),
+                                request.getContent(),
+                                request.getRequestId()
+                        )
+                        : dialogueService.continueDialogue(
+                                sessionId,
+                                request.getUserId(),
+                                request.getContent(),
+                                request.getRequestId(),
+                                messageId,
+                                preparedExtraction
+                        );
 
         if (!dialogue.isReadyForRecommendation()) {
             String assistantText =
@@ -1153,11 +1223,46 @@ public class DiningDialogueMessageService {
                             new BigDecimal("100")
                     )
             );
+            vo.setDistanceKm(
+                    readDistanceKm(item.getScoreDetails())
+            );
             vo.setReason(item.getReason());
             results.add(vo);
         }
 
         return results;
+    }
+
+    private BigDecimal readDistanceKm(String scoreDetails) {
+        if (scoreDetails == null || scoreDetails.isBlank()) {
+            return null;
+        }
+
+        try {
+            Object value = objectMapper.readTree(scoreDetails)
+                    .get("distanceKm");
+            if (!(value instanceof
+                    com.fasterxml.jackson.databind.JsonNode node)
+                    || node.isNull()) {
+                return null;
+            }
+
+            String text = node.isNumber()
+                    ? node.asText()
+                    : node.isTextual()
+                    ? node.textValue()
+                    : null;
+            if (text == null || text.isBlank()) {
+                return null;
+            }
+
+            BigDecimal distance = new BigDecimal(text);
+            return distance.compareTo(BigDecimal.ZERO) < 0
+                    ? null
+                    : distance;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private RecommendationRankResponse loadRecommendationResponse(

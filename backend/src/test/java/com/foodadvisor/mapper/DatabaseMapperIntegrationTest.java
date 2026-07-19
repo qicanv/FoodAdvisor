@@ -7,6 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import com.foodadvisor.entity.ChatMessage;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -34,6 +35,9 @@ class DatabaseMapperIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ChatMessageMapper chatMessageMapper;
 
     @Test
     void auditLogCountQueryUsesCurrentDatabaseColumns() {
@@ -113,6 +117,36 @@ class DatabaseMapperIntegrationTest {
                         sessionId,
                         requestId,
                         "ASSISTANT"
+                )
+        );
+    }
+
+    @Test
+    @Transactional
+    void reservedMessageIdCanBeUsedForAtomicInsert() {
+        Long sessionId = insertSession();
+        Long messageId = chatMessageMapper.nextId();
+        ChatMessage message = new ChatMessage();
+        message.setId(messageId);
+        message.setSessionId(sessionId);
+        message.setRole("USER");
+        message.setContent("reserved id test");
+        message.setMessageType("TEXT");
+        message.setRequestId(UUID.randomUUID().toString());
+        message.setMetadata("{}");
+        message.setCreatedAt(OffsetDateTime.now());
+
+        assertEquals(
+                1,
+                chatMessageMapper.insertReserved(message)
+        );
+
+        assertEquals(
+                messageId,
+                jdbcTemplate.queryForObject(
+                        "SELECT id FROM chat_messages WHERE id = ?",
+                        Long.class,
+                        messageId
                 )
         );
     }

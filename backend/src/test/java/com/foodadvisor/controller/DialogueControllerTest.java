@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 import java.util.Map;
+import java.math.BigDecimal;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -85,6 +86,67 @@ class DialogueControllerTest {
                         .value("RECOMMENDATION"))
                 .andExpect(jsonPath("$.data.recommendation.status")
                         .value("SUCCESS"));
+    }
+
+    @Test
+    void shouldPassValidLocationToMessageService()
+            throws Exception {
+        when(diningDialogueMessageService.sendMessage(
+                eq(1L),
+                any()
+        )).thenReturn(messageResponse("RECOMMENDATION"));
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/messages"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                request("req-location", "三公里内川菜")
+                        )))
+                .andExpect(status().isOk());
+
+        verify(diningDialogueMessageService).sendMessage(
+                eq(1L),
+                org.mockito.ArgumentMatchers.argThat(
+                        request ->
+                                new BigDecimal("30.5728")
+                                        .compareTo(request
+                                                .getUserLatitude()) == 0
+                                        && new BigDecimal("104.0668")
+                                        .compareTo(request
+                                                .getUserLongitude()) == 0
+                )
+        );
+    }
+
+    @Test
+    void shouldRejectOutOfRangeLatitudeAndLongitude()
+            throws Exception {
+        Map<String, Object> invalidLatitude =
+                request("req-invalid-latitude", "三公里内川菜");
+        invalidLatitude.put("userLatitude", 90.1);
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/messages"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                invalidLatitude
+                        )))
+                .andExpect(status().isBadRequest());
+
+        Map<String, Object> invalidLongitude =
+                request("req-invalid-longitude", "三公里内川菜");
+        invalidLongitude.put("userLongitude", -180.1);
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/messages"
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                invalidLongitude
+                        )))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
