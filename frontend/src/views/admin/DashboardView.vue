@@ -245,7 +245,7 @@ const stats = ref([
   },
 ])
 
-const QUICK_ACTIONS_VERSION = '4'
+const QUICK_ACTIONS_VERSION = '6'
 
 const defaultQuickActions = [
   {
@@ -268,6 +268,13 @@ const defaultQuickActions = [
     path: '/admin/analytics',
     emoji: '📈',
     bgClass: 'action-card-purple',
+  },
+  {
+    label: '区域热点',
+    description: '分析各区域消费热点和变化趋势',
+    path: '/admin/regional-hotspots',
+    emoji: '📍',
+    bgClass: 'action-card-olive',
   },
   {
     label: '商家统计',
@@ -332,6 +339,7 @@ const availableActions = computed(() => {
     { label: '模型配置', description: '管理 AI 模型服务配置', path: '/admin/model-configs', emoji: '🤖', bgClass: 'action-card-blue' },
     { label: '运营数据', description: '查看平台核心运营数据', path: '/admin/dashboard', emoji: '📊', bgClass: 'action-card-orange' },
     { label: '数据分析', description: '分析用户搜索、点击和反馈行为', path: '/admin/analytics', emoji: '📈', bgClass: 'action-card-purple' },
+    { label: '区域热点', description: '分析各区域消费热点和变化趋势', path: '/admin/regional-hotspots', emoji: '📍', bgClass: 'action-card-olive' },
     { label: '商家统计', description: '查看商家状态和运营统计', path: '/admin/restaurants?tab=status', emoji: '📉', bgClass: 'action-card-cyan' },
     { label: '专题管理', description: '管理分类标签和探店专题', path: '/admin/topics', emoji: '📚', bgClass: 'action-card-pink' },
     { label: '管理食客', description: '管理平台注册用户和食客信息', path: '/admin/diners', emoji: '👥', bgClass: 'action-card-red' },
@@ -569,8 +577,8 @@ onMounted(() => {
 }
 
 .action-card-purple {
-  background: linear-gradient(135deg, #722ed1 0%, #9254de 100%);
-  border: 1px solid rgba(114, 46, 209, 0.3);
+  background: linear-gradient(135deg, #5c3377 0%, #7b5ca5 100%);
+  border: 1px solid rgba(92, 51, 119, 0.3);
 }
 
 .action-info {
@@ -771,18 +779,23 @@ onMounted(() => {
 }
 
 .action-card-pink {
-  background: linear-gradient(135deg, #eb2f96 0%, #ff69c1 100%);
-  border: 1px solid rgba(235, 47, 150, 0.3);
+  background: linear-gradient(135deg, #c41d7f 0%, #e672a8 100%);
+  border: 1px solid rgba(196, 29, 127, 0.3);
 }
 
 .action-card-red {
-  background: linear-gradient(135deg, #f5222d 0%, #ff4d4f 100%);
-  border: 1px solid rgba(245, 34, 45, 0.3);
+  background: linear-gradient(135deg, #e15863 0%, #e85d6d 100%);
+  border: 1px solid rgba(207, 19, 34, 0.3);
 }
 
 .action-card-teal {
-  background: linear-gradient(135deg, #2378f7 0%, #40a9ff 100%);
-  border: 1px solid rgba(35, 120, 247, 0.3);
+  background: linear-gradient(135deg, #3f51b5 0%, #5c6bc0 100%);
+  border: 1px solid rgba(63, 81, 181, 0.3);
+}
+
+.action-card-olive {
+  background: linear-gradient(135deg, #558b2f 0%, #689f38 100%);
+  border: 1px solid rgba(85, 139, 47, 0.3);
 }
 
 .empty-actions {

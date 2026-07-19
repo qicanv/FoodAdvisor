@@ -120,6 +120,7 @@ import {
   getDiningMessages,
   sendDiningMessage
 } from '../../api/aiDining'
+import { logMerchantClick, logSearch } from '../../api/behavior'
 
 const router = useRouter()
 const sessionId = ref(null)
@@ -225,6 +226,9 @@ const submitMessage = async () => {
     errorMessage.value = '请输入有效的用餐需求，不能只输入空格或换行'
     return
   }
+
+  const userId = currentUserId()
+  logSearch({ userId: userId !== 'anonymous' ? userId : undefined, keyword: content }).catch(() => {})
 
   const requestId = createRequestId()
   sending.value = true
@@ -332,7 +336,11 @@ const applySuggestion = async (message, suggestion) => {
 }
 
 const openMerchant = merchantId => {
-  if (merchantId) router.push(`/diner/merchant/${merchantId}`)
+  if (merchantId) {
+    const userId = currentUserId()
+    logMerchantClick({ userId: userId !== 'anonymous' ? userId : undefined, merchantId }).catch(() => {})
+    router.push(`/diner/merchant/${merchantId}`)
+  }
 }
 
 onMounted(initialize)
