@@ -342,3 +342,29 @@ def test_dialogue_response_does_not_include_merchant_name(monkeypatch):
     body_text = post_extract(request_body()).text
 
     assert "merchantName" not in body_text
+
+
+def test_normalize_model_result_converts_constraints_alias() -> None:
+    from app.services.dialogue_extraction_service import normalize_model_result
+
+    result = normalize_model_result(
+        {
+            "intent": "MERCHANT_RECOMMENDATION",
+            "constraints": {
+                "partySize": 4,
+                "perCapitaBudget": 80,
+                "cuisines": ["川菜"],
+                "distanceKm": 3,
+            },
+            "clearedFields": [],
+            "confidence": 0.95,
+        }
+    )
+
+    assert "constraints" not in result
+    assert result["extractedConstraints"] == {
+        "partySize": 4,
+        "perCapitaBudget": 80,
+        "cuisines": ["川菜"],
+        "distanceKm": 3,
+    }
