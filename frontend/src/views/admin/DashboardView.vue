@@ -245,7 +245,7 @@ const stats = ref([
   },
 ])
 
-const QUICK_ACTIONS_VERSION = '3'
+const QUICK_ACTIONS_VERSION = '4'
 
 const defaultQuickActions = [
   {
@@ -270,10 +270,10 @@ const defaultQuickActions = [
     bgClass: 'action-card-purple',
   },
   {
-    label: '管理食客',
-    description: '管理平台注册用户和食客信息',
-    path: '/admin/diners',
-    emoji: '👥',
+    label: '专题管理',
+    description: '管理分类标签和探店专题',
+    path: '/admin/topics',
+    emoji: '📚',
     bgClass: 'action-card-blue',
   },
 ]
@@ -325,6 +325,7 @@ const availableActions = computed(() => {
     { label: '模型配置', description: '管理 AI 模型服务配置', path: '/admin/model-configs', emoji: '🤖', bgClass: 'action-card-blue' },
     { label: '运营数据', description: '查看平台核心运营数据', path: '/admin/dashboard', emoji: '📊', bgClass: 'action-card-orange' },
     { label: '商家统计', description: '查看商家使用平台功能情况', path: '/admin/merchant-statistics', emoji: '📈', bgClass: 'action-card-purple' },
+    { label: '专题管理', description: '管理分类标签和探店专题', path: '/admin/topics', emoji: '📚', bgClass: 'action-card-blue' },
     { label: '管理食客', description: '管理平台注册用户和食客信息', path: '/admin/diners', emoji: '👥', bgClass: 'action-card-blue' },
     { label: '审计日志', description: '查询系统和重要操作的审计日志', path: '/admin/logs', emoji: '📋', bgClass: 'action-card-purple' },
   ].filter(a => !usedLabels.includes(a.label))

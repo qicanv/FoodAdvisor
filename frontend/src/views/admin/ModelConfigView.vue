@@ -2,15 +2,17 @@
   <AdminLayout title="模型配置" subtitle="管理不同业务场景使用的大模型服务">
     <template #sidebar>
       <div class="page-sidebar-nav">
-        <span class="page-sidebar-title" style="color: #ffffff;">模型配置</span>
-        <div 
-          v-for="item in sidebarItems" 
-          :key="item.key"
-          :class="['page-sidebar-item', { active: activeTab === item.key }]"
-          @click="activeTab = item.key"
-        >
-          <span class="menu-icon">{{ item.icon }}</span>
-          <span style="color: #ffffff;">{{ item.label }}</span>
+        <span class="page-sidebar-title">模型配置</span>
+        <div class="page-sidebar-items-wrapper">
+          <div 
+            v-for="item in sidebarItems" 
+            :key="item.key"
+            :class="['page-sidebar-item', { active: activeTab === item.key }]"
+            @click="activeTab = item.key"
+          >
+            <span class="menu-icon">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </div>
         </div>
       </div>
     </template>

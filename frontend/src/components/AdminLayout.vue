@@ -97,6 +97,7 @@ const navItems = [
   { path: '/admin/dashboard', label: '运营数据', iconViewBox: '0 0 24 24', iconPath: 'M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z' },
   { path: '/admin/merchant-statistics', label: '商家统计', iconViewBox: '0 0 24 24', iconPath: 'M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z' },
   { path: '/admin/restaurants', label: '商家管理', iconViewBox: '0 0 24 24', iconPath: 'M8 21l1-17a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4l1 17' },
+  { path: '/admin/topics', label: '专题管理', iconViewBox: '0 0 24 24', iconPath: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6M16 13H8M16 17H8M10 9H8' },
   { path: '/admin/diners', label: '管理食客', iconViewBox: '0 0 24 24', iconPath: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M17 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0' },
   { path: '/admin/model-configs', label: '模型配置', iconViewBox: '0 0 24 24', iconPath: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M9 12l2 2 4-4' },
   { path: '/admin/logs', label: '审计日志', iconViewBox: '0 0 24 24', iconPath: 'M4 4h16v16H4z M8 9h8 M8 13h8 M8 17h5' },
@@ -279,176 +280,6 @@ const handleLogout = () => {
   gap: 24px;
 }
 
-.page-sidebar {
-  width: 250px;
-  flex-shrink: 0;
-  background: rgba(20, 20, 40, 0.85);
-  backdrop-filter: blur(20px);
-  border-radius: 24px;
-  padding: 0;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  position: relative;
-}
-
-.page-sidebar::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -20%;
-  width: 150px;
-  height: 150px;
-  background: radial-gradient(circle, rgba(102, 126, 234, 0.3) 0%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.page-sidebar::after {
-  content: '';
-  position: absolute;
-  bottom: -30%;
-  left: -10%;
-  width: 100px;
-  height: 100px;
-  background: radial-gradient(circle, rgba(118, 75, 162, 0.2) 0%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.page-sidebar-nav {
-  padding: 28px 20px;
-  position: relative;
-  z-index: 1;
-}
-
-.page-sidebar-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #ffffff;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  margin-bottom: 24px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-sidebar-title::before {
-  content: '';
-  width: 28px;
-  height: 3px;
-  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-  border-radius: 2px;
-  box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
-}
-
-.page-sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px 24px;
-  color: #ffffff;
-  text-decoration: none;
-  border-radius: 16px;
-  cursor: pointer;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 12px;
-  position: relative;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  width: calc(100% - 24px);
-  margin-left: 12px;
-}
-
-.page-sidebar-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-  border-radius: 0 2px 2px 0;
-  opacity: 0;
-  transform: scaleY(0);
-  transform-origin: center;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.page-sidebar-item::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle, rgba(102, 126, 234, 0.15) 0%, transparent 60%);
-  opacity: 0;
-  transition: opacity 0.4s ease;
-}
-
-.page-sidebar-item:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-  transform: translateX(4px);
-  border-color: rgba(102, 126, 234, 0.3);
-  box-shadow: 
-    0 4px 16px rgba(102, 126, 234, 0.15),
-    inset 0 0 0 1px rgba(102, 126, 234, 0.2);
-}
-
-.page-sidebar-item:hover::before {
-  opacity: 1;
-  transform: scaleY(1);
-}
-
-.page-sidebar-item:hover::after {
-  opacity: 1;
-}
-
-.page-sidebar-item.active {
-  color: #fff;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.4) 0%, rgba(118, 75, 162, 0.3) 100%);
-  border-color: rgba(102, 126, 234, 0.5);
-  box-shadow: 
-    0 8px 28px rgba(102, 126, 234, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  transform: translateX(0);
-}
-
-.page-sidebar-item.active::before {
-  opacity: 1;
-  transform: scaleY(1);
-}
-
-.page-sidebar-item.active::after {
-  opacity: 1;
-}
-
-.page-sidebar-item svg {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.page-sidebar-item:hover svg {
-  transform: scale(1.15);
-}
-
-.page-sidebar-item.active svg {
-  transform: scale(1.15);
-  filter: drop-shadow(0 0 10px rgba(102, 126, 234, 0.9));
-}
-
 .page-content {
   flex: 1;
   min-width: 0;
@@ -470,5 +301,135 @@ const handleLogout = () => {
   .page-sidebar {
     width: 100%;
   }
+}
+/* 穿透所有页面侧边，统一控制字体、间距 */
+:deep(.page-sidebar-title) {
+  font-size: 16px !important;
+  margin-bottom: 24px !important;
+  padding: 0 12px !important;
+}
+
+:deep(.page-sidebar-item) {
+  font-size: 15px !important;
+  padding: 16px 20px !important;
+  margin-left: 10px !important;
+  gap: 14px !important;
+}
+
+:deep(.page-sidebar-item .menu-icon) {
+  font-size: 22px !important;
+}
+
+/* 全局穿透所有页面内边栏，统一样式，保留原有玻璃发光边框风格 */
+:deep(.page-sidebar-title) {
+  font-size: 16px !important;
+  margin-bottom: 24px !important;
+  padding: 0 12px !important;
+  font-weight: 700 !important;
+  color: rgba(15, 43, 97, 0.95) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1.2px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 20px !important;
+}
+:deep(.page-sidebar-title::before) {
+  content: '' !important;
+  width: 44px !important;
+  height: 4px !important;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 0 14px rgba(102, 126, 234, 0.5) !important;
+}
+
+:deep(.page-sidebar-items-wrapper) {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+}
+
+:deep(.page-sidebar-item) {
+  font-size: 15px !important;
+  padding: 16px 20px !important;
+  margin-left: 10px !important;
+  gap: 14px !important;
+  color: rgba(110, 149, 171, 0.75) !important;
+  text-decoration: none !important;
+  border-radius: 20px !important;
+  cursor: pointer !important;
+  transition: all 0.3s ease !important;
+  font-weight: 600 !important;
+  position: relative !important;
+  overflow: hidden !important;
+  /* 保留半透背景+装饰边框 */
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  width: calc(100% - 40px) !important;
+  backdrop-filter: blur(12px) !important;
+}
+/* 左侧渐变装饰竖条 */
+:deep(.page-sidebar-item::before) {
+  content: '' !important;
+  position: absolute !important;
+  left: 0 !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 5px !important;
+  height: 36px !important;
+  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%) !important;
+  border-radius: 0 4px 4px 0 !important;
+  opacity: 0 !important;
+  transition: all 0.3s ease !important;
+}
+/* 悬浮渐变底色层 */
+:deep(.page-sidebar-item::after) {
+  content: '' !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.06) 100%) !important;
+  opacity: 0 !important;
+  transition: opacity 0.3s ease !important;
+}
+/* hover悬浮效果，边框提亮+右移 */
+:deep(.page-sidebar-item:hover) {
+  color: #4e6ca0 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(102, 126, 234, 0.2) !important;
+  transform: translateX(4px) !important;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.1) !important;
+}
+:deep(.page-sidebar-item:hover::before),
+:deep(.page-sidebar-item:hover::after) {
+  opacity: 1 !important;
+}
+
+/* 激活选中项：加深边框、发光、底色高亮 */
+:deep(.page-sidebar-item.active) {
+  color: #4e6ca0 !important;
+  background: rgba(102, 126, 234, 0.15) !important;
+  border-color: rgba(102, 126, 234, 0.3) !important;
+  box-shadow: 
+    0 8px 24px rgba(102, 126, 234, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  transform: translateX(0) !important;
+}
+:deep(.page-sidebar-item.active::before),
+:deep(.page-sidebar-item.active::after) {
+  opacity: 1 !important;
+}
+
+/* 图标大小适配 */
+:deep(.page-sidebar-item .menu-icon) {
+  font-size: 22px !important;
+  flex-shrink: 0 !important;
+  transition: all 0.3s ease !important;
+}
+:deep(.page-sidebar-item:hover .menu-icon),
+:deep(.page-sidebar-item.active .menu-icon) {
+  transform: scale(1.15) !important;
+  filter: drop-shadow(0 0 10px rgba(102, 126, 234, 0.7)) !important;
 }
 </style>
