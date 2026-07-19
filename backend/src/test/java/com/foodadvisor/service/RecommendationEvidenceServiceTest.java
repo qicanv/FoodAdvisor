@@ -53,7 +53,9 @@ class RecommendationEvidenceServiceTest {
                 () -> assertEquals("当前公开评论正文", result.get(0).getExcerpt()),
                 () -> assertEquals(published, result.get(0).getReviewTime()),
                 () -> assertEquals("商家20", result.get(0).getMerchantName()),
-                () -> assertEquals("环境安静", result.get(0).getHighlightTitle())
+                () -> assertEquals("环境安静", result.get(0).getHighlightTitle()),
+                () -> assertEquals("environmentRequirements",
+                        result.get(0).getConditionKey())
         );
         verify(itemMapper).selectList(any());
     }
@@ -202,6 +204,7 @@ class RecommendationEvidenceServiceTest {
         value.setSourceMerchantId(merchantId);
         value.setSourceType(type);
         value.setReviewId(reviewId);
+        value.setConditionKey("environmentRequirements");
         value.setSourceTextSnapshot(snapshot);
         value.setEvidenceExcerpt(type + "摘要");
         return value;
