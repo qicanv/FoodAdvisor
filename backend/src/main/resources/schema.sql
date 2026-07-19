@@ -69,3 +69,27 @@ INSERT INTO content_tags (code, name, category, status) VALUES ('ENV_QUIET', '�
 INSERT INTO content_tags (code, name, category, status) VALUES ('PRICE_BUDGET', '实惠', 'price', 'ACTIVE') ON CONFLICT (code) DO NOTHING;
 INSERT INTO content_tags (code, name, category, status) VALUES ('PRICE_MID', '中档', 'price', 'ACTIVE') ON CONFLICT (code) DO NOTHING;
 INSERT INTO content_tags (code, name, category, status) VALUES ('PRICE_HIGH', '高档', 'price', 'ACTIVE') ON CONFLICT (code) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS user_behavior_logs (
+    id BIGSERIAL PRIMARY KEY,
+    event_id VARCHAR(64) UNIQUE NOT NULL,
+    user_id BIGINT,
+    event_type VARCHAR(50) NOT NULL,
+    search_keyword VARCHAR(500),
+    merchant_id BIGINT,
+    scene_type VARCHAR(50),
+    topic_id BIGINT,
+    tag_code VARCHAR(100),
+    feedback_type VARCHAR(50),
+    feedback_score INT,
+    page_url VARCHAR(1000),
+    referrer_url VARCHAR(1000),
+    user_agent VARCHAR(1000),
+    ip_address VARCHAR(100),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_behavior_event_type ON user_behavior_logs (event_type);
+CREATE INDEX IF NOT EXISTS idx_behavior_user_id ON user_behavior_logs (user_id);
+CREATE INDEX IF NOT EXISTS idx_behavior_created_at ON user_behavior_logs (created_at);
+CREATE INDEX IF NOT EXISTS idx_behavior_merchant_id ON user_behavior_logs (merchant_id);

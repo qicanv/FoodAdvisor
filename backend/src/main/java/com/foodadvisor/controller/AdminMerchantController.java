@@ -7,14 +7,18 @@ import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.mapper.MerchantMapper;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/admin/merchants")
+@Slf4j
 public class AdminMerchantController {
 
     private final MerchantMapper merchantMapper;
@@ -69,6 +73,44 @@ public class AdminMerchantController {
         merchantMapper.selectPage(page, wrapper);
 
         return ApiResponse.success(PageResult.from(page));
+    }
+
+    @GetMapping("/statistics")
+    public ApiResponse<Map<String, Object>> getStatistics(HttpServletRequest request) {
+        if (!isAdmin(request)) {
+            return ApiResponse.failure("FORBIDDEN", "无管理权限");
+        }
+
+        Map<String, Object> stats = new HashMap<>();
+        
+        long total = merchantMapper.selectCount(null);
+        log.info("商家统计 - 总商家数: {}", total);
+        
+        long activeCount = merchantMapper.selectCount(
+                new LambdaQueryWrapper<Merchant>()
+                        .eq(Merchant::getPlatformStatus, "ACTIVE")
+                        .eq(Merchant::getOperationStatus, "OPERATING")
+        );
+        log.info("商家统计 - 正常营业: {}", activeCount);
+        
+        long disabledCount = merchantMapper.selectCount(
+                new LambdaQueryWrapper<Merchant>()
+                        .eq(Merchant::getPlatformStatus, "DISABLED")
+        );
+        log.info("商家统计 - 已禁用: {}", disabledCount);
+        
+        long suspendedCount = merchantMapper.selectCount(
+                new LambdaQueryWrapper<Merchant>()
+                        .in(Merchant::getOperationStatus, "SUSPENDED", "CLOSED_PERMANENTLY")
+        );
+        log.info("商家统计 - 停业中: {}", suspendedCount);
+
+        stats.put("total", total);
+        stats.put("activeCount", activeCount);
+        stats.put("disabledCount", disabledCount);
+        stats.put("suspendedCount", suspendedCount);
+
+        return ApiResponse.success(stats);
     }
 
     @GetMapping("/{id}")

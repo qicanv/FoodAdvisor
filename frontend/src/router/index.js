@@ -142,6 +142,12 @@ const routes = [
     component: () => import('../views/admin/MerchantStatistics.vue'),
     meta: { requiresAuth: true, role: 'admin' },
   },
+  {
+    path: '/admin/analytics',
+    name: 'admin-analytics',
+    component: () => import('../views/admin/AnalyticsView.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
 ]
 
 const router = createRouter({
