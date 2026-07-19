@@ -129,5 +129,3 @@ FROM (
  FROM reviews WHERE review_type='ORIGINAL' AND status='PUBLISHED'
    AND moderation_status='APPROVED' GROUP BY merchant_id
 ) s WHERE m.id=s.merchant_id;
-
-SELECT setval(pg_get_serial_sequence('reviews','id'), 120, true);
