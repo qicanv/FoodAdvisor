@@ -43,6 +43,11 @@ public class RecommendationItemVO {
     private Integer reviewCount;
 
     /**
+     * 商家当前真实营业状态。
+     */
+    private String operationStatus;
+
+    /**
      * 根据用户位置和商家坐标计算的距离，单位为公里。
      * 未提供用户位置时为null。
      */

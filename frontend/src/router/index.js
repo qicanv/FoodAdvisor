@@ -55,6 +55,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'diner' },
   },
   {
+    path: '/diner/ai-dining',
+    name: 'diner-ai-dining',
+    component: () => import('../views/diner/AiDiningView.vue'),
+    meta: { requiresAuth: true, role: 'diner' },
+  },
+  {
     path: '/diner/merchant/:id',
     name: 'diner-merchant-detail',
     component: () => import('../views/diner/MerchantDetailView.vue'),
@@ -68,7 +74,19 @@ const routes = [
   {
     path: '/merchant/home',
     name: 'merchant-home',
-    component: () => import('../views/merchant/MerchantView.vue'),
+    component: () => import('../views/merchant/MerchantHomeView.vue'),
+    meta: { requiresAuth: true, role: 'merchant' },
+  },
+  {
+    path: '/merchant/dishes',
+    name: 'merchant-dishes',
+    component: () => import('../views/merchant/MerchantDishesView.vue'),
+    meta: { requiresAuth: true, role: 'merchant' },
+  },
+  {
+    path: '/merchant/statistics',
+    name: 'merchant-statistics',
+    component: () => import('../views/merchant/MerchantHomeView.vue'),
     meta: { requiresAuth: true, role: 'merchant' },
   },
   {
@@ -95,10 +113,22 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin' },
   },
   {
-  path: '/admin/logs',
-  name: 'admin-audit-logs',
-  component: () => import('../views/admin/AuditLogView.vue'),
-  meta: { requiresAuth: true, role: 'admin' },
+    path: '/admin/dashboard',
+    name: 'admin-dashboard',
+    component: () => import('../views/admin/OperationsDashboard.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
+  {
+    path: '/admin/logs',
+    name: 'admin-logs',
+    component: () => import('../views/admin/AuditLogView.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
+  {
+    path: '/admin/merchant-statistics',
+    name: 'admin-merchant-statistics',
+    component: () => import('../views/admin/MerchantStatistics.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
   },
 ]
 

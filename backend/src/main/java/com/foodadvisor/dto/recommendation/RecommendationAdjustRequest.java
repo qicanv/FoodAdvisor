@@ -12,8 +12,10 @@ import java.math.BigDecimal;
 @Data
 public class RecommendationAdjustRequest {
 
-    @NotNull(message = "userId不能为空")
     private Long userId;
+
+    @NotNull(message = "sourceMessageId不能为空")
+    private Long sourceMessageId;
 
     @NotBlank(message = "field不能为空")
     private String field;

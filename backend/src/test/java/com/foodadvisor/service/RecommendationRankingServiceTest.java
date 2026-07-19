@@ -1,7 +1,7 @@
 package com.foodadvisor.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foodadvisor.backend.exception.ApiException;
+import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
 import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
@@ -1122,6 +1122,110 @@ class RecommendationRankingServiceTest {
         assertTrue(
                 sessionState.getCurrentConstraints()
                         .contains("\"cuisines\":[]")
+        );
+    }
+
+    @Test
+    void shouldGenerateDifferentRequestIdForEachAdjustment() {
+        stubSessionStateAndMerchants(
+                List.of(createMerchant(
+                        606L,
+                        "repeated adjustment",
+                        new BigDecimal("4.8"),
+                        20
+                )),
+                "{\"scenes\":[\"friends\"]}"
+        );
+        stubCalculatedScores();
+
+        RecommendationAdjustRequest first =
+                createAdjustRequest("scenes", List.of());
+        RecommendationAdjustRequest second =
+                createAdjustRequest(
+                        "perCapitaBudget",
+                        new BigDecimal("100")
+                );
+
+        RecommendationRankResponse firstResponse =
+                service.adjustAndRank(1L, first);
+        RecommendationRankResponse secondResponse =
+                service.adjustAndRank(1L, second);
+
+        ArgumentCaptor<Recommendation> captor =
+                ArgumentCaptor.forClass(Recommendation.class);
+        verify(recommendationMapper, times(2))
+                .insert(captor.capture());
+
+        List<Recommendation> recommendations =
+                captor.getAllValues();
+        assertAll(
+                () -> assertNotEquals(
+                        recommendations.get(0).getId(),
+                        recommendations.get(1).getId()
+                ),
+                () -> assertNotEquals(
+                        recommendations.get(0).getRequestId(),
+                        recommendations.get(1).getRequestId()
+                ),
+                () -> assertTrue(
+                        recommendations.get(0).getRequestId()
+                                .startsWith("rank-")
+                ),
+                () -> assertTrue(
+                        recommendations.get(1).getRequestId()
+                                .startsWith("rank-")
+                ),
+                () -> assertEquals(
+                        recommendations.get(0).getRequestId(),
+                        firstResponse.getRequestId()
+                ),
+                () -> assertEquals(
+                        recommendations.get(1).getRequestId(),
+                        secondResponse.getRequestId()
+                )
+        );
+    }
+
+    @Test
+    void shouldAbortAdjustmentWhenRecommendationInsertFails() {
+        stubSessionStateAndMerchants(
+                List.of(createMerchant(
+                        607L,
+                        "insert failure",
+                        new BigDecimal("4.8"),
+                        20
+                )),
+                "{\"scenes\":[\"friends\"]}"
+        );
+        when(recommendationMapper.insert(
+                any(Recommendation.class)
+        )).thenThrow(
+                new DataRetrievalFailureException(
+                        "recommendation insert failed"
+                )
+        );
+
+        ApiException exception =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.adjustAndRank(
+                                1L,
+                                createAdjustRequest(
+                                        "scenes",
+                                        List.of()
+                                )
+                        )
+                );
+
+        assertAll(
+                () -> assertEquals(
+                        "RECOMMENDATION_DATA_SERVICE_ERROR",
+                        exception.getCode()
+                ),
+                () -> verify(
+                        recommendationItemMapper,
+                        never()
+                ).insert(any(RecommendationItem.class))
         );
     }
 

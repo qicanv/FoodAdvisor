@@ -1,6 +1,6 @@
 package com.foodadvisor.controller;
 
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.reputation.ReputationOverviewVO;
 import com.foodadvisor.dto.reputation.ReputationTrendVO;
 import com.foodadvisor.service.MerchantReputationService;

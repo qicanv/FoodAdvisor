@@ -3,7 +3,6 @@ package com.foodadvisor.dto.dialogue;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -12,13 +11,12 @@ import java.math.BigDecimal;
 @Data
 public class DialogueMessageRequest {
 
-    @NotNull(message = "userId is required")
     private Long userId;
 
     @Size(max = 1000, message = "content cannot exceed 1000 characters")
     private String content;
 
-    @NotNull(message = "requestId is required")
+    @jakarta.validation.constraints.NotNull(message = "requestId is required")
     @Size(max = 100, message = "requestId cannot exceed 100 characters")
     private String requestId;
 

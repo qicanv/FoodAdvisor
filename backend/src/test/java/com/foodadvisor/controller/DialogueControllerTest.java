@@ -1,9 +1,10 @@
 package com.foodadvisor.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foodadvisor.backend.exception.ApiException;
-import com.foodadvisor.backend.exception.GlobalExceptionHandler;
+import com.foodadvisor.exception.ApiException;
+import com.foodadvisor.exception.GlobalExceptionHandler;
 import com.foodadvisor.dto.dialogue.DialogueHistoryResponse;
+import com.foodadvisor.dto.dialogue.DialogueContinueResponse;
 import com.foodadvisor.dto.dialogue.DialogueMessageResponse;
 import com.foodadvisor.dto.dialogue.DialogueMessageVO;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
@@ -24,6 +25,7 @@ import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -55,6 +57,9 @@ class DialogueControllerTest {
                 )
                 .setControllerAdvice(
                         new GlobalExceptionHandler()
+                )
+                .defaultRequest(
+                        get("/").requestAttr("userId", 1L)
                 )
                 .build();
     }
@@ -201,29 +206,111 @@ class DialogueControllerTest {
 
     @Test
     void shouldReturnUnauthorized() throws Exception {
-        when(diningDialogueMessageService.sendMessage(
-                eq(1L),
-                any()
-        )).thenThrow(new ApiException(
-                HttpStatus.UNAUTHORIZED,
-                "UNAUTHORIZED",
-                "缺少有效用户身份"
-        ));
+        MockMvc unauthenticatedMockMvc = MockMvcBuilders
+                .standaloneSetup(
+                        new DialogueController(
+                                dialogueService,
+                                diningDialogueMessageService
+                        )
+                )
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
 
-        Map<String, Object> body =
-                request("req-5", "想吃川菜");
-        body.put("userId", 0);
-
-        mockMvc.perform(post(
+        unauthenticatedMockMvc.perform(post(
                         "/api/diner/sessions/1/messages"
                 )
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                body
+                                request("req-5", "想吃川菜")
                         )))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code")
                         .value("UNAUTHORIZED"));
+    }
+
+    @Test
+    void shouldUseJwtUserIdWhenBodyOmitsUserId()
+            throws Exception {
+        when(diningDialogueMessageService.sendMessage(
+                eq(1L),
+                any()
+        )).thenReturn(messageResponse("CLARIFICATION"));
+
+        Map<String, Object> body = request("req-jwt", "想吃川菜");
+        body.remove("userId");
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/messages"
+                )
+                        .requestAttr("userId", 7)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk());
+
+        verify(diningDialogueMessageService).sendMessage(
+                eq(1L),
+                org.mockito.ArgumentMatchers.argThat(
+                        request -> Long.valueOf(7L)
+                                .equals(request.getUserId())
+                )
+        );
+    }
+
+    @Test
+    void shouldIgnoreForgedBodyUserId() throws Exception {
+        when(diningDialogueMessageService.sendMessage(
+                eq(1L),
+                any()
+        )).thenReturn(messageResponse("CLARIFICATION"));
+
+        Map<String, Object> body = request("req-forged", "想吃川菜");
+        body.put("userId", 999);
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/messages"
+                )
+                        .requestAttr("userId", 7L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk());
+
+        verify(diningDialogueMessageService).sendMessage(
+                eq(1L),
+                org.mockito.ArgumentMatchers.argThat(
+                        request -> Long.valueOf(7L)
+                                .equals(request.getUserId())
+                )
+        );
+    }
+
+    @Test
+    void shouldUseJwtUserIdForContinueDialogue()
+            throws Exception {
+        DialogueContinueResponse response =
+                new DialogueContinueResponse();
+        response.setSessionId(1L);
+        when(dialogueService.continueDialogue(
+                1L,
+                7L,
+                "继续推荐"
+        )).thenReturn(response);
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/dialogue/continue"
+                )
+                        .requestAttr("userId", 7L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                "{\"userId\":999,"
+                                        + "\"message\":\"继续推荐\"}"
+                        ))
+                .andExpect(status().isOk());
+
+        verify(dialogueService).continueDialogue(
+                1L,
+                7L,
+                "继续推荐"
+        );
     }
 
     @Test
@@ -317,13 +404,37 @@ class DialogueControllerTest {
         mockMvc.perform(get(
                         "/api/diner/sessions/1/messages"
                 )
-                        .param("userId", "1"))
+                        .param("userId", "999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.messages[0].id")
                         .value(10))
                 .andExpect(jsonPath(
                         "$.data.messages[0].recommendationId"
                 ).value(100));
+
+        verify(diningDialogueMessageService)
+                .listMessages(1L, 1L);
+    }
+
+    @Test
+    void shouldReturnUnauthorizedForHistoryWithoutJwtUserId()
+            throws Exception {
+        MockMvc unauthenticatedMockMvc = MockMvcBuilders
+                .standaloneSetup(
+                        new DialogueController(
+                                dialogueService,
+                                diningDialogueMessageService
+                        )
+                )
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        unauthenticatedMockMvc.perform(get(
+                        "/api/diner/sessions/1/messages"
+                ))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code")
+                        .value("UNAUTHORIZED"));
     }
 
     private Map<String, Object> request(

@@ -2,7 +2,7 @@ package com.foodadvisor.controller;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.entity.Dish;
 import com.foodadvisor.mapper.DishMapper;
 import org.springframework.web.bind.annotation.GetMapping;

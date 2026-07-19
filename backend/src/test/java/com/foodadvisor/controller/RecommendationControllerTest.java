@@ -1,14 +1,15 @@
 package com.foodadvisor.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.foodadvisor.backend.exception.ApiException;
-import com.foodadvisor.backend.exception.GlobalExceptionHandler;
+import com.foodadvisor.exception.ApiException;
+import com.foodadvisor.exception.GlobalExceptionHandler;
 import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.service.RecommendationRankingService;
+import com.foodadvisor.service.DiningDialogueMessageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,7 +27,9 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,6 +38,9 @@ class RecommendationControllerTest {
 
     @Mock
     private RecommendationRankingService recommendationRankingService;
+
+    @Mock
+    private DiningDialogueMessageService diningDialogueMessageService;
 
     private MockMvc mockMvc;
 
@@ -46,11 +52,15 @@ class RecommendationControllerTest {
         mockMvc = MockMvcBuilders
                 .standaloneSetup(
                         new RecommendationController(
-                                recommendationRankingService
+                                recommendationRankingService,
+                                diningDialogueMessageService
                         )
                 )
                 .setControllerAdvice(
                         new GlobalExceptionHandler()
+                )
+                .defaultRequest(
+                        get("/").requestAttr("userId", 1L)
                 )
                 .build();
     }
@@ -153,7 +163,7 @@ class RecommendationControllerTest {
 
     @Test
     void shouldMapInvalidAdjustmentToHttp400() throws Exception {
-        when(recommendationRankingService.adjustAndRank(
+        when(diningDialogueMessageService.adjustRecommendation(
                 eq(1L),
                 any()
         )).thenThrow(new ApiException(
@@ -170,6 +180,8 @@ class RecommendationControllerTest {
                                 Map.of(
                                         "userId",
                                         1,
+                                        "sourceMessageId",
+                                        71,
                                         "field",
                                         "distanceKm",
                                         "value",
@@ -183,7 +195,7 @@ class RecommendationControllerTest {
 
     @Test
     void shouldReturnFullRecommendationAfterAdjust() throws Exception {
-        when(recommendationRankingService.adjustAndRank(
+        when(diningDialogueMessageService.adjustRecommendation(
                 eq(1L),
                 any()
         )).thenReturn(successResponse());
@@ -196,6 +208,8 @@ class RecommendationControllerTest {
                                 Map.of(
                                         "userId",
                                         1,
+                                        "sourceMessageId",
+                                        71,
                                         "field",
                                         "perCapitaBudget",
                                         "value",
@@ -208,6 +222,66 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.data.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.results[0].merchantId")
                         .value(701));
+    }
+
+    @Test
+    void shouldUseJwtUserIdForRankAndIgnoreBodyUserId()
+            throws Exception {
+        when(recommendationRankingService.rank(
+                eq(1L),
+                any(RecommendationRankRequest.class)
+        )).thenReturn(successResponse());
+
+        RecommendationRankRequest request = rankRequest();
+        request.setUserId(999L);
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/recommendations/rank"
+                )
+                        .requestAttr("userId", 7)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk());
+
+        verify(recommendationRankingService).rank(
+                eq(1L),
+                org.mockito.ArgumentMatchers.argThat(
+                        value -> Long.valueOf(7L)
+                                .equals(value.getUserId())
+                )
+        );
+    }
+
+    @Test
+    void shouldUseJwtUserIdForAdjustAndIgnoreBodyUserId()
+            throws Exception {
+        when(diningDialogueMessageService.adjustRecommendation(
+                eq(1L),
+                any()
+        )).thenReturn(successResponse());
+
+        mockMvc.perform(post(
+                        "/api/diner/sessions/1/recommendations/adjust"
+                )
+                        .requestAttr("userId", 7L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of(
+                                        "userId", 999,
+                                        "sourceMessageId", 71,
+                                        "field", "perCapitaBudget",
+                                        "value", 120
+                                )
+                        )))
+                .andExpect(status().isOk());
+
+        verify(diningDialogueMessageService).adjustRecommendation(
+                eq(1L),
+                org.mockito.ArgumentMatchers.argThat(
+                        value -> Long.valueOf(7L)
+                                .equals(value.getUserId())
+                )
+        );
     }
 
     private RecommendationRankRequest rankRequest() {

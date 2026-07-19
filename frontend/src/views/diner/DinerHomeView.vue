@@ -28,6 +28,22 @@
         </div>
       </section>
 
+      <section class="ai-entry-section">
+        <div class="container">
+          <div class="ai-entry-card" @click="goToAiDining">
+            <div class="ai-entry-icon">✨</div>
+            <div class="ranking-content">
+              <h3 class="ranking-title">AI 探店</h3>
+              <p class="ranking-subtitle">用自然语言说出人数、预算和口味，获取个性化商家推荐</p>
+            </div>
+            <div class="ranking-arrow">
+              <span class="arrow-text">开始对话</span>
+              <span class="arrow-icon">→</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="ranking-entry-section">
         <div class="container">
           <div class="ranking-card" @click="goToRanking">
@@ -571,6 +587,10 @@ const goToProfile = () => {
 const goToRanking = () => {
   router.push('/diner/ranking')
 }
+
+const goToAiDining = () => {
+  router.push('/diner/ai-dining')
+}
 </script>
 
 <style scoped>
@@ -716,6 +736,32 @@ const goToRanking = () => {
 
 .ranking-entry-section {
   padding: 20px 0;
+}
+
+.ai-entry-section {
+  padding: 20px 0 0;
+}
+
+.ai-entry-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  color: #fff;
+  cursor: pointer;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #5b5bd6 0%, #8b5cf6 55%, #ec4899 100%);
+  box-shadow: 0 6px 20px rgba(91, 91, 214, 0.28);
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.ai-entry-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(91, 91, 214, 0.36);
+}
+
+.ai-entry-icon {
+  font-size: 40px;
 }
 
 .ranking-card {

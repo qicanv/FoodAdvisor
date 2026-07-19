@@ -1,10 +1,13 @@
 package com.foodadvisor.controller;
 
-import com.foodadvisor.backend.common.ApiResponse;
+import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.recommendation.RecommendationAdjustRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.service.RecommendationRankingService;
+import com.foodadvisor.service.DiningDialogueMessageService;
+import com.foodadvisor.util.AuthenticatedUserId;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,13 +27,19 @@ public class RecommendationController {
 
     private final RecommendationRankingService
             recommendationRankingService;
+    private final DiningDialogueMessageService
+            diningDialogueMessageService;
 
     public RecommendationController(
             RecommendationRankingService
-                    recommendationRankingService
+                    recommendationRankingService,
+            DiningDialogueMessageService
+                    diningDialogueMessageService
     ) {
         this.recommendationRankingService =
                 recommendationRankingService;
+        this.diningDialogueMessageService =
+                diningDialogueMessageService;
     }
 
     /**
@@ -44,8 +53,12 @@ public class RecommendationController {
             @PathVariable Long sessionId,
             @Valid
             @RequestBody
-            RecommendationRankRequest request
+            RecommendationRankRequest request,
+            HttpServletRequest httpRequest
     ) {
+        request.setUserId(
+                AuthenticatedUserId.require(httpRequest)
+        );
         RecommendationRankResponse response =
                 recommendationRankingService.rank(
                         sessionId,
@@ -63,11 +76,15 @@ public class RecommendationController {
             @PathVariable Long sessionId,
             @Valid
             @RequestBody
-            RecommendationAdjustRequest request
+            RecommendationAdjustRequest request,
+            HttpServletRequest httpRequest
     ) {
+        request.setUserId(
+                AuthenticatedUserId.require(httpRequest)
+        );
         RecommendationRankResponse response =
-                recommendationRankingService
-                        .adjustAndRank(
+                diningDialogueMessageService
+                        .adjustRecommendation(
                                 sessionId,
                                 request
                         );
