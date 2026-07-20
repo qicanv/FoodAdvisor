@@ -274,7 +274,7 @@ async def semantic_search(request: SearchRequest):
 
     logger.info(
         "语义检索: query='%s', topK=%d",
-        request.query[:100],
+        f"<redacted:length={len(request.query)}>",
         request.topK,
     )
 

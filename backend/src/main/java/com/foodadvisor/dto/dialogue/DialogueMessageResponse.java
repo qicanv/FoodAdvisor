@@ -9,6 +9,7 @@ import java.util.List;
 
 @Data
 public class DialogueMessageResponse {
+    private String traceId;
 
     private Long sessionId;
 
@@ -34,4 +35,6 @@ public class DialogueMessageResponse {
     private Boolean degraded;
 
     private String extractor;
+    private String modelName;
+    private String promptVersion;
 }

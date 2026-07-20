@@ -8,6 +8,8 @@ import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewReply;
 import com.foodadvisor.entity.ReviewReplyDraft;
+import com.foodadvisor.entity.AiRequestTraceStage;
+import com.foodadvisor.trace.AiTraceContext;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.ReviewMapper;
@@ -18,6 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 评价辅助回复草稿服务（EPIC-02 故事7：评价辅助回复）
@@ -42,6 +46,7 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
     private final ReviewReplyMapper replyMapper;
     private final AIClientService aiClientService;
     private final NotificationService notificationService;
+    private final AiRequestTraceService traceService;
 
     public ReviewReplyDraftService(
             ReviewMapper reviewMapper,
@@ -50,11 +55,24 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
             AIClientService aiClientService,
             NotificationService notificationService
     ) {
+        this(reviewMapper, merchantMapper, replyMapper, aiClientService, notificationService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ReviewReplyDraftService(
+            ReviewMapper reviewMapper,
+            MerchantMapper merchantMapper,
+            ReviewReplyMapper replyMapper,
+            AIClientService aiClientService,
+            NotificationService notificationService,
+            AiRequestTraceService traceService
+    ) {
         this.reviewMapper = reviewMapper;
         this.merchantMapper = merchantMapper;
         this.replyMapper = replyMapper;
         this.aiClientService = aiClientService;
         this.notificationService = notificationService;
+        this.traceService = traceService;
     }
 
     // ============================================================
@@ -76,6 +94,20 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
      */
     @Transactional
     public ReviewReplyDraftVO generateDraft(Long merchantMemberId, Long reviewId) {
+        AiTraceContext context = traceService == null ? null
+                : traceService.startTrace(null, null, merchantMemberId, "REVIEW_REPLY_GENERATION");
+        try {
+            return generateDraft(merchantMemberId, reviewId, context);
+        } catch (RuntimeException exception) {
+            failTrace(context, "REPLY_GENERATION_FAILED", exception.getMessage());
+            throw exception;
+        }
+    }
+
+    @Transactional
+    public ReviewReplyDraftVO generateDraft(Long merchantMemberId, Long reviewId,
+                                            AiTraceContext context) {
+        recordRequest(context, reviewId, merchantMemberId);
         // --- 1. 校验评价存在 ---
         Review review = reviewMapper.selectById(reviewId);
         if (review == null) {
@@ -88,6 +120,9 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
 
         // --- 2. 校验评价属于该商家 ---
         Long merchantId = review.getMerchantId();
+        completeStage(startStage(context, "REVIEW_SOURCE_LOAD", Map.of("reviewId", reviewId,
+                        "merchantId", merchantId)),
+                Map.of("reviewId", reviewId, "merchantId", merchantId), null, null, null, null);
         Merchant merchant = merchantMapper.selectById(merchantId);
         if (merchant == null) {
             throw new ApiException(
@@ -111,19 +146,24 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
         // - 如果评分 <= 2，视为差评（NEGATIVE）
         // - 评分 == 3，视为中性，默认使用好评策略
         String strategy = determineStrategy(review);
+        String promptVersion = "POSITIVE".equals(strategy)
+                ? "review-reply-positive:v1" : "review-reply-negative:v1";
+        completeStage(startStage(context, "PROMPT_BUILD", Map.of("reviewId", reviewId,
+                        "replyType", strategy, "promptVersion", promptVersion)),
+                Map.of("replyType", strategy, "promptVersion", promptVersion), null, null, null, promptVersion);
 
         // --- 5. 调用 AI 服务生成回复 ---
         // 注意：如果 AI 调用失败，异常会向上抛出，由全局异常处理器返回错误提示。
         // generateReplyDraft 方法不会修改任何数据库状态，所以失败时不会有脏数据。
         com.fasterxml.jackson.databind.JsonNode aiResult;
         try {
-            aiResult = aiClientService.generateReplyDraft(
-                    review.getId(),
-                    review.getMerchantId(),
-                    review.getContent(),
-                    strategy,
-                    review.getRating() != null ? review.getRating().intValue() : null
-            );
+            aiResult = traceService == null || context == null
+                    ? aiClientService.generateReplyDraft(review.getId(), review.getMerchantId(),
+                    review.getContent(), strategy,
+                    review.getRating() != null ? review.getRating().intValue() : null)
+                    : aiClientService.generateReplyDraft(review.getId(), review.getMerchantId(),
+                    review.getContent(), strategy,
+                    review.getRating() != null ? review.getRating().intValue() : null, context);
         } catch (Exception e) {
             // 根据验收准则7："模型调用失败时显示明确提示且不覆盖已有草稿"
             throw new ApiException(
@@ -133,6 +173,10 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
             );
         }
 
+        completeStage(startStage(context, "OUTPUT_VALIDATION", Map.of("reviewId", reviewId)),
+                Map.of("status", "SUCCESS"), "FASTAPI", text(aiResult, "modelName"),
+                text(aiResult, "modelVersion"), promptVersion);
+
         // --- 6. 构建并保存草稿 ---
         ReviewReplyDraft draft = new ReviewReplyDraft();
         draft.setReviewId(reviewId);
@@ -141,17 +185,18 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
         draft.setStrategy(strategy);
         draft.setStatus("DRAFT");
         draft.setGeneratedAt(OffsetDateTime.now());
-        draft.setAiTraceId(
-                aiResult.has("businessTraceId") && !aiResult.get("businessTraceId").isNull()
-                        ? aiResult.get("businessTraceId").asText()
-                        : null
-        );
+        draft.setAiTraceId(context == null
+                ? (aiResult.has("businessTraceId") && !aiResult.get("businessTraceId").isNull()
+                ? aiResult.get("businessTraceId").asText() : null)
+                : context.traceId());
         draft.setModelName(
                 aiResult.has("modelName") && !aiResult.get("modelName").isNull()
                         ? aiResult.get("modelName").asText()
                         : null
         );
 
+        AiRequestTraceStage persistStage = startStage(context, "RESULT_PERSIST",
+                Map.of("reviewId", reviewId, "merchantId", merchantId));
         if (!this.save(draft)) {
             throw new ApiException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
@@ -160,7 +205,15 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
             );
         }
 
-        return ReviewReplyDraftVO.from(draft);
+        ReviewReplyDraftVO response = ReviewReplyDraftVO.from(draft);
+        response.setTraceId(context == null ? response.getAiTraceId() : context.traceId());
+        Map<String, Object> persistSummary = new LinkedHashMap<>();
+        persistSummary.put("replyDraftId", draft.getId());
+        persistSummary.put("status", "DRAFT");
+        completeStage(persistStage, persistSummary,
+                null, draft.getModelName(), null, promptVersion);
+        finishSuccess(context, response, reviewId, merchantId, promptVersion);
+        return response;
     }
 
     // ============================================================
@@ -181,6 +234,49 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
      * @return 更新后的草稿 VO
      */
     @Transactional
+    private void recordRequest(AiTraceContext context, Long reviewId, Long merchantMemberId) {
+        if (context == null || traceService == null) return;
+        traceService.updateStructuredConditions(context, Map.of("reviewId", reviewId));
+        completeStage(startStage(context, "REQUEST_RECEIVED", Map.of("reviewId", reviewId,
+                        "merchantMemberId", merchantMemberId)), Map.of("accepted", true),
+                null, null, null, null);
+    }
+
+    private AiRequestTraceStage startStage(AiTraceContext context, String name, Object input) {
+        if (context == null || traceService == null) return null;
+        try { return traceService.startStage(context, name, input); } catch (Exception ignored) { return null; }
+    }
+
+    private void completeStage(AiRequestTraceStage stage, Object output, String provider,
+                               String modelName, String modelVersion, String promptVersion) {
+        if (stage == null || traceService == null) return;
+        try { traceService.completeStage(stage, output, provider, modelName, modelVersion, promptVersion); }
+        catch (Exception ignored) { }
+    }
+
+    private void finishSuccess(AiTraceContext context, ReviewReplyDraftVO response,
+                               Long reviewId, Long merchantId, String promptVersion) {
+        if (context == null || traceService == null) return;
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("replyDraftId", response.getId());
+        summary.put("reviewId", reviewId);
+        summary.put("merchantId", merchantId);
+        summary.put("status", response.getStatus());
+        summary.put("degraded", false);
+        summary.put("replyType", response.getStrategy());
+        traceService.completeTrace(context, "SUCCESS", summary, "FASTAPI",
+                response.getModelName(), null, promptVersion);
+    }
+
+    private void failTrace(AiTraceContext context, String code, String message) {
+        if (context != null && traceService != null) traceService.failTraceSafely(context, code, message);
+    }
+
+    private String text(com.fasterxml.jackson.databind.JsonNode node, String field) {
+        return node != null && node.has(field) && !node.get(field).isNull()
+                ? node.get(field).asText() : null;
+    }
+
     public ReviewReplyDraftVO editDraft(Long merchantMemberId, Long reviewId, String editedContent) {
         // --- 1. 校验评价存在 ---
         Review review = reviewMapper.selectById(reviewId);

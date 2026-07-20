@@ -11,6 +11,7 @@ import java.util.List;
  */
 @Data
 public class RecommendationRankResponse {
+    private String traceId;
 
     /**
      * recommendations表生成的推荐记录ID。

@@ -100,7 +100,7 @@ class SearchService:
 
         logger.info(
             "Search: query='%s', topK=%d, returned=%d",
-            request.query[:80],
+            f"<redacted:length={len(request.query)}>",
             request.topK,
             len(results),
         )

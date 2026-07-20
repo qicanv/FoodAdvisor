@@ -7,6 +7,7 @@
 """
 import logging
 import uuid
+from app.core.trace_context import current_trace_id
 from typing import List, Optional
 
 from app.models.schemas import (
@@ -66,7 +67,7 @@ class ReviewSummaryService:
     """商家评价摘要生成服务"""
 
     def _generate_trace_id(self) -> str:
-        return f"trace-{uuid.uuid4().hex[:16]}"
+        return current_trace_id()
 
     async def summarize(self, request: ReviewSummaryRequest) -> ReviewSummaryResponse:
         trace_id = self._generate_trace_id()

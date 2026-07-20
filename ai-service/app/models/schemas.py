@@ -100,6 +100,7 @@ class AnalyzeResponse(BaseModel):
     negativeReason: Optional[str] = Field(default=None, description="差评归因主类别（兼容旧版）")
     modelName: Optional[str] = Field(default=None)
     modelVersion: Optional[str] = Field(default=None)
+    promptVersion: Optional[str] = Field(default="review-analysis:v1")
     businessTraceId: Optional[str] = Field(default=None, description="AI 调用追踪ID")
     status: str = Field(default="SUCCESS", description="PENDING/SUCCESS/FAILED")
     errorMessage: Optional[str] = Field(default=None, description="失败原因")
@@ -188,6 +189,8 @@ class ReviewSummaryResponse(BaseModel):
     minimumReviewCount: int = 5
     evidences: List[SummaryEvidence] = Field(default_factory=list)
     modelName: Optional[str] = None
+    modelVersion: Optional[str] = None
+    promptVersion: Optional[str] = "review-summary:v1"
     businessTraceId: Optional[str] = None
     errorMessage: Optional[str] = None
 
@@ -252,6 +255,8 @@ class HighlightGenerateResponse(BaseModel):
     minimumPositiveCount: int = 5
     evidences: List[HighlightEvidence] = Field(default_factory=list)
     modelName: Optional[str] = None
+    modelVersion: Optional[str] = None
+    promptVersion: Optional[str] = "merchant-highlight:v1"
     businessTraceId: Optional[str] = None
     errorMessage: Optional[str] = None
 
@@ -279,6 +284,8 @@ class GenerateReplyResponse(BaseModel):
     replyContent: str = Field(..., description="AI 生成的回复建议内容")
     strategy: ReplyStrategyEnum = Field(..., description="使用的回复策略")
     modelName: Optional[str] = Field(default=None, description="使用的模型名称")
+    modelVersion: Optional[str] = None
+    promptVersion: Optional[str] = None
     businessTraceId: Optional[str] = Field(default=None, description="调用追踪 ID")
     status: str = Field(default="SUCCESS", description="SUCCESS / FAILED")
     errorMessage: Optional[str] = Field(default=None, description="失败时的错误信息")

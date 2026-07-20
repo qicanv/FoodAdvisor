@@ -4,6 +4,10 @@ import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.summary.MerchantReviewSummaryVO;
 import com.foodadvisor.dto.summary.SummaryEvidenceVO;
 import com.foodadvisor.service.MerchantReviewSummaryService;
+import com.foodadvisor.service.AiRequestTraceService;
+import com.foodadvisor.trace.AiTraceContext;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -15,11 +19,21 @@ import java.util.List;
 public class MerchantReviewSummaryController {
 
     private final MerchantReviewSummaryService summaryService;
+    private final AiRequestTraceService traceService;
 
     public MerchantReviewSummaryController(
             MerchantReviewSummaryService summaryService
     ) {
+        this(summaryService, null);
+    }
+
+    @Autowired
+    public MerchantReviewSummaryController(
+            MerchantReviewSummaryService summaryService,
+            AiRequestTraceService traceService
+    ) {
         this.summaryService = summaryService;
+        this.traceService = traceService;
     }
 
     /**
@@ -69,10 +83,25 @@ public class MerchantReviewSummaryController {
     @PostMapping("/api/merchant-console/merchants/{merchantId}/review-summary/generate")
     public ApiResponse<MerchantReviewSummaryVO> generate(
             @PathVariable Long merchantId,
-            @RequestParam(defaultValue = "false") boolean force
+            @RequestParam(defaultValue = "false") boolean force,
+            HttpServletResponse servletResponse
     ) {
-        return ApiResponse.success(
-                "摘要生成完成",
-                summaryService.generateSummary(merchantId, force));
+        AiTraceContext context = traceService == null ? null
+                : traceService.startTrace(null, null, null, "MERCHANT_REVIEW_SUMMARY");
+        try {
+            MerchantReviewSummaryVO summary = traceService == null
+                    ? summaryService.generateSummary(merchantId, force)
+                    : summaryService.generateSummary(merchantId, force, context);
+            if (context != null) {
+                summary.setTraceId(context.traceId());
+                servletResponse.setHeader("X-Trace-Id", context.traceId());
+            }
+            return ApiResponse.success("摘要生成完成", summary);
+        } catch (RuntimeException exception) {
+            if (context != null) traceService.failTraceSafely(
+                    context, "SUMMARY_GENERATION_FAILED", exception.getMessage());
+            if (context != null) servletResponse.setHeader("X-Trace-Id", context.traceId());
+            throw exception;
+        }
     }
 }

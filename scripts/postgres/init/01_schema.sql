@@ -24,3 +24,4 @@ $canonical_preflight$;
 \ir 01_reply_draft.inc
 \ir 01_audit_logs.inc
 \ir 01_region_hot_words.inc
+\ir 01_ai_request_tracing.inc

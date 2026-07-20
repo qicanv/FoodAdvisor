@@ -4,6 +4,7 @@ from app.api.health import router as health_router
 from app.api.internal import router as internal_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
+from app.core.trace_context import TraceContextMiddleware
 
 
 def create_app() -> FastAPI:
@@ -13,6 +14,7 @@ def create_app() -> FastAPI:
         description="FoodAdvisor 的 AI、RAG 和评论分析服务",
         debug=settings.app_debug,
     )
+    application.add_middleware(TraceContextMiddleware)
 
     application.include_router(health_router)
     application.include_router(internal_router)

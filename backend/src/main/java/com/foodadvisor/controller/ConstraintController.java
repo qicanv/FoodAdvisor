@@ -6,6 +6,7 @@ import com.foodadvisor.dto.constraint.ConstraintExtractResponse;
 import com.foodadvisor.service.ConstraintExtractionService;
 import com.foodadvisor.util.AuthenticatedUserId;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -37,7 +38,8 @@ public class ConstraintController {
             @Valid
             @RequestBody
             ConstraintExtractRequest request,
-            HttpServletRequest httpRequest
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse
     ) {
         ConstraintExtractResponse response =
                 constraintExtractionService
@@ -48,6 +50,7 @@ public class ConstraintController {
                                 ),
                                 request.getMessage()
                         );
+        httpResponse.setHeader("X-Trace-Id", response.getTraceId());
 
         return ApiResponse.success(response);
     }

@@ -15,6 +15,9 @@ import com.foodadvisor.entity.ChatSessionState;
 import com.foodadvisor.mapper.ChatSessionStateMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.foodadvisor.trace.AiTraceContext;
+import com.foodadvisor.entity.AiRequestTraceStage;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
@@ -101,6 +104,8 @@ public class DialogueService {
             chatSessionStateMapper;
 
     private final ObjectMapper objectMapper;
+    @Autowired(required = false)
+    private AiRequestTraceService traceService;
 
     public DialogueService(
             ConstraintExtractionService
@@ -170,6 +175,63 @@ public class DialogueService {
             ConstraintExtractionService.PreparedExtraction
                     preparedExtraction
     ) {
+        AiTraceContext context = traceService == null
+                ? AiTraceContext.create(requestId, sessionId, userId,
+                "DINING_DIALOGUE_CONTINUE")
+                : traceService.startTrace(requestId, sessionId, userId,
+                "DINING_DIALOGUE_CONTINUE");
+        if (traceService != null) {
+            try {
+                AiRequestTraceStage stage = traceService.startStage(
+                        context, "REQUEST_RECEIVED",
+                        java.util.Map.of("responseType", "DIALOGUE_CONTINUE"));
+                traceService.completeStage(stage,
+                        java.util.Map.of("responseType", "DIALOGUE_CONTINUE"),
+                        null, null, null, null);
+            } catch (Exception ignored) {
+                // Trace writes must not break dialogue processing.
+            }
+        }
+        try {
+            DialogueContinueResponse response = continueDialogue(
+                    sessionId, userId, message, requestId, messageId,
+                    preparedExtraction, context);
+            if (traceService != null) {
+                try {
+                    traceService.completeTrace(context,
+                            Boolean.TRUE.equals(response.getDegraded())
+                                    ? "FALLBACK" : "SUCCESS",
+                            java.util.Map.of("responseType", "DIALOGUE_CONTINUE",
+                                    "degraded", Boolean.TRUE.equals(response.getDegraded())),
+                            Boolean.TRUE.equals(response.getDegraded()) ? null : "FASTAPI",
+                            Boolean.TRUE.equals(response.getDegraded())
+                                    ? "RULE_ENGINE" : null,
+                            null,
+                            Boolean.TRUE.equals(response.getDegraded())
+                                    ? "NOT_APPLICABLE" : "dialogue-extraction:v1");
+                } catch (Exception ignored) {
+                    // Trace writes must not change the dialogue result.
+                }
+            }
+            return response;
+        } catch (RuntimeException exception) {
+            if (traceService != null) {
+                traceService.failTraceSafely(
+                        context, "DIALOGUE_CONTINUE_FAILED", exception.getMessage());
+            }
+            throw exception;
+        }
+    }
+
+    public DialogueContinueResponse continueDialogue(
+            Long sessionId,
+            Long userId,
+            String message,
+            String requestId,
+            Long messageId,
+            ConstraintExtractionService.PreparedExtraction preparedExtraction,
+            AiTraceContext context
+    ) {
         /*
          * 必须在需求提取之前读取上一轮状态。
          *
@@ -222,7 +284,8 @@ public class DialogueService {
                                 sessionId,
                                 userId,
                                 message,
-                                requestId
+                                requestId,
+                                context
                         )
                         : constraintExtractionService
                         .extractAndMergePrepared(
@@ -231,7 +294,8 @@ public class DialogueService {
                                 message,
                                 requestId,
                                 messageId,
-                                preparedExtraction
+                                preparedExtraction,
+                                context
                         );
 
         /*
@@ -439,6 +503,9 @@ public class DialogueService {
         response.setDegraded(
                 extractionResponse.getDegraded()
         );
+        response.setModelName(extractionResponse.getModelName());
+        response.setPromptVersion(extractionResponse.getPromptVersion());
+        response.setTraceId(context.traceId());
 
         return response;
     }
