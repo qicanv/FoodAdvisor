@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -312,6 +313,43 @@ class MatchScoreCalculatorTest {
                                 && !result.getReason().isBlank()
                 )
         );
+    }
+
+    @Test
+    void shouldFormatSemanticMatchPercentageToTwoDecimalPlaces() {
+        RecommendationWeights weights = createDefaultWeights();
+        weights.setSemantic(new BigDecimal("25"));
+
+        RecommendationItemVO result = calculator.calculate(
+                createBaseMerchant(), createBaseConstraints(), weights,
+                new BigDecimal("30.5728"), new BigDecimal("104.0668"),
+                java.util.Map.of(2L, new BigDecimal("0.80300000000000004707345624410663731396198272705078125"))
+        ).orElseThrow();
+
+        String explanation = result.getScoreItems().get("semantic").getExplanation();
+        assertTrue(explanation.contains("80.30%"));
+        assertTrue(!explanation.contains("80.300000"));
+    }
+
+    @Test
+    void shouldSafelyHandleMissingAndOutOfRangeSemanticScoresForDisplay() {
+        RecommendationWeights weights = createDefaultWeights();
+        weights.setSemantic(new BigDecimal("25"));
+        assertDoesNotThrow(() -> calculator.calculate(
+                createBaseMerchant(), createBaseConstraints(), weights,
+                new BigDecimal("30.5728"), new BigDecimal("104.0668"), java.util.Map.of()));
+
+        RecommendationItemVO zero = calculator.calculate(
+                createBaseMerchant(), createBaseConstraints(), weights,
+                new BigDecimal("30.5728"), new BigDecimal("104.0668"),
+                java.util.Map.of(2L, BigDecimal.ZERO)).orElseThrow();
+        RecommendationItemVO aboveOne = calculator.calculate(
+                createBaseMerchant(), createBaseConstraints(), weights,
+                new BigDecimal("30.5728"), new BigDecimal("104.0668"),
+                java.util.Map.of(2L, new BigDecimal("1.2"))).orElseThrow();
+
+        assertTrue(zero.getScoreItems().get("semantic").getExplanation().contains("0.00%"));
+        assertTrue(aboveOne.getScoreItems().get("semantic").getExplanation().contains("100.00%"));
     }
 
     @Test

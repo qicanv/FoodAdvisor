@@ -13,6 +13,9 @@ import com.foodadvisor.entity.ReviewAnalysis;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.mapper.MerchantHighlightEvidenceMapper;
 import com.foodadvisor.mapper.MerchantHighlightMapper;
+import com.foodadvisor.entity.AiRequestTraceStage;
+import com.foodadvisor.trace.AiTraceContext;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.ReviewAnalysisMapper;
 import com.foodadvisor.mapper.ReviewMapper;
@@ -59,6 +62,7 @@ public class MerchantHighlightService {
     private final AIClientService aiClientService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final AiRequestTraceService traceService;
 
     public MerchantHighlightService(
             MerchantHighlightMapper highlightMapper,
@@ -70,6 +74,22 @@ public class MerchantHighlightService {
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper
     ) {
+        this(highlightMapper, evidenceMapper, reviewMapper, reviewAnalysisMapper, merchantMapper,
+                aiClientService, jdbcTemplate, objectMapper, null);
+    }
+
+    @Autowired
+    public MerchantHighlightService(
+            MerchantHighlightMapper highlightMapper,
+            MerchantHighlightEvidenceMapper evidenceMapper,
+            ReviewMapper reviewMapper,
+            ReviewAnalysisMapper reviewAnalysisMapper,
+            MerchantMapper merchantMapper,
+            AIClientService aiClientService,
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            AiRequestTraceService traceService
+    ) {
         this.highlightMapper = highlightMapper;
         this.evidenceMapper = evidenceMapper;
         this.reviewMapper = reviewMapper;
@@ -78,6 +98,7 @@ public class MerchantHighlightService {
         this.aiClientService = aiClientService;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.traceService = traceService;
     }
 
     // ==================== 公开方法 ====================
@@ -133,6 +154,20 @@ public class MerchantHighlightService {
      * @return 新生成的亮点列表 VO
      */
     public List<MerchantHighlightVO> generateHighlights(Long merchantId, boolean force) {
+        AiTraceContext context = traceService == null ? null
+                : traceService.startTrace(null, null, null, "MERCHANT_HIGHLIGHT_GENERATION");
+        try {
+            return generateHighlights(merchantId, force, context);
+        } catch (RuntimeException exception) {
+            failTrace(context, "HIGHLIGHT_GENERATION_FAILED", exception.getMessage());
+            throw exception;
+        }
+    }
+
+    public List<MerchantHighlightVO> generateHighlights(
+            Long merchantId, boolean force, AiTraceContext context
+    ) {
+        recordRequest(context, merchantId);
         // 1. 校验商家存在
         Merchant merchant = merchantMapper.selectById(merchantId);
         if (merchant == null) {
@@ -145,6 +180,10 @@ public class MerchantHighlightService {
 
         // 2. 加载正面评价（POSITIVE + NEUTRAL，排除 NEGATIVE 和 MIXED）
         List<Review> positiveReviews = loadPositiveReviews(merchantId);
+        completeStage(startStage(context, "REVIEW_SOURCE_LOAD", Map.of("merchantId", merchantId,
+                        "reviewIds", positiveReviews.stream().map(Review::getId).toList(),
+                        "reviewCount", positiveReviews.size())),
+                Map.of("reviewCount", positiveReviews.size()), null, null, null, null);
 
         // 3. 检查是否已有可展示的缓存
         List<MerchantHighlight> existingActive = highlightMapper.selectList(
@@ -170,16 +209,20 @@ public class MerchantHighlightService {
             );
             emptyVO.setMinimumReviewCount(MIN_POSITIVE_COUNT);
             emptyVO.setAvailablePositiveCount(positiveReviews.size());
-            return List.of(emptyVO);
+            List<MerchantHighlightVO> response = List.of(emptyVO);
+            finishFallback(context, merchantId, response, positiveReviews, "INSUFFICIENT_DATA");
+            return response;
         }
 
         // ==== 缓存命中：未达刷新条件时返回已有亮点 ====
         if (!force
                 && !existingActive.isEmpty()
                 && !needsRefresh(existingActive.get(0), positiveReviews.size())) {
-            return existingActive.stream()
+            List<MerchantHighlightVO> response = existingActive.stream()
                     .map(h -> toVO(h, positiveReviews.size()))
                     .collect(Collectors.toList());
+            finishFallback(context, merchantId, response, positiveReviews, "REUSED_HIGHLIGHTS");
+            return response;
         }
 
         // ==== 调用 AI 服务生成亮点 ====
@@ -213,16 +256,24 @@ public class MerchantHighlightService {
             reviewPayload.add(item);
         }
 
+        completeStage(startStage(context, "PROMPT_BUILD", Map.of("merchantId", merchantId,
+                        "reviewCount", positiveReviews.size(), "promptVersion", "merchant-highlight:v1")),
+                Map.of("reviewCount", positiveReviews.size()), null, null, null, "merchant-highlight:v1");
+
         JsonNode result;
         try {
-            result = aiClientService.generateMerchantHighlights(
-                    merchantId, version, reviewPayload, MIN_POSITIVE_COUNT);
+            result = traceService == null || context == null
+                    ? aiClientService.generateMerchantHighlights(merchantId, version, reviewPayload, MIN_POSITIVE_COUNT)
+                    : aiClientService.generateMerchantHighlights(merchantId, version, reviewPayload,
+                            MIN_POSITIVE_COUNT, context);
         } catch (Exception e) {
             // AI 调用失败时，如果已有旧亮点则继续返回旧的
             if (!existingActive.isEmpty()) {
-                return existingActive.stream()
+                List<MerchantHighlightVO> response = existingActive.stream()
                         .map(h -> toVO(h, positiveReviews.size()))
                         .collect(Collectors.toList());
+                finishFallback(context, merchantId, response, positiveReviews, "MODEL_CALL_FAILED");
+                return response;
             }
             throw new ApiException(
                     HttpStatus.BAD_GATEWAY,
@@ -236,11 +287,17 @@ public class MerchantHighlightService {
                 ? result.get("highlightStatus").asText()
                 : "FAILED";
 
+        completeStage(startStage(context, "OUTPUT_VALIDATION", Map.of("merchantId", merchantId)),
+                Map.of("status", highlightStatus), "FASTAPI", textOrNull(result, "modelName"),
+                textOrNull(result, "modelVersion"), "merchant-highlight:v1");
+
         if ("FAILED".equals(highlightStatus)) {
             if (!existingActive.isEmpty()) {
-                return existingActive.stream()
+                List<MerchantHighlightVO> response = existingActive.stream()
                         .map(h -> toVO(h, positiveReviews.size()))
                         .collect(Collectors.toList());
+                finishFallback(context, merchantId, response, positiveReviews, "MODEL_RETURNED_FAILED");
+                return response;
             }
             throw new ApiException(
                     HttpStatus.BAD_GATEWAY,
@@ -256,7 +313,9 @@ public class MerchantHighlightService {
             emptyVO.setStatusMessage("AI 判断当前评论证据不足以生成可靠亮点");
             emptyVO.setMinimumReviewCount(MIN_POSITIVE_COUNT);
             emptyVO.setAvailablePositiveCount(positiveReviews.size());
-            return List.of(emptyVO);
+            List<MerchantHighlightVO> response = List.of(emptyVO);
+            finishFallback(context, merchantId, response, positiveReviews, "MODEL_INSUFFICIENT_DATA");
+            return response;
         }
 
         // ==== 成功：标记旧亮点为 OUTDATED ====
@@ -273,6 +332,8 @@ public class MerchantHighlightService {
                 ? result.get("evidences") : null;
 
         List<MerchantHighlight> savedHighlights = new ArrayList<>();
+        AiRequestTraceStage evidenceStage = startStage(context, "EVIDENCE_SELECTION",
+                Map.of("merchantId", merchantId, "sourceReviewIds", sentReviewIds.stream().toList()));
 
         if (highlightsArray != null && highlightsArray.isArray()) {
             for (JsonNode item : highlightsArray) {
@@ -325,12 +386,24 @@ public class MerchantHighlightService {
             emptyVO.setStatusMessage("AI 未从当前评论中发现足够亮点");
             emptyVO.setMinimumReviewCount(MIN_POSITIVE_COUNT);
             emptyVO.setAvailablePositiveCount(positiveReviews.size());
-            return List.of(emptyVO);
+            List<MerchantHighlightVO> response = List.of(emptyVO);
+            finishFallback(context, merchantId, response, positiveReviews, "NO_HIGHLIGHTS");
+            return response;
         }
 
-        return savedHighlights.stream()
+        List<MerchantHighlightVO> response = savedHighlights.stream()
                 .map(h -> toVO(h, positiveReviews.size()))
                 .collect(Collectors.toList());
+        List<Long> sourceReviewIds = collectSourceReviewIds(evidencesArray, sentReviewIds);
+        completeStage(evidenceStage, Map.of("sourceReviewIds", sourceReviewIds,
+                        "evidenceCount", sourceReviewIds.size()), null, null, null, null);
+        completeStage(startStage(context, "RESULT_PERSIST", Map.of("merchantId", merchantId)),
+                Map.of("highlightIds", response.stream().map(MerchantHighlightVO::getHighlightId).toList(),
+                        "resultCount", response.size()), null, textOrNull(result, "modelName"),
+                textOrNull(result, "modelVersion"), "merchant-highlight:v1");
+        finishSuccess(context, merchantId, response, sourceReviewIds,
+                textOrNull(result, "modelName"), textOrNull(result, "modelVersion"));
+        return response;
     }
 
     /**
@@ -485,6 +558,70 @@ public class MerchantHighlightService {
     }
 
     /** 加载评价分析结果映射 */
+    private void recordRequest(AiTraceContext context, Long merchantId) {
+        if (context == null || traceService == null) return;
+        traceService.updateStructuredConditions(context, Map.of("merchantId", merchantId));
+        completeStage(startStage(context, "REQUEST_RECEIVED", Map.of("merchantId", merchantId)),
+                Map.of("accepted", true), null, null, null, null);
+    }
+
+    private AiRequestTraceStage startStage(AiTraceContext context, String name, Object input) {
+        if (context == null || traceService == null) return null;
+        try { return traceService.startStage(context, name, input); } catch (Exception ignored) { return null; }
+    }
+
+    private void completeStage(AiRequestTraceStage stage, Object output, String provider,
+                               String modelName, String modelVersion, String promptVersion) {
+        if (stage == null || traceService == null) return;
+        try { traceService.completeStage(stage, output, provider, modelName, modelVersion, promptVersion); }
+        catch (Exception ignored) { }
+    }
+
+    private void finishSuccess(AiTraceContext context, Long merchantId,
+                               List<MerchantHighlightVO> response, List<Long> sourceReviewIds,
+                               String modelName, String modelVersion) {
+        if (context == null || traceService == null) return;
+        traceService.completeTrace(context, "SUCCESS", highlightOutput(merchantId, response,
+                        sourceReviewIds, false), "FASTAPI", modelName, modelVersion,
+                "merchant-highlight:v1");
+    }
+
+    private void finishFallback(AiTraceContext context, Long merchantId,
+                                List<MerchantHighlightVO> response, List<Review> reviews, String reason) {
+        if (context == null || traceService == null) return;
+        Map<String, Object> output = highlightOutput(merchantId, response,
+                reviews.stream().map(Review::getId).toList(), true);
+        output.put("fallbackReason", reason);
+        traceService.completeTrace(context, "FALLBACK", output, "RULE_ENGINE", "RULE_ENGINE",
+                null, "NOT_APPLICABLE");
+    }
+
+    private Map<String, Object> highlightOutput(Long merchantId, List<MerchantHighlightVO> response,
+                                                 List<Long> sourceReviewIds, boolean degraded) {
+        Map<String, Object> output = new HashMap<>();
+        output.put("merchantId", merchantId);
+        output.put("highlightIds", response.stream().map(MerchantHighlightVO::getHighlightId).toList());
+        output.put("sourceReviewIds", sourceReviewIds);
+        output.put("resultCount", response.size());
+        output.put("status", response.isEmpty() ? "NONE" : response.get(0).getStatus());
+        output.put("degraded", degraded);
+        return output;
+    }
+
+    private List<Long> collectSourceReviewIds(JsonNode evidences, Set<Long> allowed) {
+        if (evidences == null || !evidences.isArray()) return List.of();
+        List<Long> ids = new ArrayList<>();
+        for (JsonNode evidence : evidences) {
+            long reviewId = evidence.path("reviewId").asLong(-1);
+            if (allowed.contains(reviewId) && !ids.contains(reviewId)) ids.add(reviewId);
+        }
+        return ids;
+    }
+
+    private void failTrace(AiTraceContext context, String code, String message) {
+        if (context != null && traceService != null) traceService.failTraceSafely(context, code, message);
+    }
+
     private Map<Long, ReviewAnalysis> loadAnalysisMap(List<Review> reviews) {
         if (reviews.isEmpty()) {
             return Map.of();

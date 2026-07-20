@@ -39,6 +39,9 @@ import com.foodadvisor.mapper.ReviewMapper;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.foodadvisor.trace.AiTraceContext;
+import com.foodadvisor.entity.AiRequestTraceStage;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -55,6 +58,8 @@ import java.util.UUID;
 
 @Service
 public class RecommendationRankingService {
+    private static final java.util.concurrent.atomic.AtomicInteger TRACE_SEQUENCE =
+            new java.util.concurrent.atomic.AtomicInteger(2000);
 
     private static final String ALGORITHM_VERSION =
             "RULE_V1";
@@ -112,6 +117,8 @@ public class RecommendationRankingService {
     private final AIClientService aiClientService;
     private final MerchantBusinessHoursService businessHoursService;
     private final ObjectMapper objectMapper;
+    @Autowired(required = false)
+    private AiRequestTraceService traceService;
 
     public RecommendationRankingService(
             ChatSessionMapper chatSessionMapper,
@@ -155,10 +162,38 @@ public class RecommendationRankingService {
             Long sessionId,
             RecommendationRankRequest request
     ) {
+        AiTraceContext context = standaloneContext(
+                "rank-" + UUID.randomUUID(), sessionId,
+                request == null ? null : request.getUserId(),
+                "DINING_RECOMMENDATION_RANK");
+        recordRequestReceived(context, "RECOMMENDATION");
         try {
-            return rankInternal(sessionId, request);
+            RecommendationRankResponse response = rank(sessionId, request, context);
+            completeStandalone(context, response, "RECOMMENDATION");
+            return response;
         } catch (DataAccessException exception) {
+            failTrace(context, exception);
             throw dataServiceException(exception);
+        } catch (RuntimeException exception) {
+            failTrace(context, exception);
+            throw exception;
+        }
+    }
+
+    @Transactional
+    public RecommendationRankResponse rank(
+            Long sessionId,
+            RecommendationRankRequest request,
+            AiTraceContext context
+    ) {
+        try {
+            return rankInternal(sessionId, request, context);
+        } catch (DataAccessException exception) {
+            closeRunningStages(context, exception);
+            throw dataServiceException(exception);
+        } catch (RuntimeException exception) {
+            closeRunningStages(context, exception);
+            throw exception;
         }
     }
 
@@ -167,16 +202,43 @@ public class RecommendationRankingService {
             Long sessionId,
             RecommendationAdjustRequest request
     ) {
+        AiTraceContext context = standaloneContext(
+                "rank-" + UUID.randomUUID(), sessionId,
+                request == null ? null : request.getUserId(),
+                "DINING_RECOMMENDATION_ADJUST");
+        recordRequestReceived(context, "RECOMMENDATION_ADJUST");
         try {
-            return adjustAndRankInternal(sessionId, request);
+            RecommendationRankResponse response =
+                    adjustAndRank(sessionId, request, context);
+            completeStandalone(context, response, "RECOMMENDATION_ADJUST");
+            return response;
         } catch (DataAccessException exception) {
+            failTrace(context, exception);
             throw dataServiceException(exception);
+        } catch (RuntimeException exception) {
+            failTrace(context, exception);
+            throw exception;
+        }
+    }
+
+    @Transactional
+    public RecommendationRankResponse adjustAndRank(
+            Long sessionId,
+            RecommendationAdjustRequest request,
+            AiTraceContext context
+    ) {
+        try {
+            return adjustAndRankInternal(sessionId, request, context);
+        } catch (RuntimeException exception) {
+            closeRunningStages(context, exception);
+            throw exception;
         }
     }
 
     private RecommendationRankResponse adjustAndRankInternal(
             Long sessionId,
-            RecommendationAdjustRequest request
+            RecommendationAdjustRequest request,
+            AiTraceContext context
     ) {
         validateAdjustRequest(sessionId, request);
 
@@ -218,12 +280,13 @@ public class RecommendationRankingService {
                         : request.getWeights()
         );
 
-        return rankInternal(sessionId, rankRequest);
+        return rankInternal(sessionId, rankRequest, context);
     }
 
     private RecommendationRankResponse rankInternal(
             Long sessionId,
-            RecommendationRankRequest request
+            RecommendationRankRequest request,
+            AiTraceContext context
     ) {
         validateRequest(sessionId, request);
 
@@ -254,8 +317,13 @@ public class RecommendationRankingService {
                 createPendingRecommendation(
                         session,
                         constraints,
-                        weights
+                        weights,
+                        context
                 );
+
+        AiRequestTraceStage rankingStage = startStage(
+                context, "RULE_RANKING",
+                java.util.Map.of("responseType", "RECOMMENDATION"));
 
         List<Merchant> candidates =
                 loadCandidateMerchants();
@@ -270,7 +338,8 @@ public class RecommendationRankingService {
                         weights,
                         request.getUserLatitude(),
                         request.getUserLongitude(),
-                        businessHours
+                        businessHours,
+                        context
                 );
 
         applyDishKeywordFilter(
@@ -282,16 +351,32 @@ public class RecommendationRankingService {
 
         results.sort(this::compareResults);
         assignRanks(results);
+        completeStage(rankingStage,
+                java.util.Map.of("resultCount", results.size()),
+                "RULE_ENGINE", "NOT_APPLICABLE");
 
+        AiRequestTraceStage evidenceStage = startStage(
+                context, "EVIDENCE_SELECTION",
+                java.util.Map.of("resultCount", results.size()));
         saveRecommendationItems(
                 recommendation.getId(),
                 results
         );
+        completeStage(evidenceStage,
+                java.util.Map.of("resultCount", results.size()),
+                "RULE_ENGINE", "NOT_APPLICABLE");
 
+        AiRequestTraceStage persistStage = startStage(
+                context, "RESULT_PERSIST",
+                java.util.Map.of("recommendationId", recommendation.getId()));
         completeRecommendation(
                 recommendation,
                 results
         );
+        completeStage(persistStage,
+                java.util.Map.of("recommendationId", recommendation.getId(),
+                        "resultCount", results.size()),
+                "RULE_ENGINE", "NOT_APPLICABLE");
 
         NoMatchAnalysis noMatchAnalysis =
                 results.isEmpty()
@@ -306,13 +391,15 @@ public class RecommendationRankingService {
                         List.of()
                 );
 
-        return buildResponse(
+        RecommendationRankResponse response = buildResponse(
                 recommendation,
                 constraints,
                 weights,
                 results,
                 noMatchAnalysis
         );
+        response.setTraceId(context.traceId());
+        return response;
     }
 
     private void validateRequest(
@@ -579,7 +666,8 @@ public class RecommendationRankingService {
     private Recommendation createPendingRecommendation(
             ChatSession session,
             ConstraintState constraints,
-            RecommendationWeights weights
+            RecommendationWeights weights,
+            AiTraceContext context
     ) {
         Recommendation recommendation =
                 new Recommendation();
@@ -587,10 +675,10 @@ public class RecommendationRankingService {
         recommendation.setUserId(session.getUserId());
         recommendation.setSessionId(session.getId());
         recommendation.setRequestId(
-                "rank-" + UUID.randomUUID()
+                context.requestId()
         );
         recommendation.setTraceId(
-                "trace-" + UUID.randomUUID()
+                context.traceId()
         );
         recommendation.setQueryText(
                 "基于会话结构化需求执行商家规则排序"
@@ -670,10 +758,11 @@ public class RecommendationRankingService {
             RecommendationWeights weights,
             BigDecimal userLatitude,
             BigDecimal userLongitude,
-            Map<Long, List<MerchantBusinessHours>> businessHours
+            Map<Long, List<MerchantBusinessHours>> businessHours,
+            AiTraceContext context
     ) {
         Map<Long, BigDecimal> semanticScores =
-                performSemanticSearch(candidates, constraints);
+                performSemanticSearch(candidates, constraints, context);
 
         List<RecommendationItemVO> results =
                 new ArrayList<>();
@@ -708,7 +797,8 @@ public class RecommendationRankingService {
 
     private Map<Long, BigDecimal> performSemanticSearch(
             List<Merchant> candidates,
-            ConstraintState constraints
+            ConstraintState constraints,
+            AiTraceContext context
     ) {
         String query = buildSemanticQuery(constraints);
         if (query.isEmpty()) {
@@ -723,7 +813,8 @@ public class RecommendationRankingService {
             JsonNode response = aiClientService.semanticSearch(
                     query,
                     merchantIds,
-                    List.of("REVIEW", "MERCHANT_INTRO", "MENU")
+                    List.of("REVIEW", "MERCHANT_INTRO", "MENU"),
+                    context
             );
 
             return parseSemanticScores(response);
@@ -2027,6 +2118,90 @@ private void applyDishKeywordFilter(
         );
 
         return response;
+    }
+
+    private AiTraceContext standaloneContext(
+            String requestId, Long sessionId, Long userId, String scene
+    ) {
+        return traceService == null
+                ? AiTraceContext.create(requestId, sessionId, userId, scene)
+                : traceService.startTrace(requestId, sessionId, userId, scene);
+    }
+
+    private AiRequestTraceStage startStage(
+            AiTraceContext context, String name, Object input
+    ) {
+        if (traceService == null || context == null) return null;
+        try {
+            return traceService.startStage(context, name, input);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void recordRequestReceived(
+            AiTraceContext context, String responseType
+    ) {
+        AiRequestTraceStage stage = startStage(
+                context, "REQUEST_RECEIVED",
+                java.util.Map.of("responseType", responseType));
+        completeStage(stage,
+                java.util.Map.of("responseType", responseType),
+                null, null);
+    }
+
+    private void completeStage(
+            AiRequestTraceStage stage, Object output,
+            String modelName, String promptVersion
+    ) {
+        if (traceService == null || stage == null) return;
+        try {
+            traceService.completeStage(stage, output, null, modelName,
+                    null, promptVersion);
+        } catch (Exception ignored) {
+            // Trace writes must not break ranking.
+        }
+    }
+
+    private void completeStandalone(
+            AiTraceContext context, RecommendationRankResponse response,
+            String responseType
+    ) {
+        if (traceService == null || response == null) return;
+        try {
+            traceService.updateStructuredConditions(
+                    context, response.getCurrentConstraints());
+            java.util.List<Long> merchantIds = response.getResults() == null
+                    ? java.util.List.of()
+                    : response.getResults().stream()
+                    .map(RecommendationItemVO::getMerchantId)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+            traceService.completeTrace(context, "SUCCESS",
+                    java.util.Map.of(
+                            "recommendationId", response.getRecommendationId(),
+                            "merchantIds", merchantIds,
+                            "resultCount", response.getResultCount(),
+                            "degraded", false,
+                            "responseType", responseType),
+                    null, "RULE_ENGINE", null, "NOT_APPLICABLE");
+        } catch (Exception ignored) {
+            // Trace writes must not change a successful ranking response.
+        }
+    }
+
+    private void failTrace(AiTraceContext context, Exception exception) {
+        if (traceService != null && context != null) {
+            traceService.failTraceSafely(
+                    context, "RECOMMENDATION_FAILED", exception.getMessage());
+        }
+    }
+
+    private void closeRunningStages(AiTraceContext context, Exception exception) {
+        if (traceService != null) {
+            traceService.failRunningStagesSafely(
+                    context, "RECOMMENDATION_FAILED", exception.getMessage());
+        }
     }
 
     private void applyAdjustment(

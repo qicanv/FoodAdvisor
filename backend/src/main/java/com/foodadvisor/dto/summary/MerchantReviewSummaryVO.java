@@ -9,6 +9,7 @@ import java.util.List;
 @Data
 public class MerchantReviewSummaryVO {
 
+    private String traceId;
     private Long summaryId;
     private Long merchantId;
     private Integer version;

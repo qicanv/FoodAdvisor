@@ -20,6 +20,9 @@ import com.foodadvisor.entity.ChatSessionState;
 import com.foodadvisor.mapper.ChatSessionStateMapper;
 import com.foodadvisor.dto.constraint.ConstraintExtractResponse;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.foodadvisor.trace.AiTraceContext;
+import com.foodadvisor.entity.AiRequestTraceStage;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -30,6 +33,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 消费需求提取服务。
@@ -42,6 +47,7 @@ import java.util.regex.Pattern;
  */
 @Service
 public class ConstraintExtractionService {
+    private static final AtomicInteger TRACE_SEQUENCE = new AtomicInteger(1000);
 
     private static final Pattern BUSINESS_TARGET_HH_MM_PATTERN =
             Pattern.compile(
@@ -205,6 +211,8 @@ public class ConstraintExtractionService {
     private final ConstraintExtractionMapper constraintExtractionMapper;
     private final AIClientService aiClientService;
     private final ObjectMapper objectMapper;
+    @Autowired(required = false)
+    private AiRequestTraceService traceService;
 
     public ConstraintExtractionService(
             ChatSessionMapper chatSessionMapper,
@@ -248,6 +256,26 @@ public class ConstraintExtractionService {
             String message,
             String requestId
     ) {
+        AiTraceContext context = startStandaloneTrace(
+                requestId, sessionId, userId, "DINING_CONSTRAINT_EXTRACTION");
+        try {
+            ConstraintExtractResponse response = extractAndMerge(
+                    sessionId, userId, message, requestId, context);
+            completeStandaloneTrace(context, response);
+            return response;
+        } catch (RuntimeException exception) {
+            failTrace(context, "CONSTRAINT_EXTRACTION_FAILED", exception);
+            throw exception;
+        }
+    }
+
+    public ConstraintExtractResponse extractAndMerge(
+            Long sessionId,
+            Long userId,
+            String message,
+            String requestId,
+            AiTraceContext context
+    ) {
         /*
          * 1. 确认会话存在、属于当前用户并且仍处于 ACTIVE。
          */
@@ -277,7 +305,8 @@ public class ConstraintExtractionService {
                         sessionId,
                         savedMessage.getId(),
                         message,
-                        oldState
+                        oldState,
+                        context
                 );
 
         ConstraintState extracted;
@@ -292,6 +321,7 @@ public class ConstraintExtractionService {
             intent = "MERCHANT_RECOMMENDATION";
             extractor = "RULE_FALLBACK";
             degraded = true;
+            recordRuleFallback(context);
         } else {
             extracted = aiExtraction.extracted();
             clearedFields = aiExtraction.clearedFields();
@@ -368,6 +398,12 @@ public class ConstraintExtractionService {
         response.setIntent(intent);
         response.setExtractor(extractor);
         response.setDegraded(degraded);
+        response.setModelName(aiExtraction == null
+                ? "RULE_ENGINE" : aiExtraction.modelName());
+        response.setPromptVersion(aiExtraction == null
+                ? "NOT_APPLICABLE" : aiExtraction.promptVersion());
+        response.setTraceId(context.traceId());
+        updateTrace(context, response);
 
         return response;
     }
@@ -377,6 +413,16 @@ public class ConstraintExtractionService {
             Long userId,
             String message,
             Long messageId
+    ) {
+        return prepareExtraction(sessionId, userId, message, messageId, null);
+    }
+
+    public PreparedExtraction prepareExtraction(
+            Long sessionId,
+            Long userId,
+            String message,
+            Long messageId,
+            AiTraceContext context
     ) {
         validateActiveSession(sessionId, userId);
         if (message == null || message.isBlank()) {
@@ -394,10 +440,12 @@ public class ConstraintExtractionService {
                         sessionId,
                         messageId,
                         message,
-                        currentState
+                        currentState,
+                        context
                 );
 
         if (aiExtraction == null) {
+            recordRuleFallback(context);
             return new PreparedExtraction(
                     extractByRules(message),
                     List.of(),
@@ -405,6 +453,7 @@ public class ConstraintExtractionService {
                     "RULE_FALLBACK",
                     true,
                     null,
+                    "NOT_APPLICABLE",
                     detectConflicts(message)
             );
         }
@@ -416,6 +465,7 @@ public class ConstraintExtractionService {
                 aiExtraction.extractor(),
                 aiExtraction.degraded(),
                 aiExtraction.modelName(),
+                aiExtraction.promptVersion(),
                 detectConflicts(message)
         );
     }
@@ -427,6 +477,19 @@ public class ConstraintExtractionService {
             String requestId,
             Long messageId,
             PreparedExtraction prepared
+    ) {
+        return extractAndMergePrepared(sessionId, userId, message, requestId,
+                messageId, prepared, null);
+    }
+
+    public ConstraintExtractResponse extractAndMergePrepared(
+            Long sessionId,
+            Long userId,
+            String message,
+            String requestId,
+            Long messageId,
+            PreparedExtraction prepared,
+            AiTraceContext context
     ) {
         validateActiveSession(sessionId, userId);
         if (prepared == null) {
@@ -488,6 +551,13 @@ public class ConstraintExtractionService {
         response.setIntent(prepared.intent());
         response.setExtractor(prepared.extractor());
         response.setDegraded(prepared.degraded());
+        response.setModelName(prepared.degraded()
+                ? "RULE_ENGINE" : prepared.modelName());
+        response.setPromptVersion(prepared.promptVersion());
+        if (context != null) {
+            response.setTraceId(context.traceId());
+            updateTrace(context, response);
+        }
         return response;
     }
 
@@ -626,8 +696,23 @@ public class ConstraintExtractionService {
             String extractor,
             boolean degraded,
             String modelName,
+            String promptVersion,
             List<ConstraintConflictVO> conflicts
     ) {
+        public PreparedExtraction(
+                ConstraintState extracted,
+                List<String> clearedFields,
+                String intent,
+                String extractor,
+                boolean degraded,
+                String modelName,
+                List<ConstraintConflictVO> conflicts
+        ) {
+            this(extracted, clearedFields, intent, extractor, degraded,
+                    modelName,
+                    degraded ? "NOT_APPLICABLE" : "dialogue-extraction:v1",
+                    conflicts);
+        }
     }
 
     /**
@@ -639,7 +724,8 @@ public class ConstraintExtractionService {
             Long sessionId,
             Long messageId,
             String message,
-            ConstraintState currentConstraints
+            ConstraintState currentConstraints,
+            AiTraceContext context
     ) {
         try {
             DialogueExtractAiRequest request =
@@ -654,9 +740,9 @@ public class ConstraintExtractionService {
             );
 
             DialogueExtractAiResponse response =
-                    aiClientService.extractDialogueConstraints(
-                            request
-                    );
+                    context == null || traceService == null
+                            ? aiClientService.extractDialogueConstraints(request)
+                            : aiClientService.extractDialogueConstraints(request, context);
 
             return validateAiResponse(response);
         } catch (Exception ignored) {
@@ -683,7 +769,8 @@ public class ConstraintExtractionService {
                 ),
                 "AI_MODEL",
                 false,
-                response.getModelName()
+                response.getModelName(),
+                response.getPromptVersion()
         );
     }
 
@@ -924,8 +1011,95 @@ public class ConstraintExtractionService {
             List<String> clearedFields,
             String extractor,
             boolean degraded,
-            String modelName
+            String modelName,
+            String promptVersion
     ) {
+    }
+
+    private AiTraceContext startStandaloneTrace(
+            String requestId, Long sessionId, Long userId, String scene
+    ) {
+        AiTraceContext context = traceService == null
+                ? AiTraceContext.create(requestId, sessionId, userId, scene)
+                : traceService.startTrace(requestId, sessionId, userId, scene);
+        if (traceService != null) {
+            try {
+                AiRequestTraceStage stage = traceService.startStage(
+                        context, "REQUEST_RECEIVED", Map.of("responseType", scene));
+                traceService.completeStage(stage, Map.of("responseType", scene),
+                        null, null, null, null);
+            } catch (Exception ignored) {
+                // Trace writes must not break constraint extraction.
+            }
+        }
+        return context;
+    }
+
+    private void updateTrace(
+            AiTraceContext context, ConstraintExtractResponse response
+    ) {
+        if (traceService == null || context == null || response == null) return;
+        try {
+            traceService.updateIntent(context, response.getIntent());
+            traceService.updateStructuredConditions(context, response.getMerged());
+            AiRequestTraceStage intentStage = traceService.startStage(
+                    context, "INTENT_DETECTION",
+                    Map.of("messageId", response.getMessageId()));
+            traceService.completeStage(intentStage,
+                    Map.of("intent", response.getIntent(),
+                            "extractor", response.getExtractor(),
+                            "degraded", Boolean.TRUE.equals(response.getDegraded())),
+                    response.getDegraded() ? null : "FASTAPI",
+                    response.getDegraded() ? "RULE_ENGINE" : null,
+                    null,
+                    response.getDegraded() ? "NOT_APPLICABLE" : "dialogue-extraction:v1");
+        } catch (Exception ignored) {
+            // Trace writes must not break the main transaction.
+        }
+    }
+
+    private void recordRuleFallback(AiTraceContext context) {
+        if (traceService == null || context == null) return;
+        try {
+            AiRequestTraceStage stage = traceService.startStage(
+                    context, "RULE_FALLBACK",
+                    Map.of("responseType", "CONSTRAINT_EXTRACTION"));
+            traceService.fallbackStage(stage,
+                    Map.of("extractor", "RULE_FALLBACK", "degraded", true),
+                    "AI_EXTRACTION_FAILED",
+                    "AI extraction failed; controlled rules were used");
+        } catch (Exception ignored) {
+            // Trace writes must not break rule fallback.
+        }
+    }
+
+    private void completeStandaloneTrace(
+            AiTraceContext context, ConstraintExtractResponse response
+    ) {
+        if (traceService == null) return;
+        try {
+            traceService.completeTrace(context,
+                    Boolean.TRUE.equals(response.getDegraded()) ? "FALLBACK" : "SUCCESS",
+                    Map.of("responseType", "CONSTRAINT_EXTRACTION",
+                            "degraded", Boolean.TRUE.equals(response.getDegraded())),
+                    Boolean.TRUE.equals(response.getDegraded()) ? null : "FASTAPI",
+                    Boolean.TRUE.equals(response.getDegraded()) ? "RULE_ENGINE" : null,
+                    null,
+                    Boolean.TRUE.equals(response.getDegraded())
+                            ? "NOT_APPLICABLE" : "dialogue-extraction:v1");
+        } catch (Exception ignored) {
+            // Trace writes must not change a successful response.
+        }
+    }
+
+    private void failTrace(AiTraceContext context, String code, Exception exception) {
+        if (traceService != null) {
+            traceService.failTraceSafely(context, code, exception.getMessage());
+        }
+    }
+
+    private int nextTraceSequence() {
+        return TRACE_SEQUENCE.incrementAndGet();
     }
 
     private ConstraintState extractByRules(String message) {

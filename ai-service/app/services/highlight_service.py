@@ -11,6 +11,7 @@
 """
 import logging
 import uuid
+from app.core.trace_context import current_trace_id
 from typing import List, Optional
 
 from app.models.schemas import (
@@ -77,7 +78,7 @@ class HighlightService:
     """商家亮点挖掘服务"""
 
     def _generate_trace_id(self) -> str:
-        return f"trace-{uuid.uuid4().hex[:16]}"
+        return current_trace_id()
 
     async def generate(self, request: HighlightGenerateRequest) -> HighlightGenerateResponse:
         """

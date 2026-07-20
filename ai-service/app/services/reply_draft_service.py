@@ -12,6 +12,7 @@
 """
 import logging
 import uuid
+from app.core.trace_context import current_trace_id
 from app.core.config import settings
 from app.models.schemas import (
     GenerateReplyRequest,
@@ -79,14 +80,16 @@ class ReplyDraftService:
         Returns:
             包含生成回复内容的响应
         """
-        trace_id = f"reply-{uuid.uuid4()}"
+        trace_id = current_trace_id()
 
         try:
             # 选择对应的 System Prompt
             if request.strategy == ReplyStrategyEnum.POSITIVE:
                 system_prompt = POSITIVE_SYSTEM_PROMPT
+                prompt_version = "review-reply-positive:v1"
             else:
                 system_prompt = NEGATIVE_SYSTEM_PROMPT
+                prompt_version = "review-reply-negative:v1"
 
             # 构建 user message，包含评价信息
             user_message = self._build_user_message(request)
@@ -122,6 +125,7 @@ class ReplyDraftService:
                 replyContent=reply_content,
                 strategy=request.strategy,
                 modelName=self.llm.model,
+                promptVersion=prompt_version,
                 businessTraceId=trace_id,
                 status="SUCCESS",
             )
@@ -137,6 +141,7 @@ class ReplyDraftService:
                 reviewId=request.reviewId,
                 replyContent="",
                 strategy=request.strategy,
+                promptVersion=prompt_version,
                 businessTraceId=trace_id,
                 status="FAILED",
                 errorMessage=f"AI 回复生成失败: {str(e)}",

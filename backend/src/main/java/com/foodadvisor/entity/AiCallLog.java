@@ -14,6 +14,8 @@ public class AiCallLog {
     private Long id;
 
     private String traceId;
+    private String rootTraceId;
+    private String stageName;
     private Long userId;
     private Long sessionId;
     private String functionType;

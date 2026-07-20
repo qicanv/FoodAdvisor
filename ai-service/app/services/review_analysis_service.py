@@ -8,6 +8,7 @@
 """
 import logging
 import uuid
+from app.core.trace_context import current_trace_id
 from datetime import datetime, timezone
 from typing import List, Optional
 from app.models.schemas import (
@@ -130,7 +131,7 @@ class ReviewAnalysisService:
 
     def _generate_trace_id(self) -> str:
         """生成 AI 调用追踪ID"""
-        return f"trace-{uuid.uuid4().hex[:16]}"
+        return current_trace_id()
 
     async def analyze(self, request: AnalyzeRequest, analysis_version: int = 1) -> AnalyzeResponse:
         """

@@ -6,6 +6,9 @@ import com.foodadvisor.dto.ai.DialogueExtractAiRequest;
 import com.foodadvisor.dto.ai.DialogueExtractAiResponse;
 import com.foodadvisor.entity.AiCallLog;
 import com.foodadvisor.entity.AuditLog;
+import com.foodadvisor.entity.AiRequestTraceStage;
+import com.foodadvisor.entity.AiTraceRetrievalSource;
+import com.foodadvisor.trace.AiTraceContext;
 import com.foodadvisor.util.SensitiveLogSanitizer;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -17,6 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
@@ -25,6 +29,9 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class AIClientService {
@@ -33,12 +40,14 @@ public class AIClientService {
             LoggerFactory.getLogger(AIClientService.class);
 
     private static final int MAX_ERROR_LENGTH = 300;
+    private static final AtomicInteger STAGE_SEQUENCE = new AtomicInteger();
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final AiCallLogService aiCallLogService;
     private final AuditLogService auditLogService;
     private final SensitiveLogSanitizer sanitizer;
+    private final AiRequestTraceService traceService;
 
     @Value("${ai-service.base-url}")
     private String aiServiceBaseUrl;
@@ -58,11 +67,23 @@ public class AIClientService {
             AuditLogService auditLogService,
             SensitiveLogSanitizer sanitizer
     ) {
+        this(objectMapper, aiCallLogService, auditLogService, sanitizer, null);
+    }
+
+    @Autowired
+    public AIClientService(
+            ObjectMapper objectMapper,
+            AiCallLogService aiCallLogService,
+            AuditLogService auditLogService,
+            SensitiveLogSanitizer sanitizer,
+            AiRequestTraceService traceService
+    ) {
         this.restTemplate = new RestTemplate();
         this.objectMapper = objectMapper;
         this.aiCallLogService = aiCallLogService;
         this.auditLogService = auditLogService;
         this.sanitizer = sanitizer;
+        this.traceService = traceService;
     }
 
     @PostConstruct
@@ -261,7 +282,50 @@ public class AIClientService {
         request.put("topK", 20);
         request.put("filters", filters);
 
-        return post(url, request, "SEMANTIC_SEARCH");
+        AiTraceContext context = traceService == null
+                ? AiTraceContext.create(null, null, null, "SEMANTIC_SEARCH")
+                : traceService.startTrace(null, null, null, "SEMANTIC_SEARCH");
+        try {
+            JsonNode result = semanticSearch(query, merchantIds, sourceTypes, context);
+            if (traceService != null) {
+                String mode = result.path("data").path("searchMode").asText("VECTOR");
+                runTraceWrite(() -> traceService.completeTrace(context,
+                        "KEYWORD_FALLBACK".equals(mode) ? "FALLBACK" : "SUCCESS",
+                        Map.of("responseType", "SEMANTIC_SEARCH",
+                                "resultCount", result.path("data").path("results").size(),
+                                "degraded", "KEYWORD_FALLBACK".equals(mode)),
+                        "OPENSEARCH", "EMBEDDING_SEARCH", null, "NOT_APPLICABLE"));
+            }
+            return result;
+        } catch (RuntimeException exception) {
+            if (traceService != null) {
+                traceService.failTraceSafely(context, "SEMANTIC_SEARCH_FAILED",
+                        exception.getMessage());
+            }
+            throw exception;
+        }
+    }
+
+    public JsonNode semanticSearch(
+            String query,
+            List<Long> merchantIds,
+            List<String> sourceTypes,
+            AiTraceContext context
+    ) {
+        String url = aiServiceBaseUrl + "/internal/search/semantic";
+        Map<String, Object> filters = new java.util.LinkedHashMap<>();
+        if (merchantIds != null && !merchantIds.isEmpty()) filters.put("merchantIds", merchantIds);
+        if (sourceTypes != null && !sourceTypes.isEmpty()) filters.put("sourceTypes", sourceTypes);
+        Map<String, Object> request = new java.util.LinkedHashMap<>();
+        request.put("query", query);
+        request.put("topK", 20);
+        request.put("filters", filters);
+        request.put("requestId", context.requestId());
+        JsonNode result = post(url, request, "SEMANTIC_SEARCH", context, "KNOWLEDGE_RETRIEVAL");
+        if (traceService != null) {
+            traceService.addRetrievalSources(context, null, retrievalSources(result, merchantIds));
+        }
+        return result;
     }
 
     /**
@@ -306,6 +370,71 @@ public class AIClientService {
     /**
      * 健康检查
      */
+    public JsonNode analyzeReview(
+            Long reviewId, Long merchantId, String content,
+            Integer reviewVersion, AiTraceContext context
+    ) {
+        return post(aiServiceBaseUrl + "/internal/reviews/analyze",
+                Map.of("reviewId", reviewId, "merchantId", merchantId,
+                        "reviewVersion", reviewVersion == null ? 1 : reviewVersion,
+                        "content", content),
+                "REVIEW_ANALYSIS", context, "MODEL_CALL");
+    }
+
+    public DialogueExtractAiResponse extractDialogueConstraints(
+            DialogueExtractAiRequest request, AiTraceContext context
+    ) {
+        try {
+            return objectMapper.treeToValue(post(
+                    aiServiceBaseUrl + "/internal/dialogue/extract", request,
+                    "DIALOGUE_CONSTRAINT_EXTRACTION", context,
+                    "CONSTRAINT_EXTRACTION"), DialogueExtractAiResponse.class);
+        } catch (Exception exception) {
+            throw new RuntimeException("AI dialogue constraint extraction failed", exception);
+        }
+    }
+
+    public JsonNode generateReviewSummary(
+            Long merchantId, Integer version, List<Map<String, Object>> reviews,
+            int minimumReviewCount, AiTraceContext context
+    ) {
+        Map<String, Object> request = new java.util.LinkedHashMap<>();
+        request.put("requestId", context.requestId() == null
+                ? "summary-" + merchantId + "-v" + version : context.requestId());
+        request.put("merchantId", merchantId);
+        request.put("version", version);
+        request.put("reviews", reviews);
+        request.put("minimumReviewCount", minimumReviewCount);
+        return post(aiServiceBaseUrl + "/internal/merchants/review-summary",
+                request, "REVIEW_SUMMARY_GENERATION", context, "MODEL_CALL");
+    }
+
+    public JsonNode generateMerchantHighlights(
+            Long merchantId, Integer version, List<Map<String, Object>> reviews,
+            int minimumPositiveCount, AiTraceContext context
+    ) {
+        Map<String, Object> request = new java.util.LinkedHashMap<>();
+        request.put("requestId", context.requestId() == null
+                ? "highlights-" + merchantId + "-v" + version : context.requestId());
+        request.put("merchantId", merchantId);
+        request.put("version", version);
+        request.put("reviews", reviews);
+        request.put("minimumPositiveCount", minimumPositiveCount);
+        return post(aiServiceBaseUrl + "/internal/merchants/highlights",
+                request, "MERCHANT_HIGHLIGHT_GENERATION", context, "MODEL_CALL");
+    }
+
+    public JsonNode generateReplyDraft(
+            Long reviewId, Long merchantId, String content, String strategy,
+            Integer rating, AiTraceContext context
+    ) {
+        return post(aiServiceBaseUrl + "/internal/reviews/generate-reply",
+                Map.of("reviewId", reviewId, "merchantId", merchantId,
+                        "content", content, "strategy", strategy,
+                        "rating", rating == null ? 3 : rating),
+                "REVIEW_REPLY_GENERATION", context, "MODEL_CALL");
+    }
+
     public boolean isHealthy() {
         try {
             String url = aiServiceBaseUrl + "/health";
@@ -329,8 +458,36 @@ public class AIClientService {
             Object body,
             String functionType
     ) {
-        String traceId =
+        AiTraceContext context = traceService == null
+                ? AiTraceContext.create(null, null, null, functionType)
+                : traceService.startTrace(null, null, null, functionType);
+        try {
+            JsonNode result = post(url, body, functionType, context, stageFor(functionType));
+            if (traceService != null) {
+                runTraceWrite(() -> traceService.completeTrace(context, "SUCCESS",
+                        Map.of("responseType", functionType, "degraded", false),
+                        "FASTAPI", modelName(result), modelVersion(result), promptVersion(result)));
+            }
+            return result;
+        } catch (RuntimeException exception) {
+            if (traceService != null) {
+                traceService.failTraceSafely(context, "AI_CALL_FAILED", exception.getMessage());
+            }
+            throw exception;
+        }
+    }
+
+    private JsonNode post(
+            String url,
+            Object body,
+            String functionType,
+            AiTraceContext context,
+            String stageName
+    ) {
+        String callId =
                 "ai-" + UUID.randomUUID();
+        AiRequestTraceStage traceStage = startStageSafely(
+                context, stageName, functionType);
 
         long startNanos =
                 System.nanoTime();
@@ -358,6 +515,11 @@ public class AIClientService {
                     "X-Internal-Token",
                     internalToken
             );
+            headers.set("X-Trace-Id", context.traceId());
+            if (context.requestId() != null && !context.requestId().isBlank()) {
+                headers.set("X-Request-Id", context.requestId());
+            }
+            headers.set("X-AI-Stage", stageName);
 
             HttpEntity<String> entity =
                     new HttpEntity<>(
@@ -384,7 +546,9 @@ public class AIClientService {
 
             AiCallLog aiCallLog =
                     buildAiCallLog(
-                            traceId,
+                            callId,
+                            context,
+                            stageName,
                             functionType,
                             "SUCCESS",
                             latencyMs,
@@ -399,7 +563,7 @@ public class AIClientService {
 
             recordLogsSafely(
                     aiCallLog,
-                    traceId,
+                    callId,
                     functionType,
                     "INFO",
                     "SUCCESS",
@@ -409,6 +573,23 @@ public class AIClientService {
                     response.getStatusCode().value(),
                     null
             );
+            if (traceService != null) {
+                boolean retrievalFallback = "SEMANTIC_SEARCH".equals(functionType)
+                        && "KEYWORD_FALLBACK".equals(
+                        result.path("data").path("searchMode").asText());
+                if (retrievalFallback) {
+                    runTraceWrite(() -> traceService.fallbackStage(traceStage,
+                            Map.of("responseType", functionType,
+                                    "retrievalMode", "KEYWORD_FALLBACK"),
+                            "OPENSEARCH_UNAVAILABLE",
+                            "Vector retrieval was unavailable; keyword fallback was used"));
+                } else {
+                    runTraceWrite(() -> traceService.completeStage(traceStage,
+                            Map.of("responseType", functionType),
+                            "FASTAPI", modelName(result), modelVersion(result),
+                            promptVersion(result)));
+                }
+            }
 
             return result;
         } catch (HttpStatusCodeException exception) {
@@ -422,7 +603,9 @@ public class AIClientService {
                     );
 
             recordFailure(
-                    traceId,
+                    callId,
+                    context,
+                    stageName,
                     functionType,
                     startNanos,
                     inputLength,
@@ -432,6 +615,8 @@ public class AIClientService {
                     wrapped,
                     exception.getStatusCode().value()
             );
+            runTraceWrite(() -> traceService.failStage(
+                    traceStage, classifyHttpError(exception), wrapped.getMessage()));
 
             throw wrapped;
         } catch (ResourceAccessException exception) {
@@ -442,7 +627,9 @@ public class AIClientService {
                     );
 
             recordFailure(
-                    traceId,
+                    callId,
+                    context,
+                    stageName,
                     functionType,
                     startNanos,
                     inputLength,
@@ -452,6 +639,8 @@ public class AIClientService {
                     wrapped,
                     null
             );
+            runTraceWrite(() -> traceService.failStage(
+                    traceStage, "CONNECTION_FAILED", wrapped.getMessage()));
 
             throw wrapped;
         } catch (Exception exception) {
@@ -463,7 +652,9 @@ public class AIClientService {
                     );
 
             recordFailure(
-                    traceId,
+                    callId,
+                    context,
+                    stageName,
                     functionType,
                     startNanos,
                     inputLength,
@@ -473,6 +664,8 @@ public class AIClientService {
                     wrapped,
                     null
             );
+            runTraceWrite(() -> traceService.failStage(
+                    traceStage, classifyUnexpected(exception), wrapped.getMessage()));
 
             throw wrapped;
         }
@@ -489,6 +682,8 @@ public class AIClientService {
 
     private void recordFailure(
             String traceId,
+            AiTraceContext context,
+            String stageName,
             String functionType,
             long startNanos,
             Integer inputLength,
@@ -510,6 +705,8 @@ public class AIClientService {
         AiCallLog aiCallLog =
                 buildAiCallLog(
                         traceId,
+                        context,
+                        stageName,
                         functionType,
                         status,
                         latencyMs,
@@ -611,6 +808,8 @@ public class AIClientService {
 
     private AiCallLog buildAiCallLog(
             String traceId,
+            AiTraceContext context,
+            String stageName,
             String functionType,
             String status,
             Integer latencyMs,
@@ -626,6 +825,10 @@ public class AIClientService {
                 new AiCallLog();
 
         aiCallLog.setTraceId(traceId);
+        aiCallLog.setRootTraceId(context.traceId());
+        aiCallLog.setStageName(stageName);
+        aiCallLog.setUserId(context.userId());
+        aiCallLog.setSessionId(context.sessionId());
         aiCallLog.setFunctionType(functionType);
         aiCallLog.setProvider("FASTAPI");
         aiCallLog.setModelName(
@@ -645,6 +848,92 @@ public class AIClientService {
         aiCallLog.setCreatedAt(createdAt);
 
         return aiCallLog;
+    }
+
+    private int nextSequence() {
+        return STAGE_SEQUENCE.updateAndGet(value ->
+                value == Integer.MAX_VALUE ? 1 : value + 1);
+    }
+
+    private AiRequestTraceStage startStageSafely(
+            AiTraceContext context, String stageName, String functionType
+    ) {
+        if (traceService == null) return null;
+        try {
+            return traceService.startStage(
+                    context, stageName, Map.of("responseType", functionType));
+        } catch (Exception exception) {
+            log.warn("AI trace stage start failed. traceId={}, stage={}, error={}",
+                    sanitizer.sanitize(context.traceId()), stageName,
+                    sanitizer.sanitize(exception.getMessage()));
+            return null;
+        }
+    }
+
+    private void runTraceWrite(Runnable action) {
+        if (traceService == null || action == null) return;
+        try {
+            action.run();
+        } catch (Exception exception) {
+            log.warn("AI trace stage update failed: {}",
+                    sanitizer.sanitize(exception.getMessage()));
+        }
+    }
+
+    private String stageFor(String functionType) {
+        return switch (functionType) {
+            case "SEMANTIC_SEARCH" -> "KNOWLEDGE_RETRIEVAL";
+            case "DIALOGUE_CONSTRAINT_EXTRACTION" -> "CONSTRAINT_EXTRACTION";
+            default -> "MODEL_CALL";
+        };
+    }
+
+    private String modelName(JsonNode value) {
+        return text(value, "modelName");
+    }
+
+    private String modelVersion(JsonNode value) {
+        return text(value, "modelVersion");
+    }
+
+    private String promptVersion(JsonNode value) {
+        return text(value, "promptVersion");
+    }
+
+    private String text(JsonNode value, String field) {
+        return value != null && value.hasNonNull(field) ? value.get(field).asText() : null;
+    }
+
+    private List<AiTraceRetrievalSource> retrievalSources(
+            JsonNode response, List<Long> allowedMerchantIds
+    ) {
+        List<AiTraceRetrievalSource> sources = new ArrayList<>();
+        JsonNode results = response == null ? null : response.path("data").path("results");
+        if (results == null || !results.isArray()) return sources;
+        int rank = 1;
+        for (JsonNode item : results) {
+            AiTraceRetrievalSource source = new AiTraceRetrievalSource();
+            source.setSourceType(text(item, "sourceType"));
+            source.setSourceId(text(item, "sourceId"));
+            source.setDocumentId(text(item, "documentId"));
+            source.setChunkId(text(item, "chunkId"));
+            if (item.hasNonNull("merchantId") && item.get("merchantId").canConvertToLong()) {
+                source.setMerchantId(item.get("merchantId").asLong());
+            }
+            if (allowedMerchantIds != null && !allowedMerchantIds.isEmpty()
+                    && (source.getMerchantId() == null
+                    || !allowedMerchantIds.contains(source.getMerchantId()))) {
+                continue;
+            }
+            source.setMerchantName(text(item, "merchantName"));
+            source.setSummary(text(item, "text"));
+            source.setRankNo(rank++);
+            if (item.hasNonNull("score") && item.get("score").isNumber()) {
+                source.setRelevanceScore(BigDecimal.valueOf(item.get("score").asDouble()));
+            }
+            sources.add(source);
+        }
+        return sources;
     }
 
     private String requestSummary(

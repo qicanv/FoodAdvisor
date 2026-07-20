@@ -13,6 +13,8 @@ import java.time.OffsetDateTime;
 @Data
 public class ReviewReplyDraftVO {
 
+    private String traceId;
+
     /** 草稿 ID */
     private Long id;
 

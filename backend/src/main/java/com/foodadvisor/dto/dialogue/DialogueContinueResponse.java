@@ -12,6 +12,7 @@ import java.util.List;
  */
 @Data
 public class DialogueContinueResponse {
+    private String traceId;
 
     /**
      * 当前会话 ID。
@@ -69,4 +70,6 @@ public class DialogueContinueResponse {
     private String extractor = "RULE_FALLBACK";
 
     private Boolean degraded = true;
+    private String modelName;
+    private String promptVersion;
 }
