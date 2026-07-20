@@ -64,6 +64,38 @@ ai-service:
   connect-timeout: 5000
   read-timeout: 60000
 
+rate-limit:
+  enabled: true
+  rules:
+    dialogue-message-user:
+      enabled: true
+      paths:
+        - /api/diner/sessions/*/messages
+      methods:
+        - POST
+      key-type: USER
+      max-requests: 10
+      window-seconds: 60
+    constraint-extract-user:
+      enabled: true
+      paths:
+        - /api/diner/sessions/*/constraints/extract
+      methods:
+        - POST
+      key-type: USER
+      max-requests: 10
+      window-seconds: 60
+    recommendation-rank-user:
+      enabled: true
+      paths:
+        - /api/diner/sessions/*/recommendations/rank
+        - /api/diner/sessions/*/recommendations/adjust
+      methods:
+        - POST
+      key-type: USER
+      max-requests: 10
+      window-seconds: 60
+
 # 日志
 logging:
   level:

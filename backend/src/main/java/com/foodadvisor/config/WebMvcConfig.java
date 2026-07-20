@@ -8,9 +8,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private final JwtInterceptor jwtInterceptor;
+    private final RateLimitInterceptor rateLimitInterceptor;
 
-    public WebMvcConfig(JwtInterceptor jwtInterceptor) {
+    public WebMvcConfig(
+            JwtInterceptor jwtInterceptor,
+            RateLimitInterceptor rateLimitInterceptor
+    ) {
         this.jwtInterceptor = jwtInterceptor;
+        this.rateLimitInterceptor = rateLimitInterceptor;
     }
 
     @Override
@@ -28,6 +33,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/reviews/merchants/*/issue-stats",
                         "/api/reviews/merchants/*/issue-categories/*/reviews",
                         "/api/reviews/issue-categories"
-                );
+                )
+                .order(0);
+        registry.addInterceptor(rateLimitInterceptor)
+                .addPathPatterns("/api/**")
+                .excludePathPatterns(
+                        "/api/health",
+                        "/error"
+                )
+                .order(1);
     }
 }
