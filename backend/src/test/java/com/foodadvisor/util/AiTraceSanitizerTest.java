@@ -1,9 +1,13 @@
 package com.foodadvisor.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.foodadvisor.dto.constraint.ConstraintState;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.math.BigDecimal;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -80,5 +84,53 @@ class AiTraceSanitizerTest {
 
         assertThat(value).contains("\"status\":\"SUCCESS\"", "\"reviewCount\":6",
                 "\"highlightIds\"", "\"analysisIds\"", "\"replyType\":\"POSITIVE\"");
+    }
+
+    @Test
+    void preservesAllDiningConstraintFields() throws Exception {
+        ConstraintState conditions = new ConstraintState();
+        conditions.setPartySize(2);
+        conditions.setTotalBudget(new BigDecimal("200"));
+        conditions.setPerCapitaBudget(new BigDecimal("100"));
+        conditions.setMerchantTypes(List.of("中餐"));
+        conditions.setCuisines(List.of("川菜"));
+        conditions.setTastePreferences(List.of("微辣"));
+        conditions.setTasteRestrictions(List.of("不吃花生"));
+        conditions.setDishKeywords(List.of("水煮鱼"));
+        conditions.setExcludedCuisines(List.of("粤菜"));
+        conditions.setExcludedMerchantTypes(List.of("烧烤"));
+        conditions.setDistanceKm(new BigDecimal("3"));
+        conditions.setMinRating(new BigDecimal("4.5"));
+        conditions.setScenes(List.of("朋友聚会"));
+        conditions.setEnvironmentRequirements(List.of("安静"));
+        conditions.setBusinessTime("TONIGHT");
+        conditions.setBusinessTargetTime("20:00");
+        conditions.setBusinessTargetNextDay(false);
+
+        String value = sanitizer.sanitizeJson(conditions);
+        JsonNode json = new ObjectMapper().readTree(value);
+
+        assertThat(json.path("partySize").asInt()).isEqualTo(2);
+        assertThat(json.path("totalBudget").decimalValue())
+                .isEqualByComparingTo(new BigDecimal("200"));
+        assertThat(json.path("perCapitaBudget").decimalValue())
+                .isEqualByComparingTo(new BigDecimal("100"));
+        assertThat(json.path("merchantTypes").get(0).asText()).isEqualTo("中餐");
+        assertThat(json.path("cuisines").get(0).asText()).isEqualTo("川菜");
+        assertThat(json.path("tastePreferences").get(0).asText()).isEqualTo("微辣");
+        assertThat(json.path("tasteRestrictions").get(0).asText()).isEqualTo("不吃花生");
+        assertThat(json.path("dishKeywords").get(0).asText()).isEqualTo("水煮鱼");
+        assertThat(json.path("excludedCuisines").get(0).asText()).isEqualTo("粤菜");
+        assertThat(json.path("excludedMerchantTypes").get(0).asText()).isEqualTo("烧烤");
+        assertThat(json.path("distanceKm").decimalValue())
+                .isEqualByComparingTo(new BigDecimal("3"));
+        assertThat(json.path("minRating").decimalValue())
+                .isEqualByComparingTo(new BigDecimal("4.5"));
+        assertThat(json.path("scenes").get(0).asText()).isEqualTo("朋友聚会");
+        assertThat(json.path("environmentRequirements").get(0).asText())
+                .isEqualTo("安静");
+        assertThat(json.path("businessTime").asText()).isEqualTo("TONIGHT");
+        assertThat(json.path("businessTargetTime").asText()).isEqualTo("20:00");
+        assertThat(json.path("businessTargetNextDay").asBoolean()).isFalse();
     }
 }

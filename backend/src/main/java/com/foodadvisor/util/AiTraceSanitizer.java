@@ -24,14 +24,29 @@ public class AiTraceSanitizer {
             "messageid", "messagelength", "intent", "confidence", "extractor",
             "degraded", "responsetype", "recommendationid", "summaryid",
             "reviewanalysisid", "replydraftid", "resultcount", "merchantids",
-            "partysize", "budgetmin", "budgetmax", "cuisinepreferences",
-            "tastepreferences", "distancekm", "diningpurpose", "haslocation",
+
+            /*
+             * ConstraintState 当前使用的完整字段。
+             */
+            "partysize", "totalbudget", "percapitabudget", "merchanttypes",
+            "cuisines", "tastepreferences", "tasterestrictions",
+            "dishkeywords", "excludedcuisines", "excludedmerchanttypes",
+            "distancekm", "minrating", "scenes", "environmentrequirements",
+            "businesstime", "businesstargettime", "businesstargetnextday",
+
+            /*
+             * 兼容已有追踪数据及旧版字段名称。
+             */
+            "budgetmin", "budgetmax", "cuisinepreferences", "diningpurpose",
+            "haslocation",
+
             "sourcetype", "sourceid", "documentid", "chunkid", "merchantid",
             "merchantname", "rankno", "relevancescore", "retrievalmode",
             "modelname", "modelversion", "promptversion", "provider",
-            "status", "reviewid", "reviewcount", "evidencecount", "highlightids",
-            "sourcereviewids", "requestedcount", "successcount", "failedcount",
-            "skippedcount", "analysisids", "replytype", "sentiment"
+            "status", "reviewid", "reviewcount", "evidencecount",
+            "highlightids", "sourcereviewids", "requestedcount",
+            "successcount", "failedcount", "skippedcount", "analysisids",
+            "replytype", "sentiment"
     );
     private static final Pattern PHONE = Pattern.compile("(?<!\\d)(1\\d{2})\\d{4}(\\d{4})(?!\\d)");
     private static final Pattern EMAIL = Pattern.compile("(?i)([A-Z0-9._%+-])[^@\\s]*(@[A-Z0-9.-]+\\.[A-Z]{2,})");
