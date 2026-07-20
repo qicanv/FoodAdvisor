@@ -203,6 +203,17 @@ CREATE INDEX IF NOT EXISTS idx_ai_call_logs_status_created
 CREATE INDEX IF NOT EXISTS idx_ai_call_logs_model
     ON ai_call_logs(model_name, created_at DESC);
 
+-- === rate_limit_events ===
+CREATE INDEX IF NOT EXISTS idx_rate_limit_events_created
+    ON rate_limit_events(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_events_rule_created
+    ON rate_limit_events(rule_name, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_events_user_created
+    ON rate_limit_events(user_id, created_at DESC)
+    WHERE user_id IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_ai_request_traces_created
     ON ai_request_traces(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_request_traces_started
