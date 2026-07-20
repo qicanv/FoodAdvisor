@@ -40,6 +40,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.foodadvisor.trace.AiTraceContext;
+import com.foodadvisor.entity.AiRequestTraceStage;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -54,6 +57,8 @@ import java.util.UUID;
 @Slf4j
 @Service
 public class DiningDialogueMessageService {
+    private static final java.util.concurrent.atomic.AtomicInteger TRACE_SEQUENCE =
+            new java.util.concurrent.atomic.AtomicInteger(3000);
 
     private static final String ROLE_USER = "USER";
 
@@ -93,6 +98,8 @@ public class DiningDialogueMessageService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
+    @Autowired(required = false)
+    private AiRequestTraceService traceService;
 
     public DiningDialogueMessageService(
             ChatSessionMapper chatSessionMapper,
@@ -182,7 +189,11 @@ public class DiningDialogueMessageService {
             );
         }
 
+        AiTraceContext context = null;
         try {
+            context = startTrace(request.getRequestId(), sessionId,
+                    request.getUserId(), "DINING_DIALOGUE_MESSAGE");
+            recordRequestReceived(context, "DIALOGUE_MESSAGE");
             Long messageId = chatMessageMapper.nextId();
             if (messageId == null || messageId <= 0) {
                 throw new ApiException(
@@ -199,16 +210,19 @@ public class DiningDialogueMessageService {
                                     sessionId,
                                     request.getUserId(),
                                     request.getContent(),
-                                    messageId
+                                    messageId,
+                                    context
                             );
 
+            AiTraceContext activeContext = context;
             DialogueMessageResponse response =
                     transactionTemplate.execute(status ->
                             processMessage(
                                     sessionId,
                                     request,
                                     messageId,
-                                    preparedExtraction
+                                    preparedExtraction,
+                                    activeContext
                             )
                     );
             if (response == null) {
@@ -218,7 +232,14 @@ public class DiningDialogueMessageService {
                         "消息处理失败"
                 );
             }
+            completeTrace(context, response);
             return response;
+        } catch (RuntimeException exception) {
+            if (context != null && traceService != null) {
+                traceService.failTraceSafely(
+                        context, "DINING_DIALOGUE_FAILED", exception.getMessage());
+            }
+            throw exception;
         } finally {
             releaseLock(lockKey, lockToken);
         }
@@ -266,6 +287,29 @@ public class DiningDialogueMessageService {
     public RecommendationRankResponse adjustRecommendation(
             Long sessionId,
             RecommendationAdjustRequest request
+    ) {
+        AiTraceContext context = startTrace(null, sessionId,
+                request == null ? null : request.getUserId(),
+                "DINING_RECOMMENDATION_ADJUST");
+        recordRequestReceived(context, "RECOMMENDATION_ADJUST");
+        try {
+            RecommendationRankResponse response =
+                    adjustRecommendation(sessionId, request, context);
+            completeRecommendationTrace(context, response, "RECOMMENDATION_ADJUST");
+            return response;
+        } catch (RuntimeException exception) {
+            if (traceService != null) {
+                traceService.failTraceSafely(
+                        context, "RECOMMENDATION_ADJUST_FAILED", exception.getMessage());
+            }
+            throw exception;
+        }
+    }
+
+    public RecommendationRankResponse adjustRecommendation(
+            Long sessionId,
+            RecommendationAdjustRequest request,
+            AiTraceContext context
     ) {
         if (request == null
                 || request.getSourceMessageId() == null
@@ -320,10 +364,10 @@ public class DiningDialogueMessageService {
         }
 
         RecommendationRankResponse recommendation =
-                recommendationRankingService.adjustAndRank(
-                        sessionId,
-                        request
-                );
+                traceService == null
+                        ? recommendationRankingService.adjustAndRank(sessionId, request)
+                        : recommendationRankingService.adjustAndRank(
+                                sessionId, request, context);
 
         updateAdjustedAssistantMessage(
                 assistantMessage,
@@ -336,12 +380,26 @@ public class DiningDialogueMessageService {
             Long sessionId,
             DialogueMessageRequest request
     ) {
-        return processMessage(
-                sessionId,
-                request,
-                null,
-                null
-        );
+        AiTraceContext context = startTrace(request.getRequestId(), sessionId,
+                request.getUserId(), "DINING_DIALOGUE_MESSAGE");
+        recordRequestReceived(context, "DIALOGUE_MESSAGE");
+        try {
+            DialogueMessageResponse response = processMessage(
+                    sessionId,
+                    request,
+                    null,
+                    null,
+                    context
+            );
+            completeTrace(context, response);
+            return response;
+        } catch (RuntimeException exception) {
+            if (traceService != null) {
+                traceService.failTraceSafely(
+                        context, "DIALOGUE_MESSAGE_FAILED", exception.getMessage());
+            }
+            throw exception;
+        }
     }
 
     private DialogueMessageResponse processMessage(
@@ -349,15 +407,37 @@ public class DiningDialogueMessageService {
             DialogueMessageRequest request,
             Long messageId,
             ConstraintExtractionService.PreparedExtraction
-                    preparedExtraction
+                    preparedExtraction,
+            AiTraceContext context
     ) {
         DialogueContinueResponse dialogue =
                 preparedExtraction == null
+                        ? (traceService == null
                         ? dialogueService.continueDialogue(
                                 sessionId,
                                 request.getUserId(),
                                 request.getContent(),
-                                request.getRequestId()
+                                request.getRequestId(),
+                                null,
+                                null
+                        )
+                        : dialogueService.continueDialogue(
+                                sessionId,
+                                request.getUserId(),
+                                request.getContent(),
+                                request.getRequestId(),
+                                null,
+                                null,
+                                context
+                        ))
+                        : (traceService == null
+                        ? dialogueService.continueDialogue(
+                                sessionId,
+                                request.getUserId(),
+                                request.getContent(),
+                                request.getRequestId(),
+                                messageId,
+                                preparedExtraction
                         )
                         : dialogueService.continueDialogue(
                                 sessionId,
@@ -365,8 +445,9 @@ public class DiningDialogueMessageService {
                                 request.getContent(),
                                 request.getRequestId(),
                                 messageId,
-                                preparedExtraction
-                        );
+                                preparedExtraction,
+                                context
+                        ));
 
         if (!dialogue.isReadyForRecommendation()) {
             String assistantText =
@@ -410,10 +491,10 @@ public class DiningDialogueMessageService {
         );
 
         RecommendationRankResponse recommendation =
-                recommendationRankingService.rank(
-                        sessionId,
-                        rankRequest
-                );
+                traceService == null
+                        ? recommendationRankingService.rank(sessionId, rankRequest)
+                        : recommendationRankingService.rank(
+                                sessionId, rankRequest, context);
 
         String responseType =
                 Boolean.TRUE.equals(
@@ -635,6 +716,9 @@ public class DiningDialogueMessageService {
                     assistantMessage.getId()
             );
             response.setRequestId(requestId);
+            if (response.getTraceId() == null) {
+                response.setTraceId(asString(metadata.get("traceId")));
+            }
             return response;
         }
 
@@ -646,6 +730,7 @@ public class DiningDialogueMessageService {
                 assistantMessage.getId()
         );
         response.setRequestId(requestId);
+        response.setTraceId(asString(metadata.get("traceId")));
         response.setResponseType(
                 asString(metadata.get("responseType"))
         );
@@ -759,6 +844,7 @@ public class DiningDialogueMessageService {
         Map<String, Object> updated =
                 new LinkedHashMap<>(metadata);
         updated.put("responseSnapshot", response);
+        updated.put("traceId", response.getTraceId());
         if (response.getRecommendation() != null) {
             updated.put(
                     "adjustmentSuggestions",
@@ -995,6 +1081,7 @@ public class DiningDialogueMessageService {
         );
         response.setRequestId(requestId);
         response.setResponseType(responseType);
+        response.setTraceId(dialogue.getTraceId());
         response.setAssistantText(assistantText);
         response.setConversationStage(
                 dialogue.getStage()
@@ -1008,7 +1095,92 @@ public class DiningDialogueMessageService {
         response.setRecommendation(recommendation);
         response.setExtractor(dialogue.getExtractor());
         response.setDegraded(dialogue.getDegraded());
+        response.setModelName(dialogue.getModelName());
+        response.setPromptVersion(dialogue.getPromptVersion());
         return response;
+    }
+
+    private AiTraceContext startTrace(
+            String requestId, Long sessionId, Long userId, String scene
+    ) {
+        return traceService == null
+                ? AiTraceContext.create(requestId, sessionId, userId, scene)
+                : traceService.startTrace(requestId, sessionId, userId, scene);
+    }
+
+    private void recordRequestReceived(AiTraceContext context, String responseType) {
+        if (traceService == null) return;
+        try {
+            AiRequestTraceStage stage = traceService.startStage(
+                    context, "REQUEST_RECEIVED",
+                    Map.of("responseType", responseType));
+            traceService.completeStage(stage, Map.of("responseType", responseType),
+                    null, null, null, null);
+        } catch (Exception ignored) {
+            // Trace writes must not break the request.
+        }
+    }
+
+    private void completeTrace(
+            AiTraceContext context, DialogueMessageResponse response
+    ) {
+        if (traceService == null || response == null) return;
+        try {
+            traceService.updateStructuredConditions(
+                    context, response.getCurrentConstraints());
+            List<Long> merchantIds = response.getRecommendation() == null
+                    || response.getRecommendation().getResults() == null
+                    ? List.of()
+                    : response.getRecommendation().getResults().stream()
+                    .map(RecommendationItemVO::getMerchantId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("recommendationId", response.getRecommendation() == null
+                    ? null : response.getRecommendation().getRecommendationId());
+            summary.put("merchantIds", merchantIds);
+            summary.put("resultCount", response.getRecommendation() == null
+                    ? 0 : response.getRecommendation().getResultCount());
+            summary.put("degraded", Boolean.TRUE.equals(response.getDegraded()));
+            summary.put("responseType", response.getResponseType());
+            summary.put("extractor", response.getExtractor());
+            traceService.completeTrace(context,
+                    Boolean.TRUE.equals(response.getDegraded()) ? "FALLBACK" : "SUCCESS",
+                    summary,
+                    Boolean.TRUE.equals(response.getDegraded()) ? null : "FASTAPI",
+                    response.getModelName(),
+                    null,
+                    response.getPromptVersion());
+        } catch (Exception ignored) {
+            // Trace writes must not change a successful dialogue response.
+        }
+    }
+
+    private void completeRecommendationTrace(
+            AiTraceContext context, RecommendationRankResponse response,
+            String responseType
+    ) {
+        if (traceService == null || response == null) return;
+        try {
+            List<Long> merchantIds = response.getResults() == null
+                    ? List.of()
+                    : response.getResults().stream()
+                    .map(RecommendationItemVO::getMerchantId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            traceService.updateStructuredConditions(
+                    context, response.getCurrentConstraints());
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("recommendationId", response.getRecommendationId());
+            summary.put("merchantIds", merchantIds);
+            summary.put("resultCount", response.getResultCount());
+            summary.put("degraded", false);
+            summary.put("responseType", responseType);
+            traceService.completeTrace(context, "SUCCESS", summary,
+                    null, "RULE_ENGINE", null, "NOT_APPLICABLE");
+        } catch (Exception ignored) {
+            // Trace writes must not change a successful adjustment.
+        }
     }
 
     private String buildClarificationText(
@@ -1437,6 +1609,7 @@ public class DiningDialogueMessageService {
         response.setRequestId(
                 recommendation.getRequestId()
         );
+        response.setTraceId(recommendation.getTraceId());
         response.setAlgorithmVersion(
                 recommendation.getAlgorithmVersion()
         );

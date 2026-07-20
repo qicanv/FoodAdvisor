@@ -23,6 +23,8 @@ public class DialogueExtractAiResponse {
     private Boolean degraded;
 
     private String modelName;
+    private String modelVersion;
+    private String promptVersion;
 
     private String provider;
 }

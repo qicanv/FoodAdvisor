@@ -35,6 +35,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -95,6 +96,9 @@ class AIClientServiceTest {
                         "http://ai-service/internal/reviews/analyze"
                 ))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-Trace-Id", org.hamcrest.Matchers.startsWith("trc-")))
+                .andExpect(header("X-Request-Id", org.hamcrest.Matchers.startsWith("req-")))
+                .andExpect(header("X-AI-Stage", "MODEL_CALL"))
                 .andRespond(withSuccess(
                         "{\"sentiment\":\"POSITIVE\",\"confidence\":0.9,\"modelName\":\"demo-model\"}",
                         MediaType.APPLICATION_JSON
@@ -117,6 +121,10 @@ class AIClientServiceTest {
                         aiLog.getFunctionType()),
                 () -> assertEquals("SUCCESS", aiLog.getStatus()),
                 () -> assertNotNull(aiLog.getTraceId()),
+                () -> assertTrue(aiLog.getTraceId().startsWith("ai-")),
+                () -> assertNotNull(aiLog.getRootTraceId()),
+                () -> assertTrue(aiLog.getRootTraceId().startsWith("trc-")),
+                () -> assertEquals("MODEL_CALL", aiLog.getStageName()),
                 () -> assertTrue(aiLog.getLatencyMs() >= 0),
                 () -> assertFalse(aiLog.getRequestSummary()
                         .contains("full review text")),

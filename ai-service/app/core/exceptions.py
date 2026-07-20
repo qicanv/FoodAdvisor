@@ -5,15 +5,11 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from app.core.trace_context import current_request_id, current_trace_id
 
 
 def get_request_id(request: Request) -> str:
-    request_id = request.headers.get("X-Request-Id")
-
-    if request_id:
-        return request_id
-
-    return f"req-{uuid.uuid4().hex}"
+    return getattr(request.state, "request_id", None) or current_request_id()
 
 
 def make_json_safe(value: Any) -> Any:
@@ -66,6 +62,7 @@ def register_exception_handlers(application: FastAPI) -> None:
             status_code=exception.status_code,
             content={
                 "requestId": get_request_id(request),
+                "traceId": getattr(request.state, "trace_id", None) or current_trace_id(),
                 "status": "FAILED",
                 "error": {
                     "code": error_code,
@@ -85,6 +82,7 @@ def register_exception_handlers(application: FastAPI) -> None:
             status_code=422,
             content={
                 "requestId": get_request_id(request),
+                "traceId": getattr(request.state, "trace_id", None) or current_trace_id(),
                 "status": "FAILED",
                 "error": {
                     "code": "INVALID_REQUEST",
@@ -107,6 +105,7 @@ def register_exception_handlers(application: FastAPI) -> None:
             status_code=500,
             content={
                 "requestId": get_request_id(request),
+                "traceId": getattr(request.state, "trace_id", None) or current_trace_id(),
                 "status": "FAILED",
                 "error": {
                     "code": "INTERNAL_ERROR",

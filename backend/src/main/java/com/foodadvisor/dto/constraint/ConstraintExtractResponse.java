@@ -10,6 +10,7 @@ import java.util.List;
  */
 @Data
 public class ConstraintExtractResponse {
+    private String traceId;
 
     /**
      * 当前对话会话 ID。
@@ -44,4 +45,6 @@ public class ConstraintExtractResponse {
     private String extractor = "RULE_FALLBACK";
 
     private Boolean degraded = true;
+    private String modelName;
+    private String promptVersion;
 }

@@ -934,21 +934,20 @@ public class MatchScoreCalculator {
         if (factor.compareTo(new BigDecimal("0.7")) >= 0) {
             matchedConditions.add(
                     "语义匹配度高（"
-                            + formatNumber(factor.multiply(ONE_HUNDRED))
-                            + "%）"
+                            + formatPercentage(factor)
+                            + "）"
             );
         } else if (factor.compareTo(new BigDecimal("0.3")) < 0) {
             riskNotes.add("语义匹配度较低（"
-                    + formatNumber(factor.multiply(ONE_HUNDRED))
-                    + "%）"
+                    + formatPercentage(factor)
+                    + "）"
             );
         }
 
         return new FactorResult(
                 factor,
                 "语义检索匹配系数为"
-                        + formatNumber(factor.multiply(ONE_HUNDRED))
-                        + "%"
+                        + formatPercentage(factor)
         );
     }
 
@@ -1287,6 +1286,16 @@ public class MatchScoreCalculator {
 
         return value.stripTrailingZeros()
                 .toPlainString();
+    }
+
+    /** Formats a semantic score ratio as a stable display-only percentage. */
+    private String formatPercentage(BigDecimal ratio) {
+        BigDecimal safeRatio = ratio == null ? ZERO : ratio;
+        if (safeRatio.compareTo(ZERO) < 0) safeRatio = ZERO;
+        if (safeRatio.compareTo(ONE) > 0) safeRatio = ONE;
+        return safeRatio.multiply(ONE_HUNDRED)
+                .setScale(2, RoundingMode.HALF_UP)
+                .toPlainString() + "%";
     }
 
     private String safeText(String value) {

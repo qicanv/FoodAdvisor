@@ -10,6 +10,7 @@ import com.foodadvisor.service.DiningDialogueMessageService;
 import com.foodadvisor.service.DialogueService;
 import com.foodadvisor.util.AuthenticatedUserId;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -49,7 +50,8 @@ public class DialogueController {
             @PathVariable Long sessionId,
             @Valid @RequestBody
             DialogueContinueRequest request,
-            HttpServletRequest httpRequest
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse
     ) {
         Long userId = AuthenticatedUserId.require(httpRequest);
         request.setUserId(userId);
@@ -59,6 +61,7 @@ public class DialogueController {
                         userId,
                         request.getMessage()
                 );
+        httpResponse.setHeader("X-Trace-Id", response.getTraceId());
 
         return ApiResponse.success(response);
     }
@@ -69,7 +72,8 @@ public class DialogueController {
             @PathVariable Long sessionId,
             @Valid @RequestBody
             DialogueMessageRequest request,
-            HttpServletRequest httpRequest
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse
     ) {
         request.setUserId(
                 AuthenticatedUserId.require(httpRequest)
@@ -79,6 +83,7 @@ public class DialogueController {
                         sessionId,
                         request
                 );
+        httpResponse.setHeader("X-Trace-Id", response.getTraceId());
 
         return ApiResponse.success(response);
     }

@@ -34,6 +34,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -91,6 +92,9 @@ class DiningDialogueMessageServiceTest {
 
     @Mock
     private PlatformTransactionManager transactionManager;
+
+    @Mock
+    private AiRequestTraceService traceService;
 
     private DiningDialogueMessageService service;
 
@@ -178,6 +182,7 @@ class DiningDialogueMessageServiceTest {
 
         when(chatMessageMapper.selectOne(any()))
                 .thenReturn(userMessage, assistantMessage);
+        ReflectionTestUtils.setField(service, "traceService", traceService);
 
         DialogueMessageResponse response =
                 service.sendMessage(1L, request("req-1"));
@@ -187,6 +192,7 @@ class DiningDialogueMessageServiceTest {
                 () -> assertEquals(10L, response.getUserMessageId()),
                 () -> assertEquals(11L, response.getAssistantMessageId()),
                 () -> assertEquals("req-1", response.getRequestId()),
+                () -> assertEquals("trc-original", response.getTraceId()),
                 () -> assertEquals(
                         "NO_MATCH",
                         response.getResponseType()
@@ -209,6 +215,7 @@ class DiningDialogueMessageServiceTest {
                         response.getMissingFields()
                 )
         );
+        verify(traceService, never()).startTrace(any(), any(), any(), any());
 
         verify(valueOperations, never())
                 .setIfAbsent(anyString(), any(), any());
@@ -1240,6 +1247,7 @@ class DiningDialogueMessageServiceTest {
         response.setUserMessageId(10L);
         response.setAssistantMessageId(11L);
         response.setRequestId("req-1");
+        response.setTraceId("trc-original");
         response.setResponseType("NO_MATCH");
         response.setAssistantText("no match");
         response.setConversationStage("SEARCHING");
