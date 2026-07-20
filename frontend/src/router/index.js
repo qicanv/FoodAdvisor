@@ -137,6 +137,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin' },
   },
   {
+    path: '/admin/ai-traces',
+    name: 'admin-ai-traces',
+    component: () => import('../views/admin/AiTraceView.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
+  },
+  {
     path: '/admin/merchant-statistics',
     name: 'admin-merchant-statistics',
     component: () => import('../views/admin/MerchantStatistics.vue'),
@@ -164,6 +170,12 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   const userRole = localStorage.getItem('userRole')
+  let authenticatedRole = ''
+  try {
+    authenticatedRole = String(JSON.parse(localStorage.getItem('user') || '{}').role || '').toUpperCase()
+  } catch {
+    authenticatedRole = ''
+  }
 
   if (to.meta.requiresAuth) {
     if (!token) {
@@ -174,6 +186,11 @@ router.beforeEach((to, from, next) => {
 
     if (userRole && userRole !== to.meta.role) {
       next({ path: `/${userRole}/home` })
+      return
+    }
+
+    if (to.meta.allowedRoles && !to.meta.allowedRoles.includes(authenticatedRole)) {
+      next({ path: userRole === 'admin' ? '/admin/home' : '/' })
       return
     }
 
