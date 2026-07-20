@@ -1,12 +1,14 @@
 package com.foodadvisor.exception;
 
 import com.foodadvisor.common.ApiResponse;
+import com.foodadvisor.dto.ratelimit.RateLimitDecision;
 import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.service.AuditLogService;
 import com.foodadvisor.util.SensitiveLogSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -74,6 +76,45 @@ public class GlobalExceptionHandler {
                 request,
                 "WARN",
                 "INVALID_REQUEST",
+                exception
+        );
+
+        return result;
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ApiResponse<Map<String, Object>>>
+    handleRateLimitExceeded(
+            RateLimitExceededException exception,
+            HttpServletRequest request
+    ) {
+        RateLimitDecision decision = exception.getDecision();
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("retryAfterSeconds", exception.getRetryAfterSeconds());
+        if (decision != null) {
+            data.put("currentCount", decision.currentCount());
+            data.put("maxRequests", decision.maxRequests());
+        }
+
+        ResponseEntity<ApiResponse<Map<String, Object>>> result =
+                ResponseEntity
+                        .status(exception.getStatus())
+                        .header(
+                                HttpHeaders.RETRY_AFTER,
+                                String.valueOf(
+                                        exception.getRetryAfterSeconds()
+                                )
+                        )
+                        .body(new ApiResponse<>(
+                                exception.getCode(),
+                                exception.getMessage(),
+                                data
+                        ));
+
+        recordApiException(
+                request,
+                "WARN",
+                exception.getCode(),
                 exception
         );
 
