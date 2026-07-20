@@ -8,6 +8,7 @@ import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewReply;
 import com.foodadvisor.entity.ReviewReplyDraft;
+import com.foodadvisor.trace.AiTraceContext;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.ReviewMapper;
@@ -57,6 +58,7 @@ class ReviewReplyDraftServiceTest {
     @Mock private AIClientService aiClientService;
     @Mock private NotificationService notificationService;
     @Mock private ReviewReplyDraftMapper baseMapperMock;
+    @Mock private AiRequestTraceService traceService;
 
     private ReviewReplyDraftService service;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -129,6 +131,53 @@ class ReviewReplyDraftServiceTest {
         assertEquals("POSITIVE", result.getStrategy());
         assertEquals(AI_CONTENT, result.getGeneratedContent());
         assertEquals("DRAFT", result.getStatus());
+    }
+
+    @Test
+    void tracedReplyUsesRootContextAndPositivePromptVersion() throws Exception {
+        mockGetOneReturns(null);
+        when(reviewMapper.selectById(REVIEW_ID)).thenReturn(review(5));
+        when(merchantMapper.selectById(MERCHANT_ID)).thenReturn(merchant());
+        AiTraceContext context = new AiTraceContext("trc-reply-test", "req-reply-test", null,
+                MEMBER_ID, "REVIEW_REPLY_GENERATION");
+        when(aiClientService.generateReplyDraft(eq(REVIEW_ID), eq(MERCHANT_ID), anyString(),
+                eq("POSITIVE"), eq(5), eq(context))).thenReturn(aiSuccessResponse());
+        when(baseMapperMock.insert(Mockito.<ReviewReplyDraft>any())).thenReturn(1);
+        ReviewReplyDraftService traced = spy(new ReviewReplyDraftService(
+                reviewMapper, merchantMapper, replyMapper, aiClientService, notificationService, traceService));
+        doReturn(baseMapperMock).when(traced).getBaseMapper();
+
+        ReviewReplyDraftVO result = traced.generateDraft(MEMBER_ID, REVIEW_ID, context);
+
+        assertEquals("trc-reply-test", result.getAiTraceId());
+        verify(aiClientService).generateReplyDraft(eq(REVIEW_ID), eq(MERCHANT_ID), anyString(),
+                eq("POSITIVE"), eq(5), eq(context));
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(traceService).completeTrace(eq(context), eq("SUCCESS"), any(), any(), any(), any(),
+                promptCaptor.capture());
+        assertEquals("review-reply-positive:v1", promptCaptor.getValue());
+    }
+
+    @Test
+    void tracedReplyUsesNegativePromptVersion() throws Exception {
+        mockGetOneReturns(null);
+        when(reviewMapper.selectById(REVIEW_ID)).thenReturn(review(1));
+        when(merchantMapper.selectById(MERCHANT_ID)).thenReturn(merchant());
+        AiTraceContext context = new AiTraceContext("trc-reply-negative", "req-reply-negative", null,
+                MEMBER_ID, "REVIEW_REPLY_GENERATION");
+        when(aiClientService.generateReplyDraft(eq(REVIEW_ID), eq(MERCHANT_ID), anyString(),
+                eq("NEGATIVE"), eq(1), eq(context))).thenReturn(aiSuccessResponse());
+        when(baseMapperMock.insert(Mockito.<ReviewReplyDraft>any())).thenReturn(1);
+        ReviewReplyDraftService traced = spy(new ReviewReplyDraftService(
+                reviewMapper, merchantMapper, replyMapper, aiClientService, notificationService, traceService));
+        doReturn(baseMapperMock).when(traced).getBaseMapper();
+
+        traced.generateDraft(MEMBER_ID, REVIEW_ID, context);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(traceService).completeTrace(eq(context), eq("SUCCESS"), any(), any(), any(), any(),
+                promptCaptor.capture());
+        assertEquals("review-reply-negative:v1", promptCaptor.getValue());
     }
 
     @Test

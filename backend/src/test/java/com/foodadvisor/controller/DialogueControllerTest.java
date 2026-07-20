@@ -31,6 +31,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -81,7 +82,9 @@ class DialogueControllerTest {
                                 request("req-1", "想吃川菜")
                         )))
                 .andExpect(status().isOk())
+                .andExpect(header().string("X-Trace-Id", "trc-controller-test"))
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.traceId").value("trc-controller-test"))
                 .andExpect(jsonPath("$.data.responseType")
                         .value("RECOMMENDATION"))
                 .andExpect(jsonPath("$.data.recommendation.status")
@@ -522,6 +525,7 @@ class DialogueControllerTest {
         response.setUserMessageId(1L);
         response.setAssistantMessageId(2L);
         response.setRequestId("req");
+        response.setTraceId("trc-controller-test");
         response.setResponseType(responseType);
         response.setAssistantText("ok");
 

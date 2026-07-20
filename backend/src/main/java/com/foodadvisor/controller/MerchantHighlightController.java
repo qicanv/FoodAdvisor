@@ -4,6 +4,10 @@ import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.highlight.HighlightEvidenceVO;
 import com.foodadvisor.dto.highlight.MerchantHighlightVO;
 import com.foodadvisor.service.MerchantHighlightService;
+import com.foodadvisor.service.AiRequestTraceService;
+import com.foodadvisor.trace.AiTraceContext;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,11 +24,21 @@ import java.util.List;
 public class MerchantHighlightController {
 
     private final MerchantHighlightService highlightService;
+    private final AiRequestTraceService traceService;
 
     public MerchantHighlightController(
             MerchantHighlightService highlightService
     ) {
+        this(highlightService, null);
+    }
+
+    @Autowired
+    public MerchantHighlightController(
+            MerchantHighlightService highlightService,
+            AiRequestTraceService traceService
+    ) {
         this.highlightService = highlightService;
+        this.traceService = traceService;
     }
 
     // ==================== 用户端（只读） ====================
@@ -88,10 +102,26 @@ public class MerchantHighlightController {
     @PostMapping("/api/merchant-console/merchants/{merchantId}/highlights/generate")
     public ApiResponse<List<MerchantHighlightVO>> generate(
             @PathVariable Long merchantId,
-            @RequestParam(defaultValue = "false") boolean force
+            @RequestParam(defaultValue = "false") boolean force,
+            HttpServletResponse servletResponse
     ) {
-        List<MerchantHighlightVO> highlights =
-                highlightService.generateHighlights(merchantId, force);
+        AiTraceContext context = traceService == null ? null
+                : traceService.startTrace(null, null, null, "MERCHANT_HIGHLIGHT_GENERATION");
+        List<MerchantHighlightVO> highlights;
+        try {
+            highlights = traceService == null
+                    ? highlightService.generateHighlights(merchantId, force)
+                    : highlightService.generateHighlights(merchantId, force, context);
+            if (context != null) {
+                highlights.forEach(value -> value.setTraceId(context.traceId()));
+                servletResponse.setHeader("X-Trace-Id", context.traceId());
+            }
+        } catch (RuntimeException exception) {
+            if (context != null) traceService.failTraceSafely(
+                    context, "HIGHLIGHT_GENERATION_FAILED", exception.getMessage());
+            if (context != null) servletResponse.setHeader("X-Trace-Id", context.traceId());
+            throw exception;
+        }
 
         // 判断是否为空状态
         if (highlights.size() == 1) {

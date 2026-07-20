@@ -10,6 +10,8 @@ public class ReviewAnalysisResultVO {
 
     private Long reviewId;
     private Long merchantId;
+    private Long reviewAnalysisId;
+    private String traceId;
 
     /** V0.3 新增：版本追踪 */
     private Integer reviewVersion;
@@ -33,6 +35,8 @@ public class ReviewAnalysisResultVO {
     private String negativeReason;
     private String modelName;
     private String modelVersion;
+    private String status;
+    private Boolean degraded;
 
     /** V0.3 新增：AI 追踪ID */
     private String businessTraceId;

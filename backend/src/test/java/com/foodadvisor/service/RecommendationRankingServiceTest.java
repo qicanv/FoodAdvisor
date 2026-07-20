@@ -34,6 +34,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.dao.DataRetrievalFailureException;
+import com.foodadvisor.trace.AiTraceContext;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -97,6 +99,9 @@ class RecommendationRankingServiceTest {
 
     @Mock
     private MerchantBusinessHoursService businessHoursService;
+
+    @Mock
+    private AiRequestTraceService traceService;
 
     private RecommendationRankingService service;
 
@@ -282,6 +287,47 @@ class RecommendationRankingServiceTest {
                         .getScoreDetails()
                         .contains("\"distanceKm\":1.00")
         );
+    }
+
+    @Test
+    void shouldUseProvidedRootTraceForRankingAndRecommendationRecord() {
+        Merchant merchant = createMerchant(
+                101L, "trace-merchant", new BigDecimal("4.80"), 100);
+        stubSessionStateAndMerchants(
+                List.of(merchant), defaultConstraintsJson());
+        stubCalculatedScores();
+        AiTraceContext context = new AiTraceContext(
+                "trc-shared-dining", "req-shared", 1L, 1L,
+                "DINING_DIALOGUE_MESSAGE");
+
+        RecommendationRankResponse response = service.rank(
+                1L, createRequest(createDefaultWeights()), context);
+
+        ArgumentCaptor<Recommendation> captor =
+                ArgumentCaptor.forClass(Recommendation.class);
+        verify(recommendationMapper).insert(captor.capture());
+        assertAll(
+                () -> assertEquals(context.traceId(), response.getTraceId()),
+                () -> assertEquals(context.traceId(),
+                        captor.getValue().getTraceId()),
+                () -> assertEquals(context.requestId(),
+                        captor.getValue().getRequestId())
+        );
+    }
+
+    @Test
+    void shouldFailRootTraceWhenRankingThrows() {
+        AiTraceContext context = new AiTraceContext(
+                "trc-failed-ranking", "rank-request", 1L, 1L,
+                "DINING_RECOMMENDATION_RANK");
+        ReflectionTestUtils.setField(service, "traceService", traceService);
+        when(traceService.startTrace(any(), any(), any(), any()))
+                .thenReturn(context);
+
+        assertThrows(ApiException.class, () -> service.rank(1L, null));
+
+        verify(traceService).failTraceSafely(
+                eq(context), eq("RECOMMENDATION_FAILED"), any());
     }
 
     @Test

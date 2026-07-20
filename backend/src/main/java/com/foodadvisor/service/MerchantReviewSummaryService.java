@@ -15,6 +15,9 @@ import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.MerchantReviewSummaryMapper;
 import com.foodadvisor.mapper.MerchantSummaryEvidenceMapper;
 import com.foodadvisor.mapper.ReviewMapper;
+import com.foodadvisor.entity.AiRequestTraceStage;
+import com.foodadvisor.trace.AiTraceContext;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.slf4j.Logger;
@@ -66,6 +69,7 @@ public class MerchantReviewSummaryService {
     private final AIClientService aiClientService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final AiRequestTraceService traceService;
 
     public MerchantReviewSummaryService(
             MerchantReviewSummaryMapper summaryMapper,
@@ -76,6 +80,21 @@ public class MerchantReviewSummaryService {
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper
     ) {
+        this(summaryMapper, evidenceMapper, reviewMapper, merchantMapper, aiClientService,
+                jdbcTemplate, objectMapper, null);
+    }
+
+    @Autowired
+    public MerchantReviewSummaryService(
+            MerchantReviewSummaryMapper summaryMapper,
+            MerchantSummaryEvidenceMapper evidenceMapper,
+            ReviewMapper reviewMapper,
+            MerchantMapper merchantMapper,
+            AIClientService aiClientService,
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            AiRequestTraceService traceService
+    ) {
         this.summaryMapper = summaryMapper;
         this.evidenceMapper = evidenceMapper;
         this.reviewMapper = reviewMapper;
@@ -83,6 +102,7 @@ public class MerchantReviewSummaryService {
         this.aiClientService = aiClientService;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.traceService = traceService;
     }
 
     /**
@@ -112,6 +132,20 @@ public class MerchantReviewSummaryService {
      * @param force true 时跳过刷新条件检查，强制重新生成
      */
     public MerchantReviewSummaryVO generateSummary(Long merchantId, boolean force) {
+        AiTraceContext context = traceService == null ? null
+                : traceService.startTrace(null, null, null, "MERCHANT_REVIEW_SUMMARY");
+        try {
+            return generateSummary(merchantId, force, context);
+        } catch (RuntimeException exception) {
+            failTrace(context, "SUMMARY_GENERATION_FAILED", exception.getMessage());
+            throw exception;
+        }
+    }
+
+    public MerchantReviewSummaryVO generateSummary(
+            Long merchantId, boolean force, AiTraceContext context
+    ) {
+        recordRequest(context, merchantId);
         Merchant merchant = merchantMapper.selectById(merchantId);
         if (merchant == null) {
             throw new ApiException(
@@ -123,6 +157,10 @@ public class MerchantReviewSummaryService {
 
         // 只用公开评价：已发布 + 审核通过 + 原始评价（与公开列表口径一致）
         List<Review> reviews = loadPublicReviews(merchantId);
+        completeStage(startStage(context, "REVIEW_SOURCE_LOAD", Map.of(
+                        "merchantId", merchantId, "reviewIds", reviews.stream().map(Review::getId).toList(),
+                        "reviewCount", reviews.size())),
+                Map.of("reviewCount", reviews.size()), null, null, null, null);
         MerchantReviewSummary latest = findLatestDisplayable(merchantId);
 
         // ==== 评论不足：不调模型，落一条 INSUFFICIENT_DATA 记录（验收准则 5） ====
@@ -131,7 +169,9 @@ public class MerchantReviewSummaryService {
             if (latest != null
                     && "INSUFFICIENT_DATA".equals(latest.getStatus())
                     && latest.getReviewCount() == reviews.size()) {
-                return toVO(latest);
+                MerchantReviewSummaryVO response = toVO(latest);
+                finishFallback(context, response, merchantId, reviews.size(), 0, "REUSED_INSUFFICIENT_DATA");
+                return response;
             }
 
             Long summaryId = insertSummaryRow(
@@ -141,7 +181,9 @@ public class MerchantReviewSummaryService {
                     reviews.size(), null, null,
                     "INSUFFICIENT_DATA", null, null, null
             );
-            return toVO(summaryMapper.selectById(summaryId));
+            MerchantReviewSummaryVO response = toVO(summaryMapper.selectById(summaryId));
+            finishFallback(context, response, merchantId, reviews.size(), 0, "INSUFFICIENT_DATA");
+            return response;
         }
 
         // ==== 缓存命中：未达刷新条件时返回已有摘要（验收准则 7） ====
@@ -149,7 +191,9 @@ public class MerchantReviewSummaryService {
                 && latest != null
                 && "SUCCESS".equals(latest.getStatus())
                 && !needsRefresh(latest, reviews.size())) {
-            return toVO(latest);
+            MerchantReviewSummaryVO response = toVO(latest);
+            finishFallback(context, response, merchantId, reviews.size(), 0, "REUSED_SUMMARY");
+            return response;
         }
 
         // ==== 调用 AI 服务生成 ====
@@ -168,10 +212,16 @@ public class MerchantReviewSummaryService {
             reviewPayload.add(item);
         }
 
+        completeStage(startStage(context, "PROMPT_BUILD", Map.of("merchantId", merchantId,
+                        "reviewCount", reviews.size(), "promptVersion", "review-summary:v1")),
+                Map.of("reviewCount", reviews.size()), null, null, null, "review-summary:v1");
+
         JsonNode result;
         try {
-            result = aiClientService.generateReviewSummary(
-                    merchantId, version, reviewPayload, MIN_REVIEW_COUNT);
+            result = traceService == null || context == null
+                    ? aiClientService.generateReviewSummary(merchantId, version, reviewPayload, MIN_REVIEW_COUNT)
+                    : aiClientService.generateReviewSummary(merchantId, version, reviewPayload,
+                            MIN_REVIEW_COUNT, context);
         } catch (Exception e) {
             // 记录失败版本方便排查，同时向前端返回明确错误
             insertSummaryRow(
@@ -191,6 +241,10 @@ public class MerchantReviewSummaryService {
         String summaryStatus = result.has("summaryStatus")
                 ? result.get("summaryStatus").asText()
                 : "FAILED";
+
+        completeStage(startStage(context, "OUTPUT_VALIDATION", Map.of("merchantId", merchantId)),
+                Map.of("status", summaryStatus), "FASTAPI", textOrNull(result, "modelName"),
+                textOrNull(result, "modelVersion"), "review-summary:v1");
 
         if ("FAILED".equals(summaryStatus)) {
             insertSummaryRow(
@@ -235,6 +289,9 @@ public class MerchantReviewSummaryService {
                 null,
                 null
         );
+
+        AiRequestTraceStage evidenceStage = startStage(context, "EVIDENCE_SELECTION",
+                Map.of("summaryId", summaryId, "merchantId", merchantId));
 
         // ==== 落库：摘要依据（二次校验 reviewId 真实性，验收准则 3/6） ====
         Set<Long> sentReviewIds = reviews.stream()
@@ -291,7 +348,17 @@ public class MerchantReviewSummaryService {
             }
         }
 
-        return toVO(summaryMapper.selectById(summaryId));
+        MerchantReviewSummaryVO response = toVO(summaryMapper.selectById(summaryId));
+        int evidenceCount = result.has("evidences") && result.get("evidences").isArray()
+                ? result.get("evidences").size() : 0;
+        completeStage(evidenceStage, Map.of("summaryId", summaryId, "evidenceCount", evidenceCount),
+                null, null, null, null);
+        completeStage(startStage(context, "RESULT_PERSIST", Map.of("summaryId", summaryId)),
+                Map.of("summaryId", summaryId, "status", summaryStatus), null,
+                textOrNull(result, "modelName"), textOrNull(result, "modelVersion"), "review-summary:v1");
+        finishSuccess(context, response, merchantId, reviews.size(), evidenceCount,
+                textOrNull(result, "modelName"), textOrNull(result, "modelVersion"));
+        return response;
     }
 
     /**
@@ -397,6 +464,59 @@ public class MerchantReviewSummaryService {
     // ==================== 私有方法 ====================
 
     /** 查最新一条可展示摘要（排除 FAILED，保证失败不覆盖旧的可用摘要） */
+    private void recordRequest(AiTraceContext context, Long merchantId) {
+        if (context == null || traceService == null) return;
+        traceService.updateStructuredConditions(context, Map.of("merchantId", merchantId));
+        completeStage(startStage(context, "REQUEST_RECEIVED", Map.of("merchantId", merchantId)),
+                Map.of("accepted", true), null, null, null, null);
+    }
+
+    private AiRequestTraceStage startStage(AiTraceContext context, String name, Object input) {
+        if (context == null || traceService == null) return null;
+        try { return traceService.startStage(context, name, input); } catch (Exception ignored) { return null; }
+    }
+
+    private void completeStage(AiRequestTraceStage stage, Object output, String provider,
+                               String modelName, String modelVersion, String promptVersion) {
+        if (stage == null || traceService == null) return;
+        try { traceService.completeStage(stage, output, provider, modelName, modelVersion, promptVersion); }
+        catch (Exception ignored) { }
+    }
+
+    private void finishSuccess(AiTraceContext context, MerchantReviewSummaryVO response,
+                               Long merchantId, int reviewCount, int evidenceCount,
+                               String modelName, String modelVersion) {
+        if (context == null || traceService == null) return;
+        traceService.completeTrace(context, "SUCCESS",
+                summaryOutput(response, merchantId, reviewCount, evidenceCount, false),
+                "FASTAPI", modelName, modelVersion, "review-summary:v1");
+    }
+
+    private void finishFallback(AiTraceContext context, MerchantReviewSummaryVO response,
+                                Long merchantId, int reviewCount, int evidenceCount, String reason) {
+        if (context == null || traceService == null) return;
+        Map<String, Object> output = summaryOutput(response, merchantId, reviewCount, evidenceCount, true);
+        output.put("fallbackReason", reason);
+        traceService.completeTrace(context, "FALLBACK", output, "RULE_ENGINE", "RULE_ENGINE",
+                null, "NOT_APPLICABLE");
+    }
+
+    private Map<String, Object> summaryOutput(MerchantReviewSummaryVO response, Long merchantId,
+                                              int reviewCount, int evidenceCount, boolean degraded) {
+        Map<String, Object> output = new HashMap<>();
+        output.put("summaryId", response == null ? null : response.getSummaryId());
+        output.put("merchantId", merchantId);
+        output.put("reviewCount", reviewCount);
+        output.put("evidenceCount", evidenceCount);
+        output.put("status", response == null ? "FAILED" : response.getStatus());
+        output.put("degraded", degraded);
+        return output;
+    }
+
+    private void failTrace(AiTraceContext context, String code, String message) {
+        if (context != null && traceService != null) traceService.failTraceSafely(context, code, message);
+    }
+
     private MerchantReviewSummary findLatestDisplayable(Long merchantId) {
         return summaryMapper.selectOne(
                 new LambdaQueryWrapper<MerchantReviewSummary>()

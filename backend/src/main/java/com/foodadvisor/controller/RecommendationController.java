@@ -8,6 +8,7 @@ import com.foodadvisor.service.RecommendationRankingService;
 import com.foodadvisor.service.DiningDialogueMessageService;
 import com.foodadvisor.util.AuthenticatedUserId;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -54,7 +55,8 @@ public class RecommendationController {
             @Valid
             @RequestBody
             RecommendationRankRequest request,
-            HttpServletRequest httpRequest
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse
     ) {
         request.setUserId(
                 AuthenticatedUserId.require(httpRequest)
@@ -64,6 +66,7 @@ public class RecommendationController {
                         sessionId,
                         request
                 );
+        httpResponse.setHeader("X-Trace-Id", response.getTraceId());
 
         return ApiResponse.success(response);
     }
@@ -77,7 +80,8 @@ public class RecommendationController {
             @Valid
             @RequestBody
             RecommendationAdjustRequest request,
-            HttpServletRequest httpRequest
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse
     ) {
         request.setUserId(
                 AuthenticatedUserId.require(httpRequest)
@@ -88,6 +92,7 @@ public class RecommendationController {
                                 sessionId,
                                 request
                         );
+        httpResponse.setHeader("X-Trace-Id", response.getTraceId());
 
         return ApiResponse.success(response);
     }

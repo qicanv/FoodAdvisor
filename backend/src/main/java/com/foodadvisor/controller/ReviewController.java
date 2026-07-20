@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.dto.ReviewAnalysisResultVO;
+import com.foodadvisor.dto.ReviewBatchAnalysisResultVO;
 import com.foodadvisor.dto.review.MyReviewDetailVO;
 import com.foodadvisor.dto.review.MyReviewListVO;
 import com.foodadvisor.dto.review.ReviewDisplayVO;
@@ -20,6 +21,9 @@ import com.foodadvisor.entity.ReviewAnalysis;
 import com.foodadvisor.service.AIClientService;
 import com.foodadvisor.service.ReviewReplyDraftService;
 import com.foodadvisor.service.ReviewService;
+import com.foodadvisor.service.AiRequestTraceService;
+import com.foodadvisor.entity.AiRequestTraceStage;
+import com.foodadvisor.trace.AiTraceContext;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.foodadvisor.dto.review.ReviewTagStatVO;
 import com.foodadvisor.entity.ReviewTag;
@@ -34,7 +38,9 @@ import com.foodadvisor.dto.IssueReviewVO;
 import com.foodadvisor.exception.ApiException;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -43,6 +49,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.time.LocalDate;
 
 /**
@@ -57,6 +64,7 @@ public class ReviewController {
     private final ReviewTagMapper reviewTagMapper;
     private final ReviewIssueCategoryMapper issueCategoryMapper;
     private final ReviewReplyDraftService replyDraftService;
+    private final AiRequestTraceService traceService;
 
     public ReviewController(
             ReviewService reviewService,
@@ -65,11 +73,25 @@ public class ReviewController {
             ReviewIssueCategoryMapper issueCategoryMapper,
             ReviewReplyDraftService replyDraftService
     ) {
+        this(reviewService, aiClientService, reviewTagMapper, issueCategoryMapper,
+                replyDraftService, null);
+    }
+
+    @Autowired
+    public ReviewController(
+            ReviewService reviewService,
+            AIClientService aiClientService,
+            ReviewTagMapper reviewTagMapper,
+            ReviewIssueCategoryMapper issueCategoryMapper,
+            ReviewReplyDraftService replyDraftService,
+            AiRequestTraceService traceService
+    ) {
         this.reviewService = reviewService;
         this.aiClientService = aiClientService;
         this.reviewTagMapper = reviewTagMapper;
         this.issueCategoryMapper = issueCategoryMapper;
         this.replyDraftService = replyDraftService;
+        this.traceService = traceService;
     }
 
     @PostMapping("/merchants/{merchantId}")
@@ -130,17 +152,60 @@ public class ReviewController {
      * 触发单条评价的 AI 分析（调用 FastAPI）（V0.3 更新）
      */
     @PostMapping("/{reviewId}/analyze")
-    public ApiResponse<ReviewAnalysisResultVO> analyze(@PathVariable Long reviewId) {
+    public ApiResponse<ReviewAnalysisResultVO> analyze(
+            @PathVariable Long reviewId,
+            HttpServletResponse servletResponse
+    ) {
         Review review = reviewService.getById(reviewId);
         if (review == null) {
             return ApiResponse.notFound("评价不存在");
         }
 
+        AiTraceContext context = startTrace("REVIEW_ANALYSIS", review.getId());
+        try {
+            recordRequestReceived(context, "SINGLE_REVIEW_ANALYSIS", 1);
+            ReviewAnalysisResultVO response = analyzeReview(review, context, 1);
+            finishSingleTrace(context, response);
+            setTraceHeader(servletResponse, context);
+            return ApiResponse.success(response);
+        } catch (RuntimeException exception) {
+            failTrace(context, "REVIEW_ANALYSIS_FAILED", exception.getMessage(),
+                    Map.of("reviewId", review.getId(), "status", "FAILED", "degraded", true));
+            setTraceHeader(servletResponse, context);
+            throw exception;
+        }
+    }
+
+    private ReviewAnalysisResultVO analyzeReview(
+            Review review, AiTraceContext context, int attemptNo
+    ) {
+        AiRequestTraceStage reviewStage = startStage(context, "REVIEW_ANALYSIS", attemptNo,
+                Map.of("reviewId", review.getId(), "merchantId", review.getMerchantId()));
         int reviewVersion = review.getCurrentVersion() != null ? review.getCurrentVersion() : 1;
 
         // 调用 FastAPI 分析
-        JsonNode result = aiClientService.analyzeReview(
-                review.getId(), review.getMerchantId(), review.getContent(), reviewVersion);
+        AiRequestTraceStage promptStage = startStage(context, "PROMPT_BUILD", attemptNo,
+                Map.of("reviewId", review.getId(), "contentLength",
+                        review.getContent() == null ? 0 : review.getContent().length()));
+        completeStage(promptStage, Map.of("reviewId", review.getId(), "promptVersion", "review-analysis:v1"),
+                null, null, null, "review-analysis:v1");
+
+        JsonNode result = traceService == null
+                ? aiClientService.analyzeReview(review.getId(), review.getMerchantId(),
+                        review.getContent(), reviewVersion)
+                : aiClientService.analyzeReview(review.getId(), review.getMerchantId(),
+                        review.getContent(), reviewVersion, context);
+
+        AiRequestTraceStage validationStage = startStage(context, "OUTPUT_VALIDATION", attemptNo,
+                Map.of("reviewId", review.getId()));
+        validateAnalysisResult(result);
+        completeStage(validationStage, Map.of("reviewId", review.getId(),
+                        "status", result.path("status").asText("SUCCESS")),
+                "FASTAPI", result.path("modelName").asText(null),
+                result.path("modelVersion").asText(null), promptVersion(result));
+
+        AiRequestTraceStage persistStage = startStage(context, "RESULT_PERSIST", attemptNo,
+                Map.of("reviewId", review.getId()));
 
         // 保存分析结果到数据库
         ReviewAnalysis analysis = new ReviewAnalysis();
@@ -158,8 +223,9 @@ public class ReviewController {
         analysis.setModelName(result.has("modelName") ? result.get("modelName").asText() : null);
         analysis.setModelVersion(result.has("modelVersion") && !result.get("modelVersion").isNull()
                 ? result.get("modelVersion").asText() : null);
-        analysis.setBusinessTraceId(result.has("businessTraceId")
-                ? result.get("businessTraceId").asText() : null);
+        // Spring 根 trace 优先于 ai-service 的局部业务编号，保证跨服务关联稳定。
+        analysis.setBusinessTraceId(context == null ? (result.has("businessTraceId")
+                ? result.get("businessTraceId").asText() : null) : context.traceId());
         analysis.setStatus(result.has("status") ? result.get("status").asText() : "SUCCESS");
         if (result.has("errorMessage") && !result.get("errorMessage").isNull()) {
             analysis.setErrorMessage(result.get("errorMessage").asText());
@@ -283,7 +349,21 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
 
         // 构建返回 VO
         ReviewAnalysisResultVO vo = buildResultVO(review, result);
-        return ApiResponse.success(vo);
+        ReviewAnalysis persisted = reviewService.getAnalysis(review.getId());
+        vo.setReviewAnalysisId(persisted == null ? null : persisted.getId());
+        vo.setTraceId(context == null ? vo.getBusinessTraceId() : context.traceId());
+        vo.setBusinessTraceId(context == null ? vo.getBusinessTraceId() : context.traceId());
+        boolean degraded = !"SUCCESS".equalsIgnoreCase(result.path("status").asText("SUCCESS"));
+        completeStage(persistStage, analysisSummary(vo),
+                null, vo.getModelName(), vo.getModelVersion(), promptVersion(result));
+        if (degraded) {
+            failStage(reviewStage, "REVIEW_ANALYSIS_DEGRADED",
+                    result.path("errorMessage").asText("Review analysis returned a failed result"));
+        } else {
+            completeStage(reviewStage, analysisSummary(vo),
+                    "FASTAPI", vo.getModelName(), vo.getModelVersion(), promptVersion(result));
+        }
+        return vo;
     }
 
     /**
@@ -329,6 +409,8 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
         vo.setModelName(result.has("modelName") ? result.get("modelName").asText() : null);
         vo.setModelVersion(result.has("modelVersion") && !result.get("modelVersion").isNull()
                 ? result.get("modelVersion").asText() : null);
+        vo.setStatus(result.path("status").asText("SUCCESS"));
+        vo.setDegraded(!"SUCCESS".equalsIgnoreCase(vo.getStatus()));
 
         return vo;
     }
@@ -336,6 +418,130 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
     /**
      * 获取评价的分析结果
      */
+    private AiTraceContext startTrace(String scene, Long correlationId) {
+        if (traceService == null) {
+            return null;
+        }
+        try {
+            return traceService.startTrace(null, null, null, scene);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void recordRequestReceived(AiTraceContext context, String responseType, int requestedCount) {
+        if (context == null || traceService == null) return;
+        traceService.updateStructuredConditions(context, Map.of("responseType", responseType,
+                "requestedCount", requestedCount));
+        completeStage(startStage(context, "REQUEST_RECEIVED", 1,
+                        Map.of("responseType", responseType, "requestedCount", requestedCount)),
+                Map.of("accepted", true), null, null, null, null);
+    }
+
+    private AiRequestTraceStage startStage(
+            AiTraceContext context, String name, int attemptNo, Object input
+    ) {
+        if (context == null || traceService == null) return null;
+        try {
+            return traceService.startStage(context, name, input);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void completeStage(AiRequestTraceStage stage, Object output, String provider,
+                               String modelName, String modelVersion, String promptVersion) {
+        if (stage == null || traceService == null) return;
+        try {
+            traceService.completeStage(stage, output, provider, modelName, modelVersion, promptVersion);
+        } catch (Exception ignored) {
+            // Trace persistence must not affect the business result.
+        }
+    }
+
+    private void failStage(AiRequestTraceStage stage, String code, String message) {
+        if (stage == null || traceService == null) return;
+        try {
+            traceService.failStage(stage, code, message);
+        } catch (Exception ignored) {
+            // Trace persistence must not affect the business result.
+        }
+    }
+
+    private void finishSingleTrace(AiTraceContext context, ReviewAnalysisResultVO response) {
+        if (context == null || traceService == null) return;
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("reviewId", response.getReviewId());
+        summary.put("reviewAnalysisId", response.getReviewAnalysisId());
+        summary.put("status", statusOf(response));
+        summary.put("degraded", Boolean.TRUE.equals(response.getDegraded()));
+        traceService.updateStructuredConditions(context, analysisSummary(response));
+        if (Boolean.TRUE.equals(response.getDegraded())) {
+            failTrace(context, "REVIEW_ANALYSIS_DEGRADED", "AI analysis returned a failed result", summary);
+        } else {
+            traceService.completeTrace(context, "SUCCESS", summary, "FASTAPI", response.getModelName(),
+                    response.getModelVersion(), "review-analysis:v1");
+        }
+    }
+
+    private void finishBatchTrace(AiTraceContext context, ReviewBatchAnalysisResultVO response,
+                                  List<String> errors) {
+        if (context == null || traceService == null) return;
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("requestedCount", response.getRequestedCount());
+        summary.put("successCount", response.getSuccessCount());
+        summary.put("failedCount", response.getFailedCount());
+        summary.put("skippedCount", response.getSkippedCount());
+        summary.put("analysisIds", response.getAnalysisIds());
+        if (!errors.isEmpty()) summary.put("errorSummary", errors.stream().limit(10).toList());
+        if (response.getFailedCount() == 0) {
+            traceService.completeTrace(context, "SUCCESS", summary, "FASTAPI", null, null, "review-analysis:v1");
+        } else if (response.getSuccessCount() > 0 || response.getSkippedCount() > 0) {
+            traceService.completeTrace(context, "FALLBACK", summary, "FASTAPI", null, null, "review-analysis:v1");
+        } else {
+            failTrace(context, "BATCH_REVIEW_ANALYSIS_FAILED", "No review analysis succeeded", summary);
+        }
+    }
+
+    private void failTrace(AiTraceContext context, String code, String message, Object summary) {
+        if (context == null || traceService == null) return;
+        traceService.failTraceSafely(context, summary, code, message);
+    }
+
+    private void setTraceHeader(HttpServletResponse response, AiTraceContext context) {
+        if (response != null && context != null) response.setHeader("X-Trace-Id", context.traceId());
+    }
+
+    private void validateAnalysisResult(JsonNode result) {
+        if (result == null || result.path("reviewId").isMissingNode()
+                || result.path("sentiment").isMissingNode() || result.path("confidence").isMissingNode()) {
+            throw new IllegalStateException("Invalid review analysis response");
+        }
+    }
+
+    private String promptVersion(JsonNode result) {
+        return result == null ? "NOT_APPLICABLE" : result.path("promptVersion").asText("review-analysis:v1");
+    }
+
+    private String statusOf(ReviewAnalysisResultVO response) {
+        return response == null || response.getStatus() == null ? "FAILED" : response.getStatus();
+    }
+
+    private Map<String, Object> analysisSummary(ReviewAnalysisResultVO response) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("reviewId", response.getReviewId());
+        summary.put("reviewAnalysisId", response.getReviewAnalysisId());
+        summary.put("status", statusOf(response));
+        summary.put("degraded", Boolean.TRUE.equals(response.getDegraded()));
+        return summary;
+    }
+
+    private String safeError(Exception exception) {
+        String message = exception == null ? "Unknown error" : exception.getMessage();
+        return message == null ? "Unknown error" : message.replaceAll("[\\r\\n]+", " ").substring(0,
+                Math.min(200, message.length()));
+    }
+
     @GetMapping("/{reviewId}/analysis")
     public ApiResponse<ReviewAnalysis> getAnalysis(@PathVariable Long reviewId) {
         ReviewAnalysis analysis = reviewService.getAnalysis(reviewId);
@@ -346,20 +552,50 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
      * 批量触发评价分析（用于种子数据批量分析）
      */
     @PostMapping("/batch-analyze")
-    public ApiResponse<Integer> batchAnalyze(@RequestParam Long merchantId) {
+    public ApiResponse<ReviewBatchAnalysisResultVO> batchAnalyze(
+            @RequestParam Long merchantId,
+            HttpServletResponse servletResponse
+    ) {
         Page<Review> page = reviewService.listByMerchant(merchantId, 1, 100);
-        int count = 0;
-        for (Review review : page.getRecords()) {
+        List<Review> reviews = page.getRecords() == null ? List.of() : page.getRecords();
+        AiTraceContext context = startTrace("BATCH_REVIEW_ANALYSIS", merchantId);
+        ReviewBatchAnalysisResultVO response = new ReviewBatchAnalysisResultVO();
+        response.setTraceId(context == null ? null : context.traceId());
+        response.setRequestedCount(reviews.size());
+        recordRequestReceived(context, "BATCH_REVIEW_ANALYSIS", reviews.size());
+        List<String> errors = new ArrayList<>();
+        int attemptNo = 0;
+        for (Review review : reviews) {
+            attemptNo++;
             // 跳过已分析的
-            if (reviewService.getAnalysis(review.getId()) != null) continue;
+            if (reviewService.getAnalysis(review.getId()) != null) {
+                response.setSkippedCount(response.getSkippedCount() + 1);
+                continue;
+            }
             try {
-                analyze(review.getId());
-                count++;
-            } catch (Exception ignored) {
+                ReviewAnalysisResultVO item = analyzeReview(review, context, attemptNo);
+                if ("SUCCESS".equalsIgnoreCase(statusOf(item))) {
+                    response.setSuccessCount(response.getSuccessCount() + 1);
+                    if (item.getReviewAnalysisId() != null) {
+                        response.getAnalysisIds().add(item.getReviewAnalysisId());
+                    }
+                } else {
+                    response.setFailedCount(response.getFailedCount() + 1);
+                    errors.add("reviewId=" + review.getId() + ": " + statusOf(item));
+                }
+            } catch (RuntimeException exception) {
+                response.setFailedCount(response.getFailedCount() + 1);
+                errors.add("reviewId=" + review.getId() + ": " + safeError(exception));
+                if (context != null && traceService != null) {
+                    traceService.failRunningStagesSafely(context,
+                            "REVIEW_ANALYSIS_FAILED", exception.getMessage());
+                }
                 // 单条失败不影响批量
             }
         }
-        return ApiResponse.success("分析完成", count);
+        finishBatchTrace(context, response, errors);
+        setTraceHeader(servletResponse, context);
+        return ApiResponse.success("Batch analysis completed", response);
     }
 
     // ==================== 标签统计与筛选（EPIC-01 Story 8） ====================
@@ -498,10 +734,27 @@ if (result.has("tags") && !result.get("tags").isNull() && result.get("tags").isA
     @PostMapping("/{reviewId}/reply-draft/generate")
     public ApiResponse<ReviewReplyDraftVO> generateReplyDraft(
             @PathVariable Long reviewId,
-            @RequestHeader("X-User-Id") Long merchantMemberId
+            @RequestHeader("X-User-Id") Long merchantMemberId,
+            HttpServletResponse servletResponse
     ) {
-        ReviewReplyDraftVO draft = replyDraftService.generateDraft(merchantMemberId, reviewId);
-        return ApiResponse.success(draft);
+        AiTraceContext context = traceService == null ? null
+                : traceService.startTrace(null, null, merchantMemberId, "REVIEW_REPLY_GENERATION");
+        try {
+            ReviewReplyDraftVO draft = traceService == null
+                    ? replyDraftService.generateDraft(merchantMemberId, reviewId)
+                    : replyDraftService.generateDraft(merchantMemberId, reviewId, context);
+            if (context != null) {
+                draft.setTraceId(context.traceId());
+                draft.setAiTraceId(context.traceId());
+                servletResponse.setHeader("X-Trace-Id", context.traceId());
+            }
+            return ApiResponse.success(draft);
+        } catch (RuntimeException exception) {
+            if (context != null) traceService.failTraceSafely(context,
+                    "REPLY_GENERATION_FAILED", exception.getMessage());
+            if (context != null) servletResponse.setHeader("X-Trace-Id", context.traceId());
+            throw exception;
+        }
     }
 
     /**

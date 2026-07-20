@@ -12,6 +12,8 @@ import java.util.List;
  */
 public class MerchantHighlightVO {
 
+    private String traceId;
+
     /** 亮点ID */
     private Long highlightId;
 
@@ -65,6 +67,14 @@ public class MerchantHighlightVO {
 
     public Long getHighlightId() {
         return highlightId;
+    }
+
+    public String getTraceId() {
+        return traceId;
+    }
+
+    public void setTraceId(String traceId) {
+        this.traceId = traceId;
     }
 
     public void setHighlightId(Long highlightId) {

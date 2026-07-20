@@ -138,6 +138,8 @@ class DialogueExtractResponse(BaseModel):
     extractor: str = "AI_MODEL"
     degraded: bool = False
     modelName: Optional[str] = None
+    modelVersion: Optional[str] = None
+    promptVersion: Optional[str] = "dialogue-extraction:v1"
     provider: Optional[str] = None
 
     @field_validator("clearedFields", mode="before")

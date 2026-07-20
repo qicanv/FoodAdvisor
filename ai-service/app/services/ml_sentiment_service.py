@@ -10,6 +10,7 @@
 import logging
 import os
 import uuid
+from app.core.trace_context import current_trace_id
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -148,7 +149,7 @@ class MLSentimentService:
             )
             aspects.append(aspect)
 
-        trace_id = f"trace-{uuid.uuid4().hex[:16]}"
+        trace_id = current_trace_id()
 
         return AnalyzeResponse(
             reviewId=request.reviewId,
@@ -176,7 +177,7 @@ class MLSentimentService:
         error: str,
     ) -> AnalyzeResponse:
         """模型加载/推理失败时返回降级结果"""
-        trace_id = f"trace-{uuid.uuid4().hex[:16]}"
+        trace_id = current_trace_id()
         return AnalyzeResponse(
             reviewId=request.reviewId,
             merchantId=request.merchantId,

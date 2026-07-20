@@ -202,6 +202,28 @@ CREATE INDEX IF NOT EXISTS idx_ai_call_logs_status_created
 
 CREATE INDEX IF NOT EXISTS idx_ai_call_logs_model
     ON ai_call_logs(model_name, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ai_request_traces_created
+    ON ai_request_traces(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_request_traces_started
+    ON ai_request_traces(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_request_traces_request
+    ON ai_request_traces(request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_request_traces_session
+    ON ai_request_traces(session_id, created_at DESC) WHERE session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_request_traces_scene_status
+    ON ai_request_traces(scene, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_request_trace_stages_trace
+    ON ai_request_trace_stages(trace_id, sequence_no, attempt_no);
+CREATE INDEX IF NOT EXISTS idx_ai_request_trace_stages_started
+    ON ai_request_trace_stages(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_trace_sources_trace
+    ON ai_trace_retrieval_sources(trace_id, rank_no);
+CREATE INDEX IF NOT EXISTS idx_ai_trace_sources_merchant
+    ON ai_trace_retrieval_sources(merchant_id) WHERE merchant_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ai_call_logs_root_trace
+    ON ai_call_logs(root_trace_id, created_at DESC)
+    WHERE root_trace_id IS NOT NULL;
 -- Merchant reply lookup and one-visible-reply invariant.
 CREATE UNIQUE INDEX IF NOT EXISTS uk_review_reply_visible
     ON review_reply(review_id)
