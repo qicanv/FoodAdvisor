@@ -117,6 +117,16 @@ class DialogueExtractRequest(BaseModel):
     currentConstraints: ConstraintStateModel = Field(
         default_factory=ConstraintStateModel
     )
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+        description="运行时系统提示词",
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="运行时提示词版本",
+    )
 
     @field_validator("content")
     @classmethod

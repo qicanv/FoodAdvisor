@@ -71,6 +71,16 @@ class ReviewSummaryService:
 
     async def summarize(self, request: ReviewSummaryRequest) -> ReviewSummaryResponse:
         trace_id = self._generate_trace_id()
+        system_prompt = (
+            request.systemPrompt
+            if request.systemPrompt and request.systemPrompt.strip()
+            else REVIEW_SUMMARY_PROMPT
+        )
+        prompt_version = (
+            request.promptVersion.strip()
+            if request.promptVersion and request.promptVersion.strip()
+            else "review-summary:v1"
+        )
 
         # 过滤空内容评论
         reviews = [r for r in request.reviews if r.content and r.content.strip()]
@@ -83,6 +93,7 @@ class ReviewSummaryService:
                 summaryStatus="INSUFFICIENT_DATA",
                 reviewCount=len(reviews),
                 minimumReviewCount=request.minimumReviewCount,
+                promptVersion=prompt_version,
                 businessTraceId=trace_id,
             )
 
@@ -98,7 +109,7 @@ class ReviewSummaryService:
 
         try:
             result = await llm_service.chat_json(
-                system_prompt=REVIEW_SUMMARY_PROMPT,
+                system_prompt=system_prompt,
                 user_message=user_message,
                 temperature=0.2,
                 max_tokens=8000,  # 推理模型的思维链也计入 max_tokens，给足余量防止 JSON 被截断
@@ -113,6 +124,7 @@ class ReviewSummaryService:
                 reviewCount=len(reviews),
                 minimumReviewCount=request.minimumReviewCount,
                 modelName=f"fallback:{llm_service.model}",
+                promptVersion=prompt_version,
                 businessTraceId=trace_id,
                 errorMessage=repr(e)[:500],
             )
@@ -160,6 +172,7 @@ class ReviewSummaryService:
             minimumReviewCount=request.minimumReviewCount,
             evidences=evidences,
             modelName=llm_service.model,
+            promptVersion=prompt_version,
             businessTraceId=trace_id,
         )
 
