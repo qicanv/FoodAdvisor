@@ -126,6 +126,14 @@ const allNavItems = [
   { path: '/admin/topics', label: '专题管理', iconViewBox: '0 0 24 24', iconPath: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6M16 13H8M16 17H8M10 9H8' },
   { path: '/admin/moderation', label: '内容审核', iconViewBox: '0 0 24 24', iconPath: 'M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm0 18a3 3 0 0 0-3 3v2a3 3 0 0 0 6 0v-2a3 3 0 0 0-3-3z' },
   { path: '/admin/model-configs', label: '模型配置', iconViewBox: '0 0 24 24', iconPath: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M9 12l2 2 4-4' },
+    {
+    path: '/admin/prompts',
+    label: '提示词管理',
+    allowedRoles: ['ADMIN'],
+    iconViewBox: '0 0 24 24',
+    iconPath:
+      'M4 4h16v16H4z M8 8h8 M8 12h8 M8 16h5',
+  },
   { path: '/admin/ai-monitor', label: 'AI监控', iconViewBox: '0 0 24 24', iconPath: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z M12 14l4-4' },
   { path: '/admin/logs', label: '审计日志', iconViewBox: '0 0 24 24', iconPath: 'M4 4h16v16H4z M8 9h8 M8 13h8 M8 17h5' },
   { path: '/admin/ai-traces', label: 'AI 请求追踪', allowedRoles: ['ADMIN', 'OPERATOR'], iconViewBox: '0 0 24 24', iconPath: 'M12 3a9 9 0 1 0 9 9 M12 7v5l3 2 M19 3v5h-5' },
