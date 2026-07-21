@@ -82,14 +82,25 @@ class ReplyDraftService:
         """
         trace_id = current_trace_id()
 
+        if request.strategy == ReplyStrategyEnum.POSITIVE:
+            default_system_prompt = POSITIVE_SYSTEM_PROMPT
+            default_prompt_version = "review-reply-positive:v1"
+        else:
+            default_system_prompt = NEGATIVE_SYSTEM_PROMPT
+            default_prompt_version = "review-reply-negative:v1"
+
+        system_prompt = (
+            request.systemPrompt
+            if request.systemPrompt and request.systemPrompt.strip()
+            else default_system_prompt
+        )
+        prompt_version = (
+            request.promptVersion.strip()
+            if request.promptVersion and request.promptVersion.strip()
+            else default_prompt_version
+        )
+
         try:
-            # 选择对应的 System Prompt
-            if request.strategy == ReplyStrategyEnum.POSITIVE:
-                system_prompt = POSITIVE_SYSTEM_PROMPT
-                prompt_version = "review-reply-positive:v1"
-            else:
-                system_prompt = NEGATIVE_SYSTEM_PROMPT
-                prompt_version = "review-reply-negative:v1"
 
             # 构建 user message，包含评价信息
             user_message = self._build_user_message(request)

@@ -40,10 +40,11 @@ VALID_BODY = {
     ],
 }
 
-AUTH_HEADERS = {
-    "X-Internal-Token": settings.internal_api_token or "",
-    "X-Request-Id": "test-competitor-001",
-}
+def auth_headers() -> dict[str, str]:
+    return {
+        "X-Internal-Token": settings.internal_api_token or "",
+        "X-Request-Id": "test-competitor-001",
+    }
 
 # 当 internal_api_token 未配置时跳过需要认证的测试
 requires_token = pytest.mark.skipif(
@@ -73,7 +74,7 @@ def test_competitor_comparison_accepts_valid_request(monkeypatch):
 
     response = client.post(
         "/internal/merchants/competitor-comparison",
-        headers=AUTH_HEADERS,
+        headers=auth_headers(),
         json=VALID_BODY,
     )
 
@@ -100,7 +101,7 @@ def test_competitor_comparison_rejects_less_than_2_merchants():
     }
     response = client.post(
         "/internal/merchants/competitor-comparison",
-        headers=AUTH_HEADERS,
+        headers=auth_headers(),
         json=body,
     )
     assert response.status_code == 422
@@ -119,7 +120,7 @@ def test_competitor_comparison_rejects_more_than_4_merchants():
     }
     response = client.post(
         "/internal/merchants/competitor-comparison",
-        headers=AUTH_HEADERS,
+        headers=auth_headers(),
         json=body,
     )
     assert response.status_code == 422
@@ -139,7 +140,7 @@ def test_competitor_comparison_rejects_self_not_in_competitors():
     }
     response = client.post(
         "/internal/merchants/competitor-comparison",
-        headers=AUTH_HEADERS,
+        headers=auth_headers(),
         json=body,
     )
     assert response.status_code == 422
@@ -168,7 +169,7 @@ def test_competitor_comparison_llm_failure_graceful_degradation(monkeypatch):
 
     response = client.post(
         "/internal/merchants/competitor-comparison",
-        headers=AUTH_HEADERS,
+        headers=auth_headers(),
         json=VALID_BODY,
     )
 

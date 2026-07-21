@@ -1,15 +1,23 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
 from app.services import dialogue_extraction_service as service_module
 
+@pytest.fixture(autouse=True)
+def configure_internal_token(monkeypatch):
+    """为本测试文件临时配置内部 token，测试结束后自动恢复。"""
+    monkeypatch.setattr(
+        settings,
+        "internal_api_token",
+        "test-token",
+    )
 
 client = TestClient(app)
 
 
 def auth_headers(token: str = "test-token") -> dict[str, str]:
-    settings.internal_api_token = "test-token"
     return {
         "X-Internal-Token": token,
         "X-Request-Id": "req-dialogue-test",

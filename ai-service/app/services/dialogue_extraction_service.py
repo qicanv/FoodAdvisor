@@ -99,6 +99,16 @@ class DialogueExtractionService:
         self,
         request: DialogueExtractRequest,
     ) -> DialogueExtractResponse:
+        system_prompt = (
+            request.systemPrompt
+            if request.systemPrompt and request.systemPrompt.strip()
+            else SYSTEM_PROMPT
+        )
+        prompt_version = (
+            request.promptVersion.strip()
+            if request.promptVersion and request.promptVersion.strip()
+            else "dialogue-extraction:v1"
+        )
         if not llm_service.is_configured():
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -116,8 +126,11 @@ class DialogueExtractionService:
 
         try:
             result = await llm_service.chat_json(
-                SYSTEM_PROMPT,
-                json.dumps(payload, ensure_ascii=False),
+                system_prompt=system_prompt,
+                user_message=json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                ),
                 temperature=0.1,
                 max_tokens=1200,
             )
@@ -134,6 +147,7 @@ class DialogueExtractionService:
             response.degraded = False
             response.modelName = llm_service.model
             response.provider = llm_service.provider
+            response.promptVersion = prompt_version
 
             return response
 
