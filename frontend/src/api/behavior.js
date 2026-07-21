@@ -1,15 +1,14 @@
 import request from './request'
 
-// 管理端行为分析接口
 export const getBehaviorOverview = (params) => {
   return request.get('/api/behavior/overview', { params })
 }
 
-export const getBehaviorStats = (params) => {
+export const getAdminBehaviorStats = (params) => {
   return request.get('/api/admin/behavior/stats', { params })
 }
 
-export const getBehaviorLogs = (params) => {
+export const getAdminBehaviorLogs = (params) => {
   return request.get('/api/admin/behavior/logs', { params })
 }
 
@@ -41,7 +40,8 @@ export const getBehaviorStats = (params) => {
 
 export const getBehaviorLogs = (params) => {
   return request.get('/api/behavior/logs', { params })
-// 食客端行为记录接口
+}
+
 export const logSearch = (data) => {
   return request.post('/api/behavior/log/search', data)
 }

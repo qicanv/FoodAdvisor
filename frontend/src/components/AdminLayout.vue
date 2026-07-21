@@ -1,9 +1,9 @@
 <template>
   <div class="admin-layout">
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
       <div class="logo-section">
         <img src="../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
-        <div class="logo-text">
+        <div class="logo-text" v-show="!sidebarCollapsed">
           <span class="brand-name">食尚参谋</span>
           <span class="brand-subtitle">管理后台</span>
         </div>
@@ -11,7 +11,7 @@
       
       <nav class="sidebar-nav">
         <div class="nav-group">
-          <span class="nav-group-title">系统管理</span>
+          <span class="nav-group-title" v-show="!sidebarCollapsed">系统管理</span>
           <router-link 
             v-for="item in navItems" 
             :key="item.path"
@@ -33,16 +33,24 @@
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M17 16l4-4-4-4"></path>
           </svg>
-          <span>退出登录</span>
+          <span>{{ sidebarCollapsed ? '' : '退出登录' }}</span>
         </button>
       </div>
     </aside>
 
     <main class="main-content">
       <header class="top-header">
-        <div class="header-info">
-          <h1>{{ title }}</h1>
-          <p>{{ subtitle }}</p>
+        <div class="header-left">
+          <button class="sidebar-toggle" @click="toggleSidebar">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 6h16M4 12h16M4 18h16" v-if="!sidebarCollapsed" />
+              <path d="M6 18L18 6M6 6l12 12" v-else />
+            </svg>
+          </button>
+          <div class="header-info">
+            <h1>{{ title }}</h1>
+            <p>{{ subtitle }}</p>
+          </div>
         </div>
         <div class="header-user">
           <div class="user-avatar">
@@ -84,6 +92,12 @@ defineProps({
     default: ''
   }
 })
+
+const sidebarCollapsed = ref(false)
+
+const toggleSidebar = () => {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
 
 const currentPath = computed(() => route.path)
 
@@ -140,6 +154,12 @@ const handleLogout = () => {
   top: 0;
   bottom: 0;
   z-index: 100;
+  overflow: hidden;
+  transition: width 0.3s ease;
+}
+
+.sidebar.collapsed {
+  width: 64px;
 }
 
 .logo-section {
@@ -148,6 +168,7 @@ const handleLogout = () => {
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  justify-content: center;
 }
 
 .logo-img {
@@ -175,6 +196,27 @@ const handleLogout = () => {
 .sidebar-nav {
   flex: 1;
   padding: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .nav-group-title {
@@ -196,6 +238,12 @@ const handleLogout = () => {
   border-radius: 8px;
   transition: all 0.2s;
   margin-bottom: 4px;
+  justify-content: flex-start;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 12px 8px;
 }
 
 .nav-item:hover {
@@ -237,6 +285,11 @@ const handleLogout = () => {
   flex: 1;
   margin-left: 260px;
   min-height: 100vh;
+  transition: margin-left 0.3s ease;
+}
+
+.sidebar.collapsed + .main-content {
+  margin-left: 64px;
 }
 
 .top-header {
@@ -249,6 +302,28 @@ const handleLogout = () => {
   position: sticky;
   top: 0;
   z-index: 50;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sidebar-toggle {
+  padding: 8px;
+  background: #f5f7fa;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  color: #667085;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sidebar-toggle:hover {
+  background: #eef2f7;
+  border-color: #1890ff;
+  color: #1890ff;
 }
 
 .header-info h1 {
@@ -298,11 +373,16 @@ const handleLogout = () => {
 
 @media (max-width: 1200px) {
   .main-content {
-    margin-left: 0;
+    margin-left: 0 !important;
   }
   
   .sidebar {
-    display: none;
+    transform: translateX(-100%);
+  }
+  
+  .sidebar.collapsed {
+    transform: translateX(0);
+    width: 64px;
   }
   
   .content-wrapper.has-sidebar {
