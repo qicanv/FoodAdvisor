@@ -141,10 +141,20 @@ public class PromptManagementService {
                 loadVersionsByIds(activeVersionIds);
 
         return definitions.stream()
-                .map(definition -> toDefinitionResponse(
-                        definition,
-                        activeVersions.get(definition.getActiveVersionId())
-                ))
+                .map(definition -> {
+                    Long activeVersionId =
+                            definition.getActiveVersionId();
+
+                    PromptVersion activeVersion =
+                            activeVersionId == null
+                                    ? null
+                                    : activeVersions.get(activeVersionId);
+
+                    return toDefinitionResponse(
+                            definition,
+                            activeVersion
+                    );
+                })
                 .toList();
     }
 

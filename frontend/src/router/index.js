@@ -136,6 +136,17 @@ const routes = [
     component: () => import('../views/admin/ModelConfigView.vue'),
     meta: { requiresAuth: true, role: 'admin' },
   },
+    {
+    path: '/admin/prompts',
+    name: 'admin-prompts',
+    component: () =>
+      import('../views/admin/PromptManagementView.vue'),
+    meta: {
+      requiresAuth: true,
+      role: 'admin',
+      allowedRoles: ['ADMIN'],
+    },
+  },
   {
     path: '/admin/ai-monitor',
     name: 'admin-ai-monitor',
