@@ -87,6 +87,10 @@
                   <span class="action-text">消息中心</span>
                   <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount }}</span>
                 </button>
+                <button class="action-btn" @click="goToMyReports">
+                  <span class="action-icon">🛡️</span>
+                  <span class="action-text">我的举报</span>
+                </button>
                 <button class="action-btn">
                   <span class="action-icon">✏️</span>
                   <span class="action-text">修改密码</span>
@@ -150,6 +154,10 @@ const goToMyReviews = () => {
 
 const goToNotifications = () => {
   router.push('/diner/notifications')
+}
+
+const goToMyReports = () => {
+  router.push('/diner/my-reports')
 }
 
 const handleLogout = () => {
