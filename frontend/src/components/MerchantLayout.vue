@@ -107,6 +107,7 @@ const navItems = [
   { path: '/merchant/home', label: '店铺首页', iconViewBox: '0 0 24 24', iconPath: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z M9 22l3-3 3 3' },
   { path: '/merchant/dishes', label: '菜品管理', iconViewBox: '0 0 24 24', iconPath: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 7a4 4 0 1 1 0 8 4 4 0 0 1 0-8z' },
   { path: '/merchant/statistics', label: '经营统计', iconViewBox: '0 0 24 24', iconPath: 'M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z' },
+  { path: '/merchant/review-sentiment', label: '评价情感分析', iconViewBox: '0 0 24 24', iconPath: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm-2 15l-3-3 1.41-1.41L10 14.17l5.59-5.59L17 10l-7 7z M9 9h6 M9 13h6' },
 ]
 
 const handleLogout = () => {
