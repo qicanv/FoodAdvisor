@@ -247,6 +247,15 @@
                 </div>
               </div>
               <p class="review-content">{{ review.content }}</p>
+              <div class="review-actions">
+                <button
+                  v-if="isLoggedIn && review.userId !== currentUserId"
+                  class="report-btn"
+                  @click="openReportDialog(review)"
+                >
+                  🚩 举报
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -349,6 +358,65 @@
             <small>该评价已删除或当前无权查看</small>
           </template>
         </article>
+      </section>
+    </div>
+
+    <!-- 举报弹窗 -->
+    <div
+      v-if="reportDialogOpen"
+      class="evidence-mask"
+      @click.self="closeReportDialog"
+    >
+      <section class="evidence-dialog report-dialog" role="dialog" aria-modal="true">
+        <header>
+          <h2>举报评价</h2>
+          <button type="button" @click="closeReportDialog">关闭</button>
+        </header>
+        <div class="report-form">
+          <div class="report-field">
+            <label class="report-label">举报原因 <span class="required">*</span></label>
+            <div class="reason-options">
+              <button
+                v-for="reason in reportReasons"
+                :key="reason.value"
+                class="reason-btn"
+                :class="{ active: reportForm.reason === reason.value }"
+                @click="reportForm.reason = reason.value"
+              >
+                {{ reason.label }}
+              </button>
+            </div>
+          </div>
+          <div class="report-field">
+            <label class="report-label">补充说明（选填）</label>
+            <textarea
+              v-model="reportForm.description"
+              class="report-textarea"
+              maxlength="500"
+              rows="4"
+              placeholder="请描述举报原因，最多500字"
+            ></textarea>
+            <span class="field-hint">{{ reportForm.description.length }}/500</span>
+          </div>
+          <div v-if="reportError" class="review-message error">{{ reportError }}</div>
+          <div v-if="reportSuccess" class="review-message success">{{ reportSuccess }}</div>
+          <div class="report-actions">
+            <button
+              class="action-btn secondary"
+              @click="closeReportDialog"
+              :disabled="reportSubmitting"
+            >
+              取消
+            </button>
+            <button
+              class="action-btn primary"
+              @click="submitReportAction"
+              :disabled="!reportForm.reason || reportSubmitting"
+            >
+              {{ reportSubmitting ? '提交中...' : '提交举报' }}
+            </button>
+          </div>
+        </div>
       </section>
     </div>
   </div>
@@ -552,11 +620,12 @@ const loadMerchant = async () => {
         pageSize: 10
       }
     })
-    
+
     if (reviewsResponse.success && reviewsResponse.data) {
       const reviewData = reviewsResponse.data
       reviews.value = reviewData.records ? reviewData.records.map(review => ({
         id: review.id,
+        userId: review.userId || (review.user ? review.user.id : null),
         username: review.user ? review.user.username : review.userId ? `用户${review.userId}` : '匿名用户',
         avatar: getUserAvatar(review.userId || 0),
         date: formatDate(review.publishedAt || review.createdAt),
@@ -618,6 +687,88 @@ const openSummaryEvidence = async () => {
 const closeSummaryEvidence = () => {
   summaryEvidenceOpen.value = false
 }
+
+// ==================== 举报功能 ====================
+
+const reportDialogOpen = ref(false)
+const reportSubmitting = ref(false)
+const reportError = ref('')
+const reportSuccess = ref('')
+const reportingReview = ref(null)
+
+const reportReasons = [
+  { label: '广告引流', value: 'ADVERTISING' },
+  { label: '虚假评价', value: 'FALSE_REVIEW' },
+  { label: '恶意攻击', value: 'MALICIOUS_ATTACK' },
+  { label: '色情低俗', value: 'SEXUAL_OR_VULGAR' },
+  { label: '泄露隐私', value: 'PRIVACY_LEAK' },
+  { label: '其他', value: 'OTHER' }
+]
+
+const reportForm = reactive({
+  reason: '',
+  description: ''
+})
+
+const currentUserId = computed(() => {
+  const user = currentUser.value
+  return user ? (user.id || user.userId) : null
+})
+
+const openReportDialog = (review) => {
+  if (!isLoggedIn.value) {
+    router.push('/diner')
+    return
+  }
+  reportingReview.value = review
+  reportForm.reason = ''
+  reportForm.description = ''
+  reportError.value = ''
+  reportSuccess.value = ''
+  reportDialogOpen.value = true
+}
+
+const closeReportDialog = () => {
+  if (reportSubmitting.value) return
+  reportDialogOpen.value = false
+  reportingReview.value = null
+}
+
+const submitReportAction = async () => {
+  if (!reportForm.reason) {
+    reportError.value = '请选择举报原因'
+    return
+  }
+  if (!reportingReview.value) return
+
+  reportError.value = ''
+  reportSuccess.value = ''
+  reportSubmitting.value = true
+
+  try {
+    const response = await request.post('/api/reports', {
+      reportedReviewId: reportingReview.value.id,
+      merchantId: merchant.value.id,
+      reason: reportForm.reason,
+      description: reportForm.description || undefined
+    })
+
+    if (response.success) {
+      reportSuccess.value = '举报已提交'
+      setTimeout(() => {
+        closeReportDialog()
+      }, 1500)
+    } else {
+      reportError.value = response.message || '举报提交失败，请稍后重试'
+    }
+  } catch (error) {
+    reportError.value = '举报提交失败，请稍后重试'
+  } finally {
+    reportSubmitting.value = false
+  }
+}
+
+// ==================== 举报功能结束 ====================
 
 const validateReview = () => {
   const contentLength = reviewForm.content.trim().length
@@ -1397,6 +1548,142 @@ onBeforeUnmount(() => {
   font-size: 16px;
   color: #666;
   line-height: 1.6;
+}
+
+.review-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.report-btn {
+  padding: 6px 14px;
+  background: transparent;
+  color: #999;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.report-btn:hover {
+  color: #ff4d4f;
+  border-color: #ffccc7;
+  background: #fff2f0;
+}
+
+/* 举报弹窗 */
+.report-dialog {
+  max-width: 520px;
+}
+
+.report-form {
+  margin-top: 16px;
+}
+
+.report-field {
+  margin-bottom: 18px;
+}
+
+.report-label {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.reason-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.reason-btn {
+  padding: 10px 12px;
+  background: #f5f5f5;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.reason-btn:hover {
+  border-color: #ff6700;
+  color: #ff6700;
+}
+
+.reason-btn.active {
+  background: #fff5f0;
+  border-color: #ff6700;
+  color: #ff6700;
+  font-weight: 600;
+}
+
+.report-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.report-actions .action-btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.report-actions .action-btn.primary {
+  background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%);
+  color: #fff;
+}
+
+.report-actions .action-btn.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
+}
+
+.report-actions .action-btn.primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.report-actions .action-btn.secondary {
+  background: #fff;
+  color: #666;
+  border: 1px solid #e8e8e8;
+}
+
+.report-actions .action-btn.secondary:hover:not(:disabled) {
+  border-color: #ff6700;
+  color: #ff6700;
+}
+
+@media (max-width: 480px) {
+  .reason-options {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .review-images {

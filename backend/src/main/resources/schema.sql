@@ -93,3 +93,30 @@ CREATE INDEX IF NOT EXISTS idx_behavior_event_type ON user_behavior_logs (event_
 CREATE INDEX IF NOT EXISTS idx_behavior_user_id ON user_behavior_logs (user_id);
 CREATE INDEX IF NOT EXISTS idx_behavior_created_at ON user_behavior_logs (created_at);
 CREATE INDEX IF NOT EXISTS idx_behavior_merchant_id ON user_behavior_logs (merchant_id);
+
+-- ==================== 评价举报（EPIC-08 故事5） ====================
+
+CREATE TABLE IF NOT EXISTS review_reports (
+    id BIGSERIAL PRIMARY KEY,
+    reporter_user_id BIGINT NOT NULL,
+    reported_review_id BIGINT NOT NULL,
+    merchant_id BIGINT NOT NULL,
+    reason VARCHAR(30) NOT NULL CHECK (reason IN ('ADVERTISING','FALSE_REVIEW','MALICIOUS_ATTACK','SEXUAL_OR_VULGAR','PRIVACY_LEAK','OTHER')),
+    description TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','RESOLVED','REJECTED')),
+    handled_by BIGINT,
+    handled_at TIMESTAMPTZ,
+    resolution TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_review_reports_pending
+ON review_reports(reporter_user_id, reported_review_id)
+WHERE status = 'PENDING';
+
+CREATE INDEX IF NOT EXISTS idx_review_reports_reporter
+ON review_reports(reporter_user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_review_reports_status
+ON review_reports(status, created_at DESC);

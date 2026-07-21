@@ -49,6 +49,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'diner' },
   },
   {
+    path: '/diner/my-reports',
+    name: 'diner-my-reports',
+    component: () => import('../views/diner/MyReportsView.vue'),
+    meta: { requiresAuth: true, role: 'diner' },
+  },
+  {
     path: '/diner/ranking',
     name: 'diner-ranking',
     component: () => import('../views/diner/HotRankingView.vue'),
