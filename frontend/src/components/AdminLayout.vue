@@ -113,6 +113,14 @@ const allNavItems = [
   { path: '/admin/merchant-statistics', label: '商家统计', iconViewBox: '0 0 24 24', iconPath: 'M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z' },
   { path: '/admin/regional-hotspots', label: '区域热点', iconViewBox: '0 0 24 24', iconPath: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z' },
   { path: '/admin/behavior-analysis', label: '行为分析', iconViewBox: '0 0 24 24', iconPath: 'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm9-2a9 9 0 1 0-9 9M9 10H3v2h6v-2M15 10h6v2h-6v-2M9 16H3v2h6v-2M15 16h6v2h-6v-2' },
+  {
+    path: '/admin/recommendation-evaluations',
+    label: '推荐评测',
+    allowedRoles: ['ADMIN', 'OPERATOR'],
+    iconViewBox: '0 0 24 24',
+    iconPath:
+      'M9 2h6 M10 2v5l-5 9a4 4 0 0 0 3.5 6h7a4 4 0 0 0 3.5-6l-5-9V2 M8 14h8',
+  },
   { path: '/admin/restaurants', label: '商家管理', iconViewBox: '0 0 24 24', iconPath: 'M8 21l1-17a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4l1 17' },
   { path: '/admin/diners', label: '食客管理', iconViewBox: '0 0 24 24', iconPath: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M17 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0' },
   { path: '/admin/topics', label: '专题管理', iconViewBox: '0 0 24 24', iconPath: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6M16 13H8M16 17H8M10 9H8' },
