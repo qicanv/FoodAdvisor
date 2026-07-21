@@ -3,19 +3,24 @@ package com.foodadvisor.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.foodadvisor.dto.report.AdminReportListVO;
 import com.foodadvisor.dto.report.MyReportListVO;
+import com.foodadvisor.dto.report.ResolveReportRequest;
 import com.foodadvisor.dto.report.ReviewReportRequest;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewReport;
+import com.foodadvisor.entity.User;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.ReviewMapper;
 import com.foodadvisor.mapper.ReviewReportMapper;
+import com.foodadvisor.mapper.UserMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,10 +56,13 @@ public class ReviewReportService extends ServiceImpl<ReviewReportMapper, ReviewR
 
     private final ReviewMapper reviewMapper;
     private final MerchantMapper merchantMapper;
+    private final UserMapper userMapper;
 
-    public ReviewReportService(ReviewMapper reviewMapper, MerchantMapper merchantMapper) {
+    public ReviewReportService(ReviewMapper reviewMapper, MerchantMapper merchantMapper,
+                                UserMapper userMapper) {
         this.reviewMapper = reviewMapper;
         this.merchantMapper = merchantMapper;
+        this.userMapper = userMapper;
     }
 
     /**
@@ -229,5 +237,126 @@ public class ReviewReportService extends ServiceImpl<ReviewReportMapper, ReviewR
         }
 
         return vo;
+    }
+
+    // ==================== 管理员方法 ====================
+
+    /**
+     * 管理员查询所有举报列表（支持筛选）
+     */
+    public Page<AdminReportListVO> listAllReports(String status, Long merchantId,
+                                                   String reason, int pageNum, int pageSize) {
+        LambdaQueryWrapper<ReviewReport> wrapper = new LambdaQueryWrapper<>();
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(ReviewReport::getStatus, status);
+        }
+        if (merchantId != null) {
+            wrapper.eq(ReviewReport::getMerchantId, merchantId);
+        }
+        if (reason != null && !reason.isBlank()) {
+            wrapper.eq(ReviewReport::getReason, reason);
+        }
+        wrapper.orderByAsc(ReviewReport::getStatus)   // 待处理优先
+                .orderByDesc(ReviewReport::getCreatedAt);
+
+        Page<ReviewReport> page = this.page(Page.of(pageNum, pageSize), wrapper);
+
+        // 批量查关联数据
+        List<ReviewReport> records = page.getRecords();
+        Set<Long> reviewIds = records.stream()
+                .map(ReviewReport::getReportedReviewId)
+                .collect(Collectors.toSet());
+        Set<Long> merchantIds = records.stream()
+                .map(ReviewReport::getMerchantId)
+                .collect(Collectors.toSet());
+        Set<Long> reporterIds = records.stream()
+                .map(ReviewReport::getReporterUserId)
+                .collect(Collectors.toSet());
+
+        Map<Long, Review> reviewMap = reviewMapper.selectBatchIds(reviewIds).stream()
+                .collect(Collectors.toMap(Review::getId, r -> r, (a, b) -> a));
+        Map<Long, Merchant> merchantMap = merchantMapper.selectBatchIds(merchantIds).stream()
+                .collect(Collectors.toMap(Merchant::getId, m -> m, (a, b) -> a));
+        Map<Long, User> userMap = userMapper.selectBatchIds(reporterIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
+
+        List<AdminReportListVO> voList = records.stream().map(report -> {
+            AdminReportListVO vo = new AdminReportListVO();
+            vo.setId(report.getId());
+            vo.setReporterUserId(report.getReporterUserId());
+            vo.setReportedReviewId(report.getReportedReviewId());
+            vo.setMerchantId(report.getMerchantId());
+            vo.setReason(report.getReason());
+            vo.setReasonText(REASON_TEXT_MAP.getOrDefault(report.getReason(), report.getReason()));
+            vo.setDescription(report.getDescription());
+            vo.setStatus(report.getStatus());
+            vo.setStatusText(STATUS_TEXT_MAP.getOrDefault(report.getStatus(), report.getStatus()));
+            vo.setResolution(report.getResolution());
+            vo.setCreatedAt(report.getCreatedAt());
+            vo.setHandledAt(report.getHandledAt());
+
+            User reporter = userMap.get(report.getReporterUserId());
+            vo.setReporterUsername(reporter != null ? reporter.getUsername() : "未知用户");
+
+            Merchant merchant = merchantMap.get(report.getMerchantId());
+            vo.setMerchantName(merchant != null ? merchant.getName() : "未知商家");
+
+            Review review = reviewMap.get(report.getReportedReviewId());
+            if (review != null) {
+                vo.setReviewContent(review.getContent());
+                vo.setReviewRating(review.getRating() != null ? review.getRating().intValue() : null);
+                vo.setReviewStatus(review.getStatus());
+            } else {
+                vo.setReviewContent("（原评价已删除）");
+                vo.setReviewStatus("DELETED");
+            }
+
+            return vo;
+        }).collect(Collectors.toList());
+
+        Page<AdminReportListVO> resultPage = new Page<>();
+        resultPage.setCurrent(page.getCurrent());
+        resultPage.setSize(page.getSize());
+        resultPage.setTotal(page.getTotal());
+        resultPage.setRecords(voList);
+        return resultPage;
+    }
+
+    /**
+     * 管理员处理举报（通过或驳回）
+     */
+    @Transactional
+    public ReviewReport resolveReport(Long reportId, ResolveReportRequest request,
+                                       Long operatorUserId) {
+        ReviewReport report = this.getById(reportId);
+        if (report == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND,
+                    "REPORT_NOT_FOUND",
+                    "举报记录不存在");
+        }
+        if (!"PENDING".equals(report.getStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "ALREADY_RESOLVED",
+                    "该举报已处理，不能重复操作");
+        }
+        if (!"RESOLVED".equals(request.getStatus()) && !"REJECTED".equals(request.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "INVALID_STATUS",
+                    "处理状态只能为 RESOLVED 或 REJECTED");
+        }
+
+        report.setStatus(request.getStatus());
+        report.setResolution(request.getResolution());
+        report.setHandledBy(operatorUserId);
+        report.setHandledAt(OffsetDateTime.now());
+
+        boolean updated = this.updateById(report);
+        if (!updated) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "RESOLVE_FAILED",
+                    "处理失败，请稍后重试");
+        }
+
+        return report;
     }
 }
