@@ -2,6 +2,8 @@ package com.foodadvisor.controller;
 
 import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.PageResult;
+import com.foodadvisor.dto.evaluation.RecommendationEvalAnnotationRequest;
+import com.foodadvisor.dto.evaluation.RecommendationEvalRunComparisonResponse;
 import com.foodadvisor.dto.evaluation.RecommendationEvalCaseRequest;
 import com.foodadvisor.dto.evaluation.RecommendationEvalCaseResponse;
 import com.foodadvisor.dto.evaluation.RecommendationEvalDatasetRequest;
@@ -218,6 +220,26 @@ public class AdminRecommendationEvaluationController {
     }
 
     /**
+     * 比较同一测试集的两次评测运行。
+     */
+    @GetMapping("/runs/compare")
+    public ApiResponse<RecommendationEvalRunComparisonResponse>
+    compareRuns(
+            @RequestParam Long baselineRunId,
+            @RequestParam Long candidateRunId,
+            HttpServletRequest request
+    ) {
+        accessGuard.requireOperatorOrAdmin(request);
+
+        return ApiResponse.success(
+                runService.compareRuns(
+                        baselineRunId,
+                        candidateRunId
+                )
+        );
+    }
+
+    /**
      * 查询单次评测运行及其汇总指标。
      */
     @GetMapping("/runs/{runId}")
@@ -245,6 +267,34 @@ public class AdminRecommendationEvaluationController {
 
         return ApiResponse.success(
                 runService.listResults(runId)
+        );
+    }
+
+    /**
+     * 人工标注单个评测案例结果。
+     */
+    @PutMapping("/runs/{runId}/results/{resultId}/annotation")
+    public ApiResponse<RecommendationEvalCaseResultResponse>
+    annotateResult(
+            @PathVariable Long runId,
+            @PathVariable Long resultId,
+            @Valid
+            @RequestBody
+            RecommendationEvalAnnotationRequest body,
+            HttpServletRequest request
+    ) {
+        accessGuard.requireOperatorOrAdmin(request);
+
+        Long annotatedBy =
+                AuthenticatedUserId.require(request);
+
+        return ApiResponse.success(
+                runService.annotateResult(
+                        runId,
+                        resultId,
+                        body,
+                        annotatedBy
+                )
         );
     }
 }
