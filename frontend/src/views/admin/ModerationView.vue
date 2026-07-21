@@ -227,7 +227,7 @@
             </div>
             <div class="detail-row">
               <span class="detail-label">人均消费</span>
-              <span>{{ currentDetail.averageSpend ? '¥' + currentDetail.averageSpend : '-' }}</span>
+              <span>{{ currentDetail.averageSpend ? '￥' + currentDetail.averageSpend : '-' }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">消费日期</span>

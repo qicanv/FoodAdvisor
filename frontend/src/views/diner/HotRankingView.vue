@@ -108,7 +108,7 @@
                   </span>
                   <span class="metric">
                     <span class="metric-label">人均</span>
-                    <span class="metric-value">¥{{ item.averagePrice }}</span>
+                    <span class="metric-value">￥{{ item.averagePrice }}</span>
                   </span>
                 </div>
               </div>
@@ -186,9 +186,9 @@ const currentRanking = computed(() => {
     if (activeTab.value === 'weekly') {
       reason = `${merchant.name}近期讨论热度飙升，评分${rating}分，${reviewCount}条评价`
     } else if (activeTab.value === 'monthly') {
-      reason = `${merchant.name}本月表现突出，评分${rating}分，人均¥${price}`
+      reason = `${merchant.name}本月表现突出，评分${rating}分，人均￥${price}`
     } else if (activeTab.value === 'value') {
-      reason = `${merchant.name}性价比极高，评分${rating}分，人均仅¥${price}`
+      reason = `${merchant.name}性价比极高，评分${rating}分，人均仅￥${price}`
     } else {
       reason = `${merchant.name}人气爆棚，评分${rating}分，${reviewCount}条评价`
     }

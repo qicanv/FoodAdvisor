@@ -72,7 +72,7 @@
                     class="matched-dish"
                   >
                     {{ textOr(dish.dishName, '菜品名称暂无') }}
-                    {{ dish.dishPrice == null ? '价格暂无' : `¥${dish.dishPrice}` }}
+                    {{ dish.dishPrice == null ? '价格暂无' : `￥${dish.dishPrice}` }}
                   </span>
                 </div>
                 <button
@@ -216,7 +216,7 @@ const createRequestId = () => {
 
 const textOr = (value, fallback) => value === null || value === undefined || value === '' ? fallback : value
 const ratingText = value => value === null || value === undefined ? '暂无评分' : `评分 ${value}`
-const priceText = value => value === null || value === undefined ? '人均消费暂无' : `人均 ¥${value}`
+const priceText = value => value === null || value === undefined ? '人均消费暂无' : `人均 ￥${value}`
 const distanceText = value => value === null || value === undefined ? '距离未知' : `距离 ${value} km`
 const operationStatusText = value => {
   const labels = { OPERATING: '营业中', SUSPENDED: '暂停营业', CLOSED_PERMANENTLY: '已停业' }

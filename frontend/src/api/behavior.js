@@ -23,3 +23,11 @@ export const getRecommendationStats = (params) => {
 export const reportBehaviorEvent = (eventData) => {
   return request.post('/api/behavior/event', eventData)
 }
+
+export const getBehaviorStats = (params) => {
+  return request.get('/api/behavior/stats', { params })
+}
+
+export const getBehaviorLogs = (params) => {
+  return request.get('/api/behavior/logs', { params })
+}

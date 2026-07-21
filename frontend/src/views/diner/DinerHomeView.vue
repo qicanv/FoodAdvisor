@@ -93,10 +93,10 @@
                 <label>预算范围</label>
                 <select v-model="filters.budget" class="filter-select">
                   <option value="">不限</option>
-                  <option value="low">¥50以下</option>
-                  <option value="medium">¥50-100</option>
-                  <option value="high">¥100-200</option>
-                  <option value="premium">¥200以上</option>
+                  <option value="low">￥50以下</option>
+                  <option value="medium">￥50-100</option>
+                  <option value="high">￥100-200</option>
+                  <option value="premium">￥200以上</option>
                 </select>
               </div>
               <div class="filter-item">
@@ -171,7 +171,7 @@
                   <span class="rest-rating">★ {{ restaurant.rating }}</span>
                 </div>
                 <p class="rest-category">{{ restaurant.category }}</p>
-                <p class="rest-price">人均 ¥{{ restaurant.avgPrice }}</p>
+                <p class="rest-price">人均 ￥{{ restaurant.avgPrice }}</p>
                 <p class="rest-distance">{{ restaurant.distance }}</p>
                 <div class="rest-tags">
                   <span v-for="tag in restaurant.tags" :key="tag" class="tag">{{ tag }}</span>
