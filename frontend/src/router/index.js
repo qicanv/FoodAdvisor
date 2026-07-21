@@ -49,6 +49,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'diner' },
   },
   {
+    path: '/diner/my-reports',
+    name: 'diner-my-reports',
+    component: () => import('../views/diner/MyReportsView.vue'),
+    meta: { requiresAuth: true, role: 'diner' },
+  },
+  {
     path: '/diner/ranking',
     name: 'diner-ranking',
     component: () => import('../views/diner/HotRankingView.vue'),
@@ -140,6 +146,12 @@ const routes = [
     path: '/admin/ai-traces',
     name: 'admin-ai-traces',
     component: () => import('../views/admin/AiTraceView.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
+  },
+  {
+    path: '/admin/reports',
+    name: 'admin-reports',
+    component: () => import('../views/admin/ReportReviewView.vue'),
     meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
   },
   {
