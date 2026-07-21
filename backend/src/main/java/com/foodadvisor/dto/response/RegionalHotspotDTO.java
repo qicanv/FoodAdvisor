@@ -28,6 +28,8 @@ public class RegionalHotspotDTO {
 
     private List<Map<String, Object>> trendChanges;
 
+    private List<Map<String, Object>> dailyTrend;
+
     private Long totalEvents;
 
     private Long totalUsers;

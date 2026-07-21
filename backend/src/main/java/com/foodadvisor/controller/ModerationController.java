@@ -1,0 +1,120 @@
+package com.foodadvisor.controller;
+
+import com.foodadvisor.common.ApiResponse;
+import com.foodadvisor.entity.User;
+import com.foodadvisor.exception.ApiException;
+import com.foodadvisor.security.AdminAccessGuard;
+import com.foodadvisor.service.ModerationService;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.OffsetDateTime;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/moderation")
+public class ModerationController {
+
+    private final ModerationService moderationService;
+    private final AdminAccessGuard adminAccessGuard;
+
+    public ModerationController(ModerationService moderationService, AdminAccessGuard adminAccessGuard) {
+        this.moderationService = moderationService;
+        this.adminAccessGuard = adminAccessGuard;
+    }
+
+    @GetMapping("/reviews")
+    public ApiResponse<Map<String, Object>> getReviewList(
+            @RequestParam(required = false) String riskLevel,
+            @RequestParam(required = false) String moderationStatus,
+            @RequestParam(required = false) Long merchantId,
+            @RequestParam(required = false) OffsetDateTime startTime,
+            @RequestParam(required = false) OffsetDateTime endTime,
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "20") Integer pageSize,
+            HttpServletRequest request) {
+
+        adminAccessGuard.requireAdmin(request);
+
+        Map<String, Object> result = moderationService.getReviewList(
+                riskLevel, moderationStatus, merchantId, startTime, endTime, pageNum, pageSize);
+
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/reviews/{id}")
+    public ApiResponse<Map<String, Object>> getReviewDetail(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+
+        adminAccessGuard.requireAdmin(request);
+
+        Map<String, Object> detail = moderationService.getReviewDetail(id);
+
+        if (detail == null) {
+            return ApiResponse.notFound("评价不存在或已删除");
+        }
+
+        return ApiResponse.success(detail);
+    }
+
+    @GetMapping("/merchants")
+    public ApiResponse<?> getActiveMerchants(HttpServletRequest request) {
+        adminAccessGuard.requireAdmin(request);
+        return ApiResponse.success(moderationService.getActiveMerchants());
+    }
+
+    @GetMapping("/pending-count")
+    public ApiResponse<Long> getPendingCount(HttpServletRequest request) {
+        adminAccessGuard.requireAdmin(request);
+        return ApiResponse.success(moderationService.countPendingReviews());
+    }
+
+    @PostMapping("/reviews/{id}/action")
+    public ApiResponse<Map<String, Object>> moderateReview(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request) {
+
+        adminAccessGuard.requireAdmin(request);
+
+        String action = body.get("action");
+        String remark = body.get("remark");
+
+        if (action == null || action.isBlank()) {
+            return ApiResponse.failure("INVALID_REQUEST", "审核操作不能为空");
+        }
+
+        Long operatorUserId = getOperatorUserId(request);
+        String operatorUsername = getOperatorUsername(request);
+        String operatorRole = getOperatorRole(request);
+
+        Map<String, Object> result = moderationService.moderateReview(
+                id, action, remark, operatorUserId, operatorUsername, operatorRole);
+
+        if ((Boolean) result.get("success")) {
+            return ApiResponse.success(result);
+        } else {
+            return ApiResponse.failure("MODERATION_FAILED", (String) result.get("message"));
+        }
+    }
+
+    private Long getOperatorUserId(HttpServletRequest request) {
+        Object userId = request.getAttribute("userId");
+        if (userId instanceof Number number) {
+            return number.longValue();
+        }
+        throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required");
+    }
+
+    private String getOperatorUsername(HttpServletRequest request) {
+        Object username = request.getAttribute("username");
+        return username != null ? username.toString() : null;
+    }
+
+    private String getOperatorRole(HttpServletRequest request) {
+        Object role = request.getAttribute("role");
+        return role != null ? role.toString() : null;
+    }
+}

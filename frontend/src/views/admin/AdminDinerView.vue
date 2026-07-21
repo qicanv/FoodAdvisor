@@ -1,5 +1,5 @@
 <template>
-  <AdminLayout title="管理食客" subtitle="管理平台注册用户和食客信息">
+  <AdminLayout title="食客管理" subtitle="管理平台注册用户和食客信息">
     <div class="diners-container">
       <div class="search-bar">
         <div class="search-group">

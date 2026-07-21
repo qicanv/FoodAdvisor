@@ -245,7 +245,7 @@ const stats = ref([
   },
 ])
 
-const QUICK_ACTIONS_VERSION = '6'
+const QUICK_ACTIONS_VERSION = '8'
 
 const defaultQuickActions = [
   {
@@ -289,6 +289,20 @@ const defaultQuickActions = [
     path: '/admin/topics',
     emoji: '📚',
     bgClass: 'action-card-pink',
+  },
+  {
+    label: '内容审核',
+    description: '审核系统标记的可疑评价和内容',
+    path: '/admin/moderation',
+    emoji: '🔍',
+    bgClass: 'action-card-orange',
+  },
+  {
+    label: 'AI请求追踪',
+    description: '追踪AI服务的请求和响应详情',
+    path: '/admin/ai-traces',
+    emoji: '🔬',
+    bgClass: 'action-card-indigo',
   },
 ]
 
@@ -342,8 +356,10 @@ const availableActions = computed(() => {
     { label: '区域热点', description: '分析各区域消费热点和变化趋势', path: '/admin/regional-hotspots', emoji: '📍', bgClass: 'action-card-olive' },
     { label: '商家统计', description: '查看商家状态和运营统计', path: '/admin/restaurants?tab=status', emoji: '📉', bgClass: 'action-card-cyan' },
     { label: '专题管理', description: '管理分类标签和探店专题', path: '/admin/topics', emoji: '📚', bgClass: 'action-card-pink' },
-    { label: '管理食客', description: '管理平台注册用户和食客信息', path: '/admin/diners', emoji: '👥', bgClass: 'action-card-red' },
+    { label: '食客管理', description: '管理平台注册用户和食客信息', path: '/admin/diners', emoji: '👥', bgClass: 'action-card-red' },
     { label: '审计日志', description: '查询系统和重要操作的审计日志', path: '/admin/logs', emoji: '📋', bgClass: 'action-card-teal' },
+    { label: '内容审核', description: '审核系统标记的可疑评价和内容', path: '/admin/moderation', emoji: '🔍', bgClass: 'action-card-orange' },
+    { label: 'AI请求追踪', description: '追踪AI服务的请求和响应详情', path: '/admin/ai-traces', emoji: '🔬', bgClass: 'action-card-indigo' },
   ].filter(a => !usedLabels.includes(a.label))
 })
 
@@ -579,6 +595,11 @@ onMounted(() => {
 .action-card-purple {
   background: linear-gradient(135deg, #5c3377 0%, #7b5ca5 100%);
   border: 1px solid rgba(92, 51, 119, 0.3);
+}
+
+.action-card-indigo {
+  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+  border: 1px solid rgba(30, 58, 138, 0.3);
 }
 
 .action-info {

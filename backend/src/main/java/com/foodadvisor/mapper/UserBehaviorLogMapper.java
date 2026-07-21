@@ -159,4 +159,13 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
     Long getRegionalTagClicks(@Param("regionCode") String regionCode,
                                @Param("startTime") OffsetDateTime startTime,
                                @Param("endTime") OffsetDateTime endTime);
+
+    @Select("SELECT DATE(ubl.created_at) as date, COUNT(*) as count FROM user_behavior_logs ubl " +
+            "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
+            "WHERE event_type IN ('SEARCH', 'MERCHANT_CLICK', 'SCENE_ENTRY') AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
+            "AND (m.region_code = #{regionCode} OR m.region_code IS NULL) " +
+            "GROUP BY DATE(ubl.created_at) ORDER BY DATE(ubl.created_at)")
+    List<Map<String, Object>> getRegionalDailyStats(@Param("regionCode") String regionCode,
+                                                     @Param("startTime") OffsetDateTime startTime,
+                                                     @Param("endTime") OffsetDateTime endTime);
 }
