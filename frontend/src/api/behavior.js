@@ -1,33 +1,25 @@
 import request from './request'
 
-export const getBehaviorStats = (params) => {
-  return request.get('/api/admin/behavior/stats', { params })
+export const getBehaviorOverview = (params) => {
+  return request.get('/api/behavior/overview', { params })
 }
 
-export const getBehaviorLogs = (params) => {
-  return request.get('/api/admin/behavior/logs', { params })
+export const getHotSearchKeywords = (params) => {
+  return request.get('/api/behavior/hot-keywords', { params })
 }
 
-export const logSearch = (data) => {
-  return request.post('/api/behavior/log/search', data)
+export const getHotScenarios = (params) => {
+  return request.get('/api/behavior/hot-scenarios', { params })
 }
 
-export const logMerchantClick = (data) => {
-  return request.post('/api/behavior/log/merchant-click', data)
+export const getHotMerchants = (params) => {
+  return request.get('/api/behavior/hot-merchants', { params })
 }
 
-export const logSceneEntry = (data) => {
-  return request.post('/api/behavior/log/scene-entry', data)
+export const getRecommendationStats = (params) => {
+  return request.get('/api/behavior/recommendation-stats', { params })
 }
 
-export const logTopicClick = (data) => {
-  return request.post('/api/behavior/log/topic-click', data)
-}
-
-export const logTagClick = (data) => {
-  return request.post('/api/behavior/log/tag-click', data)
-}
-
-export const logFeedback = (data) => {
-  return request.post('/api/behavior/log/feedback', data)
+export const reportBehaviorEvent = (eventData) => {
+  return request.post('/api/behavior/event', eventData)
 }
