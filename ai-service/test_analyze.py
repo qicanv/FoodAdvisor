@@ -8,7 +8,11 @@ from app.services import review_analysis_service as service_module
 
 
 async def test_review(monkeypatch):
-    settings.internal_api_token = "test-token"
+    monkeypatch.setattr(
+        settings,
+        "internal_api_token",
+        "test-token",
+    )
 
     async def chat_json(*args, **kwargs):
         return {

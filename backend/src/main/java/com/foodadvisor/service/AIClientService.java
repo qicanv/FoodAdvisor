@@ -2,12 +2,15 @@ package com.foodadvisor.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.foodadvisor.dto.ai.DialogueExtractAiRequest;
 import com.foodadvisor.dto.ai.DialogueExtractAiResponse;
+import com.foodadvisor.dto.prompt.ResolvedPrompt;
 import com.foodadvisor.entity.AiCallLog;
 import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.entity.AiRequestTraceStage;
 import com.foodadvisor.entity.AiTraceRetrievalSource;
+import com.foodadvisor.enums.PromptScene;
 import com.foodadvisor.trace.AiTraceContext;
 import com.foodadvisor.util.SensitiveLogSanitizer;
 import jakarta.annotation.PostConstruct;
@@ -48,6 +51,7 @@ public class AIClientService {
     private final AuditLogService auditLogService;
     private final SensitiveLogSanitizer sanitizer;
     private final AiRequestTraceService traceService;
+    private final PromptManagementService promptManagementService;
 
     @Value("${ai-service.base-url}")
     private String aiServiceBaseUrl;
@@ -61,16 +65,28 @@ public class AIClientService {
     @Value("${ai-service.read-timeout:60000}")
     private int readTimeout;
 
+    /**
+     * 保留给现有单元测试和不需要追踪能力的调用方。
+     */
     public AIClientService(
             ObjectMapper objectMapper,
             AiCallLogService aiCallLogService,
             AuditLogService auditLogService,
             SensitiveLogSanitizer sanitizer
     ) {
-        this(objectMapper, aiCallLogService, auditLogService, sanitizer, null);
+        this(
+                objectMapper,
+                aiCallLogService,
+                auditLogService,
+                sanitizer,
+                null,
+                null
+        );
     }
 
-    @Autowired
+    /**
+     * 保留原有五参数构造方法，避免已有测试或代码失效。
+     */
     public AIClientService(
             ObjectMapper objectMapper,
             AiCallLogService aiCallLogService,
@@ -78,12 +94,35 @@ public class AIClientService {
             SensitiveLogSanitizer sanitizer,
             AiRequestTraceService traceService
     ) {
+        this(
+                objectMapper,
+                aiCallLogService,
+                auditLogService,
+                sanitizer,
+                traceService,
+                null
+        );
+    }
+
+    /**
+     * Spring Boot 实际运行时使用的完整构造方法。
+     */
+    @Autowired
+    public AIClientService(
+            ObjectMapper objectMapper,
+            AiCallLogService aiCallLogService,
+            AuditLogService auditLogService,
+            SensitiveLogSanitizer sanitizer,
+            AiRequestTraceService traceService,
+            PromptManagementService promptManagementService
+    ) {
         this.restTemplate = new RestTemplate();
         this.objectMapper = objectMapper;
         this.aiCallLogService = aiCallLogService;
         this.auditLogService = auditLogService;
         this.sanitizer = sanitizer;
         this.traceService = traceService;
+        this.promptManagementService = promptManagementService;
     }
 
     @PostConstruct
@@ -559,11 +598,18 @@ public class AIClientService {
         OffsetDateTime startedAt =
                 OffsetDateTime.now();
 
+        /*
+         * 请求摘要继续基于原始业务参数生成，避免提示词正文进入日志。
+         * inputLength 则基于真正发往 AI 服务的请求体计算。
+         */
         String requestSummary =
                 requestSummary(body, functionType);
 
+        Object requestBody =
+                attachRuntimePrompt(body, functionType);
+
         Integer inputLength =
-                payloadLength(body);
+                payloadLength(requestBody);
 
         try {
             requireInternalToken();
@@ -588,7 +634,7 @@ public class AIClientService {
             HttpEntity<String> entity =
                     new HttpEntity<>(
                             objectMapper
-                                    .writeValueAsString(body),
+                                    .writeValueAsString(requestBody),
                             headers
                     );
 
@@ -733,6 +779,105 @@ public class AIClientService {
 
             throw wrapped;
         }
+    }
+
+    /**
+     * 根据 AI 功能类型，将当前启用的提示词附加到请求体。
+     *
+     * 原请求对象不会被修改。数据库没有启用版本、场景不受管理，
+     * 或提示词查询发生异常时，直接返回原请求体，由 Python 使用
+     * 代码中的默认提示词。
+     */
+    private Object attachRuntimePrompt(
+            Object body,
+            String functionType
+    ) {
+        PromptScene scene =
+                promptSceneFor(functionType);
+
+        if (body == null
+                || scene == null
+                || promptManagementService == null) {
+            return body;
+        }
+
+        try {
+            ResolvedPrompt prompt =
+                    promptManagementService
+                            .resolveActivePrompt(scene)
+                            .orElse(null);
+
+            if (prompt == null) {
+                return body;
+            }
+
+            JsonNode bodyTree =
+                    objectMapper.valueToTree(body);
+
+            if (!(bodyTree instanceof ObjectNode objectBody)) {
+                return body;
+            }
+
+            ObjectNode enrichedBody =
+                    objectBody.deepCopy();
+
+            enrichedBody.put(
+                    "systemPrompt",
+                    prompt.content()
+            );
+
+            enrichedBody.put(
+                    "promptVersion",
+                    prompt.versionTag()
+            );
+
+            return enrichedBody;
+        } catch (Exception exception) {
+            log.warn(
+                    "Runtime prompt resolution failed. scene={}, error={}",
+                    scene.getCode(),
+                    sanitizer.sanitize(
+                            exception.getMessage()
+                    )
+            );
+
+            return body;
+        }
+    }
+
+    /**
+     * 将现有 AIClientService 功能类型映射到提示词管理场景。
+     *
+     * 商家亮点和语义检索目前不属于本故事定义的六个场景，
+     * 因此不注入动态提示词。
+     */
+    private PromptScene promptSceneFor(
+            String functionType
+    ) {
+        if (functionType == null
+                || functionType.isBlank()) {
+            return null;
+        }
+
+        return switch (functionType) {
+            case "REVIEW_ANALYSIS",
+                 "BATCH_REVIEW_ANALYSIS" ->
+                    PromptScene.SENTIMENT_ANALYSIS;
+
+            case "DIALOGUE_CONSTRAINT_EXTRACTION" ->
+                    PromptScene.CONSTRAINT_EXTRACTION;
+
+            case "REVIEW_SUMMARY_GENERATION" ->
+                    PromptScene.REVIEW_SUMMARY;
+
+            case "REVIEW_REPLY_GENERATION" ->
+                    PromptScene.REVIEW_REPLY;
+
+            case "COMPETITOR_ANALYSIS" ->
+                    PromptScene.BUSINESS_ADVICE;
+
+            default -> null;
+        };
     }
 
     private void requireInternalToken() {

@@ -2,6 +2,8 @@ package com.foodadvisor.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.foodadvisor.dto.prompt.ResolvedPrompt;
+import com.foodadvisor.enums.PromptScene;
 import com.foodadvisor.entity.AiCallLog;
 import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.util.SensitiveLogSanitizer;
@@ -19,6 +21,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -39,6 +42,11 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 
 @ExtendWith(MockitoExtension.class)
 class AIClientServiceTest {
@@ -48,6 +56,9 @@ class AIClientServiceTest {
 
     @Mock
     private AuditLogService auditLogService;
+
+    @Mock
+    private PromptManagementService promptManagementService;
 
     private AIClientService aiClientService;
     private MockRestServiceServer server;
@@ -62,7 +73,9 @@ class AIClientServiceTest {
                 objectMapper,
                 aiCallLogService,
                 auditLogService,
-                new SensitiveLogSanitizer()
+                new SensitiveLogSanitizer(),
+                null,
+                promptManagementService
         );
         ReflectionTestUtils.setField(
                 aiClientService,
@@ -87,6 +100,12 @@ class AIClientServiceTest {
             log.setId(aiCallLogIds.incrementAndGet());
             return null;
         }).when(aiCallLogService).recordSafely(any(AiCallLog.class));
+
+        lenient().when(
+                promptManagementService.resolveActivePrompt(
+                        any(PromptScene.class)
+                )
+        ).thenReturn(Optional.empty());
     }
 
     @Test
@@ -273,6 +292,152 @@ class AIClientServiceTest {
         assertTrue(aiLog.getRequestSummary().contains("\"batchSize\":2"));
         assertFalse(aiLog.getRequestSummary().contains("first"));
         assertFalse(aiLog.getRequestSummary().contains("second"));
+        server.verify();
+    }
+
+    @Test
+    void shouldAttachActiveRuntimePromptToAiRequest()
+            throws Exception {
+        ResolvedPrompt resolvedPrompt = new ResolvedPrompt(
+                1L,
+                11L,
+                PromptScene.SENTIMENT_ANALYSIS.getCode(),
+                3,
+                "sentiment-analysis:v3",
+                "runtime sentiment prompt"
+        );
+
+        when(
+                promptManagementService.resolveActivePrompt(
+                        PromptScene.SENTIMENT_ANALYSIS
+                )
+        ).thenReturn(Optional.of(resolvedPrompt));
+
+        server.expect(once(), requestTo(
+                        "http://ai-service/internal/reviews/analyze"
+                ))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(allOf(
+                        containsString(
+                                "\"systemPrompt\":\"runtime sentiment prompt\""
+                        ),
+                        containsString(
+                                "\"promptVersion\":\"sentiment-analysis:v3\""
+                        )
+                )))
+                .andRespond(withSuccess(
+                        """
+                        {
+                          "sentiment": "POSITIVE",
+                          "confidence": 0.9,
+                          "modelName": "demo-model"
+                        }
+                        """,
+                        MediaType.APPLICATION_JSON
+                ));
+
+        JsonNode result = aiClientService.analyzeReview(
+                11L,
+                22L,
+                "good food",
+                3
+        );
+
+        assertEquals(
+                "POSITIVE",
+                result.get("sentiment").asText()
+        );
+
+        verify(promptManagementService).resolveActivePrompt(
+                PromptScene.SENTIMENT_ANALYSIS
+        );
+
+        server.verify();
+    }
+
+    @Test
+    void shouldKeepOriginalRequestWhenNoPromptIsActive()
+            throws Exception {
+        when(
+                promptManagementService.resolveActivePrompt(
+                        PromptScene.SENTIMENT_ANALYSIS
+                )
+        ).thenReturn(Optional.empty());
+
+        server.expect(once(), requestTo(
+                        "http://ai-service/internal/reviews/analyze"
+                ))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(allOf(
+                        not(containsString("\"systemPrompt\"")),
+                        not(containsString("\"promptVersion\""))
+                )))
+                .andRespond(withSuccess(
+                        """
+                        {
+                          "sentiment": "NEUTRAL",
+                          "confidence": 0.6
+                        }
+                        """,
+                        MediaType.APPLICATION_JSON
+                ));
+
+        JsonNode result = aiClientService.analyzeReview(
+                11L,
+                22L,
+                "normal review",
+                1
+        );
+
+        assertEquals(
+                "NEUTRAL",
+                result.get("sentiment").asText()
+        );
+
+        server.verify();
+    }
+
+    @Test
+    void shouldKeepAiRequestAvailableWhenPromptResolutionFails()
+            throws Exception {
+        when(
+                promptManagementService.resolveActivePrompt(
+                        PromptScene.SENTIMENT_ANALYSIS
+                )
+        ).thenThrow(
+                new RuntimeException("prompt database unavailable")
+        );
+
+        server.expect(once(), requestTo(
+                        "http://ai-service/internal/reviews/analyze"
+                ))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(allOf(
+                        not(containsString("\"systemPrompt\"")),
+                        not(containsString("\"promptVersion\""))
+                )))
+                .andRespond(withSuccess(
+                        """
+                        {
+                          "sentiment": "POSITIVE",
+                          "confidence": 0.8
+                        }
+                        """,
+                        MediaType.APPLICATION_JSON
+                ));
+
+        JsonNode result = aiClientService.analyzeReview(
+                11L,
+                22L,
+                "good service",
+                1
+        );
+
+        assertEquals(
+                "POSITIVE",
+                result.get("sentiment").asText()
+        );
+
         server.verify();
     }
 
