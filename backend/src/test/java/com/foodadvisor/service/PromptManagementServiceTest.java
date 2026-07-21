@@ -4,6 +4,7 @@ import com.foodadvisor.dto.prompt.CreatePromptVersionRequest;
 import com.foodadvisor.dto.prompt.PromptVersionResponse;
 import com.foodadvisor.dto.prompt.PromptVersionSwitchRequest;
 import com.foodadvisor.dto.prompt.ResolvedPrompt;
+import com.foodadvisor.dto.prompt.PromptDefinitionResponse;
 import com.foodadvisor.entity.PromptActivationLog;
 import com.foodadvisor.entity.PromptDefinition;
 import com.foodadvisor.entity.PromptVersion;
@@ -21,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -521,6 +523,83 @@ class PromptManagementServiceTest {
                 promptManagementService.resolveActivePrompt(
                         PromptScene.REVIEW_SUMMARY
                 ).isEmpty()
+        );
+    }
+
+    @Test
+    void shouldListDefinitionsWithoutActiveVersions() {
+        PromptDefinition diningDefinition =
+                definition(
+                        1L,
+                        "DINING_RECOMMENDATION",
+                        null
+                );
+
+        PromptDefinition summaryDefinition =
+                definition(
+                        3L,
+                        "REVIEW_SUMMARY",
+                        null
+                );
+
+        when(promptDefinitionMapper.selectList(any()))
+                .thenReturn(List.of(
+                        diningDefinition,
+                        summaryDefinition
+                ));
+
+        List<PromptDefinitionResponse> responses =
+                promptManagementService.listDefinitions();
+
+        assertEquals(2, responses.size());
+
+        PromptDefinitionResponse diningResponse =
+                responses.get(0);
+
+        PromptDefinitionResponse summaryResponse =
+                responses.get(1);
+
+        assertAll(
+                () -> assertEquals(
+                        1L,
+                        diningResponse.id()
+                ),
+                () -> assertEquals(
+                        "DINING_RECOMMENDATION",
+                        diningResponse.sceneCode()
+                ),
+                () -> assertNull(
+                        diningResponse.activeVersionId()
+                ),
+                () -> assertNull(
+                        diningResponse.activeVersionNo()
+                ),
+                () -> assertNull(
+                        diningResponse.activeVersionTag()
+                ),
+                () -> assertNull(
+                        diningResponse.activeVersionContent()
+                ),
+                () -> assertEquals(
+                        3L,
+                        summaryResponse.id()
+                ),
+                () -> assertEquals(
+                        "REVIEW_SUMMARY",
+                        summaryResponse.sceneCode()
+                ),
+                () -> assertNull(
+                        summaryResponse.activeVersionId()
+                ),
+                () -> assertNull(
+                        summaryResponse.activeVersionNo()
+                ),
+                () -> assertNull(
+                        summaryResponse.activeVersionTag()
+                ),
+                () -> assertNull(
+                        summaryResponse.activeVersionContent()
+                )
         );
     }
 
