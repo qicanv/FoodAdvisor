@@ -2,11 +2,22 @@
   <MerchantLayout title="菜品管理" subtitle="管理店铺菜单、菜品和价格信息">
     <div class="dishes-container">
       <div class="search-bar">
+        <div class="store-selector" v-if="storeList.length > 0">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+          <select v-model="selectedStoreId" class="store-select">
+            <option v-for="store in storeList" :key="store.id" :value="store.id">
+              {{ store.name }}
+            </option>
+          </select>
+        </div>
         <div class="search-group">
-          <input 
-            type="text" 
-            v-model="searchKeyword" 
-            placeholder="搜索菜品名称" 
+          <input
+            type="text"
+            v-model="searchKeyword"
+            placeholder="搜索菜品名称"
             class="search-input"
             @keyup.enter="loadDishes"
           />
@@ -18,7 +29,7 @@
             <option value="OFF_SHELF">已下架</option>
           </select>
         </div>
-        <button class="add-btn" @click="showAddModal = true">
+        <button class="add-btn" @click="showAddModal = true" :disabled="!selectedStoreId">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -122,6 +133,14 @@
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-else-if="!selectedStoreId" class="empty-state">
+        <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="#ccc" stroke-width="2">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+        <p>请先在上方选择一个店铺</p>
       </div>
 
       <div v-else class="empty-state">
@@ -252,13 +271,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, inject, watch } from 'vue'
 import MerchantLayout from '../../components/MerchantLayout.vue'
-import request from '../../api/request'
+import { getMyMerchants } from '../../api/merchantConsole'
+import {
+  getMyDishes,
+  createMyDish,
+  updateMyDish,
+  updateMyDishStatus,
+  deleteMyDish
+} from '../../api/merchantConsole'
+
+const activeMerchantId = inject('activeMerchantId', ref(null))
+const storeList = ref([])
 
 const dishes = ref([])
 const searchKeyword = ref('')
 const statusFilter = ref('')
+const selectedStoreId = ref(null)
 const showAddModal = ref(false)
 const showEditModal = ref(false)
 const loading = ref(false)
@@ -297,20 +327,42 @@ const filteredDishes = computed(() => {
   return result
 })
 
-const loadDishes = async () => {
+const loadStores = async () => {
   try {
-    const params = {}
+    const response = await getMyMerchants()
+    if (response.success && response.data) {
+      storeList.value = response.data
+      if (storeList.value.length > 0 && !selectedStoreId.value) {
+        selectedStoreId.value = storeList.value[0].id
+      }
+    }
+  } catch (error) {
+    console.error('加载店铺列表失败:', error)
+  }
+}
+
+const loadDishes = async () => {
+  if (!selectedStoreId.value) {
+    dishes.value = []
+    return
+  }
+  try {
+    const params = { merchantId: selectedStoreId.value }
     if (statusFilter.value) {
       params.status = statusFilter.value
     }
-    const response = await request.get('/api/merchant-dishes', { params })
+    const response = await getMyDishes(params)
     if (response.success) {
-      dishes.value = response.data
+      dishes.value = response.data || []
     }
   } catch (error) {
     console.error('加载菜品失败:', error)
   }
 }
+
+watch(selectedStoreId, () => {
+  loadDishes()
+})
 
 const getTasteTags = (dish) => {
   if (!dish.tasteTags) return []
@@ -403,14 +455,21 @@ const saveDish = async () => {
   loading.value = true
   try {
     const body = {
-      ...formData.value,
-      tasteTags: formData.value.tasteTags.length > 0 ? formData.value.tasteTags : null
+      merchantId: selectedStoreId.value,
+      name: formData.value.name,
+      category: formData.value.category || null,
+      price: formData.value.price ? Number(formData.value.price) : null,
+      description: formData.value.description || null,
+      tasteTags: formData.value.tasteTags.length > 0 ? formData.value.tasteTags : null,
+      imageUrl: formData.value.imageUrl || null,
+      recommended: formData.value.recommended,
+      status: formData.value.status
     }
 
     if (editingDish.value) {
-      await request.put(`/api/merchant-dishes/${editingDish.value.id}`, body)
+      await updateMyDish(editingDish.value.id, body)
     } else {
-      await request.post('/api/merchant-dishes', body)
+      await createMyDish(body)
     }
 
     closeModal()
@@ -427,7 +486,7 @@ const saveDish = async () => {
 
 const toggleStatus = async (dish, status) => {
   try {
-    await request.put(`/api/merchant-dishes/${dish.id}/status`, { status })
+    await updateMyDishStatus(dish.id, { status })
     loadDishes()
   } catch (error) {
     console.error('修改状态失败:', error)
@@ -437,14 +496,15 @@ const toggleStatus = async (dish, status) => {
 const deleteDish = async (dish) => {
   if (!confirm('确定要下架该菜品吗？下架后将不再显示在菜单中，但历史评价仍会保留。')) return
   try {
-    await request.delete(`/api/merchant-dishes/${dish.id}`)
+    await deleteMyDish(dish.id)
     loadDishes()
   } catch (error) {
     console.error('下架菜品失败:', error)
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadStores()
   loadDishes()
 })
 </script>
@@ -459,6 +519,35 @@ onMounted(() => {
   gap: 16px;
   margin-bottom: 20px;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.store-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 8px;
+  color: #389e0d;
+  flex-shrink: 0;
+}
+
+.store-select {
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: #389e0d;
+  cursor: pointer;
+  outline: none;
+  min-width: 140px;
+}
+
+.store-select option {
+  color: #1f2d3d;
+  background: #fff;
 }
 
 .search-group {
