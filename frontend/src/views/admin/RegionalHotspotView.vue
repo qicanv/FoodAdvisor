@@ -55,24 +55,21 @@
       </div>
     </div>
 
-    <div class="trend-section">
-      <h2 class="section-title">趋势变化</h2>
-      <div class="trend-cards">
-        <div v-for="trend in stats.trendChanges" :key="trend.name" class="trend-card">
-          <div class="trend-header">
-            <span class="trend-name">{{ trend.name }}</span>
-            <span :class="['trend-badge', trend.trend.toLowerCase()]">
-              {{ trend.trend === 'UP' ? '📈 上升' : trend.trend === 'DOWN' ? '📉 下降' : trend.trend === 'NEW' ? '✨ 新增' : '➡️ 稳定' }}
-            </span>
-          </div>
-          <div class="trend-values">
-            <span class="trend-current">{{ trend.current }}</span>
-            <span class="trend-arrow">→</span>
-            <span class="trend-previous">{{ trend.previous }}</span>
-          </div>
-          <div class="trend-percent" :class="trend.changePercent >= 0 ? 'positive' : 'negative'">
+    <div class="trend-chart-section">
+      <h2 class="section-title">📈 趋势变化</h2>
+      <div class="chart-container">
+        <div ref="trendChartRef" class="trend-chart"></div>
+      </div>
+      <div class="trend-summary">
+        <div v-for="trend in stats.trendChanges" :key="trend.name" class="trend-summary-item">
+          <span class="trend-summary-name">{{ trend.name }}</span>
+          <span :class="['trend-summary-badge', trend.trend.toLowerCase()]">
+            {{ trend.trend === 'UP' ? '↑' : trend.trend === 'DOWN' ? '↓' : trend.trend === 'NEW' ? '+' : '→' }}
+          </span>
+          <span class="trend-summary-value">{{ trend.current }}</span>
+          <span class="trend-summary-percent" :class="trend.changePercent >= 0 ? 'positive' : 'negative'">
             {{ trend.changePercent >= 0 ? '+' : '' }}{{ trend.changePercent }}%
-          </div>
+          </span>
         </div>
       </div>
     </div>
@@ -143,7 +140,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import * as echarts from 'echarts'
 import AdminLayout from '../../components/AdminLayout.vue'
 import { getAllRegions, getRegionalHotspots } from '../../api/regionalHotspot'
 
@@ -153,6 +151,8 @@ const timeRange = ref('last7days')
 const customStart = ref('')
 const customEnd = ref('')
 const loading = ref(false)
+const trendChartRef = ref(null)
+let trendChart = null
 
 const stats = ref({
   regionCode: '',
@@ -162,6 +162,7 @@ const stats = ref({
   hotKeywords: [],
   consumptionPeriods: [],
   trendChanges: [],
+  dailyTrend: [],
   totalEvents: 0,
   totalUsers: 0
 })
@@ -250,12 +251,163 @@ const loadHotspots = async () => {
     console.error('加载区域热点数据失败:', error)
   } finally {
     loading.value = false
+    await nextTick()
+    initTrendChart()
   }
 }
+
+const initTrendChart = () => {
+  if (!trendChartRef.value) return
+
+  if (trendChart) {
+    trendChart.dispose()
+  }
+
+  trendChart = echarts.init(trendChartRef.value)
+
+  const dailyTrend = stats.value.dailyTrend || []
+  const dates = dailyTrend.map(item => {
+    const dateStr = item.date
+    if (dateStr) {
+      const parts = dateStr.split('-')
+      if (parts.length >= 3) {
+        return `${parts[1]}-${parts[2]}`
+      }
+    }
+    return dateStr || ''
+  })
+  const counts = dailyTrend.map(item => Number(item.count) || 0)
+
+  let seriesData = []
+  if (counts.length > 0) {
+    seriesData = counts.map((count, index) => ({
+      value: count,
+      itemStyle: {
+        color: index > 0 && count > counts[index - 1] ? '#52c41a' : index > 0 && count < counts[index - 1] ? '#f5222d' : '#1890ff'
+      }
+    }))
+  }
+
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: '#e5e6eb',
+      borderWidth: 1,
+      textStyle: {
+        color: '#1f2329'
+      },
+      formatter: (params) => {
+        if (!params || params.length === 0) return ''
+        const data = params[0]
+        return `<div style="padding: 8px;">
+          <div style="font-weight: 600; margin-bottom: 4px;">${data.name}</div>
+          <div style="color: #4e5969;">事件数: <span style="color: #1890ff; font-weight: 600;">${data.value}</span></div>
+        </div>`
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      top: '10%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: dates.length > 0 ? dates : ['暂无数据'],
+      axisLine: {
+        lineStyle: {
+          color: '#e5e6eb'
+        }
+      },
+      axisLabel: {
+        color: '#8f959e',
+        fontSize: 12
+      },
+      axisTick: {
+        show: false
+      }
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: {
+        show: false
+      },
+      axisTick: {
+        show: false
+      },
+      axisLabel: {
+        color: '#8f959e',
+        fontSize: 12
+      },
+      splitLine: {
+        lineStyle: {
+          color: '#f0f0f0',
+          type: 'dashed'
+        }
+      },
+      min: 0
+    },
+    series: [{
+      name: '事件数',
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 8,
+      data: seriesData.length > 0 ? seriesData : [0],
+      lineStyle: {
+        width: 3,
+        color: '#1890ff'
+      },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(24, 144, 255, 0.25)' },
+          { offset: 1, color: 'rgba(24, 144, 255, 0.02)' }
+        ])
+      },
+      itemStyle: {
+        borderWidth: 2,
+        borderColor: '#fff'
+      },
+      emphasis: {
+        itemStyle: {
+          borderWidth: 3,
+          borderColor: '#fff',
+          shadowBlur: 10,
+          shadowColor: 'rgba(24, 144, 255, 0.5)'
+        }
+      }
+    }]
+  }
+
+  trendChart.setOption(option)
+}
+
+const handleResize = () => {
+  if (trendChart) {
+    trendChart.resize()
+  }
+}
+
+watch(() => stats.value.dailyTrend, () => {
+  nextTick(() => {
+    initTrendChart()
+  })
+}, { deep: true })
 
 onMounted(() => {
   loadRegions()
   loadHotspots()
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  if (trendChart) {
+    trendChart.dispose()
+    trendChart = null
+  }
 })
 </script>
 
@@ -360,7 +512,7 @@ onMounted(() => {
   margin-top: 4px;
 }
 
-.trend-section {
+.trend-chart-section {
   background: #fff;
   border-radius: 12px;
   padding: 24px;
@@ -375,90 +527,86 @@ onMounted(() => {
   margin: 0 0 16px 0;
 }
 
-.trend-cards {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+.chart-container {
+  width: 100%;
+  margin-bottom: 16px;
 }
 
-.trend-card {
-  background: #f7f8fa;
-  border-radius: 10px;
-  padding: 16px;
+.trend-chart {
+  width: 100%;
+  height: 320px;
 }
 
-.trend-header {
+.trend-summary {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
 }
 
-.trend-name {
+.trend-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #f7f8fa;
+  border-radius: 8px;
+}
+
+.trend-summary-name {
   font-size: 14px;
   font-weight: 500;
   color: #4e5969;
 }
 
-.trend-badge {
-  font-size: 12px;
-  padding: 3px 8px;
-  border-radius: 12px;
+.trend-summary-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.trend-badge.up {
+.trend-summary-badge.up {
   background: rgba(82, 196, 26, 0.1);
   color: #52c41a;
 }
 
-.trend-badge.down {
+.trend-summary-badge.down {
   background: rgba(245, 34, 45, 0.1);
   color: #f5222d;
 }
 
-.trend-badge.new {
+.trend-summary-badge.new {
   background: rgba(24, 144, 255, 0.1);
   color: #1890ff;
 }
 
-.trend-badge.stable {
+.trend-summary-badge.stable {
   background: rgba(143, 149, 158, 0.1);
   color: #8f959e;
 }
 
-.trend-values {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.trend-current {
-  font-size: 22px;
+.trend-summary-value {
+  font-size: 18px;
   font-weight: 700;
   color: #1f2329;
 }
 
-.trend-arrow {
-  font-size: 14px;
-  color: #8f959e;
-}
-
-.trend-previous {
-  font-size: 14px;
-  color: #8f959e;
-}
-
-.trend-percent {
+.trend-summary-percent {
   font-size: 14px;
   font-weight: 500;
 }
 
-.trend-percent.positive {
+.trend-summary-percent.positive {
   color: #52c41a;
 }
 
-.trend-percent.negative {
+.trend-summary-percent.negative {
   color: #f5222d;
 }
 
@@ -597,12 +745,12 @@ onMounted(() => {
     grid-template-columns: repeat(2, 1fr);
   }
   
-  .trend-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  
   .section-grid {
     grid-template-columns: 1fr;
+  }
+  
+  .trend-summary {
+    flex-direction: column;
   }
 }
 
@@ -611,13 +759,13 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
   
-  .trend-cards {
-    grid-template-columns: 1fr;
-  }
-  
   .filter-row {
     flex-direction: column;
     align-items: stretch;
+  }
+  
+  .trend-chart {
+    height: 250px;
   }
 }
 </style>

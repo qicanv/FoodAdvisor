@@ -29,6 +29,7 @@ public class RegionalHotspotService {
         List<Map<String, Object>> consumptionPeriods = behaviorLogMapper.getRegionalConsumptionPeriods(regionCode, startTime, endTime);
         Long totalEvents = behaviorLogMapper.getRegionalTotalEvents(regionCode, startTime, endTime);
         Long totalUsers = behaviorLogMapper.getRegionalActiveUsers(regionCode, startTime, endTime);
+        List<Map<String, Object>> dailyTrend = behaviorLogMapper.getRegionalDailyStats(regionCode, startTime, endTime);
 
         List<Map<String, Object>> trendChanges = calculateTrendChanges(
                 regionCode, startTime, endTime, prevStartTime, prevEndTime);
@@ -43,6 +44,7 @@ public class RegionalHotspotService {
                 .hotKeywords(hotKeywords)
                 .consumptionPeriods(consumptionPeriods)
                 .trendChanges(trendChanges)
+                .dailyTrend(dailyTrend)
                 .totalEvents(totalEvents)
                 .totalUsers(totalUsers)
                 .build();
