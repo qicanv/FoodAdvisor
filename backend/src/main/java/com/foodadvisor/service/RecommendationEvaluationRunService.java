@@ -5,9 +5,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.foodadvisor.dto.constraint.ConstraintState;
+import com.foodadvisor.dto.evaluation.RecommendationEvalRunComparisonResponse;
 import com.foodadvisor.dto.evaluation.RecommendationEvalCaseResultResponse;
 import com.foodadvisor.dto.evaluation.RecommendationEvalRunRequest;
 import com.foodadvisor.dto.evaluation.RecommendationEvalRunResponse;
+import com.foodadvisor.dto.evaluation.RecommendationEvalAnnotationRequest;
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.dto.recommendation.RecommendationWeights;
 import com.foodadvisor.entity.Merchant;
@@ -251,6 +253,362 @@ public class RecommendationEvaluationRunService {
                 .stream()
                 .map(this::toCaseResultResponse)
                 .toList();
+    }
+
+    /**
+     * 比较同一测试集的两次评测运行。
+     */
+    public RecommendationEvalRunComparisonResponse compareRuns(
+            Long baselineRunId,
+            Long candidateRunId
+    ) {
+        if (baselineRunId.equals(candidateRunId)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "EVAL_RUN_COMPARE_SAME_RUN",
+                    "基准运行和候选运行不能是同一次运行"
+            );
+        }
+
+        RecommendationEvalRun baselineRun =
+                getRunOrThrow(baselineRunId);
+
+        RecommendationEvalRun candidateRun =
+                getRunOrThrow(candidateRunId);
+
+        ensureComparableRun(baselineRun);
+        ensureComparableRun(candidateRun);
+
+        if (!baselineRun.getDatasetId().equals(
+                candidateRun.getDatasetId()
+        )) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "EVAL_RUN_DATASET_MISMATCH",
+                    "只能比较同一测试集产生的评测运行"
+            );
+        }
+
+        JsonNode baselineMetrics =
+                parseStoredJsonObject(
+                        baselineRun.getMetrics(),
+                        "baseline metrics"
+                );
+
+        JsonNode candidateMetrics =
+                parseStoredJsonObject(
+                        candidateRun.getMetrics(),
+                        "candidate metrics"
+                );
+
+        BigDecimal baselineAccuracy =
+                metricDecimal(
+                        baselineMetrics,
+                        "overallConstraintAccuracy"
+                );
+
+        BigDecimal candidateAccuracy =
+                metricDecimal(
+                        candidateMetrics,
+                        "overallConstraintAccuracy"
+                );
+
+        int baselineExactMatchCount =
+                metricInteger(
+                        baselineMetrics,
+                        "exactConstraintMatchCaseCount"
+                );
+
+        int candidateExactMatchCount =
+                metricInteger(
+                        candidateMetrics,
+                        "exactConstraintMatchCaseCount"
+                );
+
+        int baselineFailedCount =
+                metricInteger(
+                        baselineMetrics,
+                        "failedCaseCount"
+                );
+
+        int candidateFailedCount =
+                metricInteger(
+                        candidateMetrics,
+                        "failedCaseCount"
+                );
+
+        int baselineNoResultCount =
+                metricInteger(
+                        baselineMetrics,
+                        "noResultCaseCount"
+                );
+
+        int candidateNoResultCount =
+                metricInteger(
+                        candidateMetrics,
+                        "noResultCaseCount"
+                );
+
+        int baselineReturnedCount =
+                metricInteger(
+                        baselineMetrics,
+                        "totalReturnedRecommendations"
+                );
+
+        int candidateReturnedCount =
+                metricInteger(
+                        candidateMetrics,
+                        "totalReturnedRecommendations"
+                );
+
+        int baselineUniqueMerchantCount =
+                metricInteger(
+                        baselineMetrics,
+                        "uniqueMerchantCount"
+                );
+
+        int candidateUniqueMerchantCount =
+                metricInteger(
+                        candidateMetrics,
+                        "uniqueMerchantCount"
+                );
+
+        RecommendationEvalRunComparisonResponse.MetricComparison
+                metricComparison =
+                new RecommendationEvalRunComparisonResponse
+                        .MetricComparison(
+                        baselineAccuracy,
+                        candidateAccuracy,
+                        decimalChange(
+                                baselineAccuracy,
+                                candidateAccuracy
+                        ),
+
+                        baselineExactMatchCount,
+                        candidateExactMatchCount,
+                        candidateExactMatchCount
+                                - baselineExactMatchCount,
+
+                        baselineFailedCount,
+                        candidateFailedCount,
+                        candidateFailedCount
+                                - baselineFailedCount,
+
+                        baselineNoResultCount,
+                        candidateNoResultCount,
+                        candidateNoResultCount
+                                - baselineNoResultCount,
+
+                        baselineReturnedCount,
+                        candidateReturnedCount,
+                        candidateReturnedCount
+                                - baselineReturnedCount,
+
+                        baselineUniqueMerchantCount,
+                        candidateUniqueMerchantCount,
+                        candidateUniqueMerchantCount
+                                - baselineUniqueMerchantCount
+                );
+
+        Map<Long, RecommendationEvalCaseResult>
+                baselineResults =
+                loadCaseResultMap(baselineRunId);
+
+        Map<Long, RecommendationEvalCaseResult>
+                candidateResults =
+                loadCaseResultMap(candidateRunId);
+
+        Set<Long> allCaseIds = new LinkedHashSet<>();
+        allCaseIds.addAll(baselineResults.keySet());
+        allCaseIds.addAll(candidateResults.keySet());
+
+        List<RecommendationEvalRunComparisonResponse.CaseComparison>
+                caseComparisons = new ArrayList<>();
+
+        List<Long> improvedCaseIds = new ArrayList<>();
+        List<Long> regressedCaseIds = new ArrayList<>();
+        List<Long> unchangedCaseIds = new ArrayList<>();
+        List<Long> addedCaseIds = new ArrayList<>();
+        List<Long> removedCaseIds = new ArrayList<>();
+
+        for (Long caseId : allCaseIds) {
+            RecommendationEvalCaseResult baselineResult =
+                    baselineResults.get(caseId);
+
+            RecommendationEvalCaseResult candidateResult =
+                    candidateResults.get(caseId);
+
+            BigDecimal baselineCaseAccuracy =
+                    baselineResult == null
+                            ? null
+                            : caseConstraintAccuracy(
+                                    baselineResult
+                            );
+
+            BigDecimal candidateCaseAccuracy =
+                    candidateResult == null
+                            ? null
+                            : caseConstraintAccuracy(
+                                    candidateResult
+                            );
+
+            String changeType = resolveCaseChangeType(
+                    baselineResult,
+                    candidateResult,
+                    baselineCaseAccuracy,
+                    candidateCaseAccuracy
+            );
+
+            switch (changeType) {
+                case "IMPROVED" -> improvedCaseIds.add(caseId);
+                case "REGRESSED" -> regressedCaseIds.add(caseId);
+                case "UNCHANGED" -> unchangedCaseIds.add(caseId);
+                case "ADDED" -> addedCaseIds.add(caseId);
+                case "REMOVED" -> removedCaseIds.add(caseId);
+                default -> {
+                    // 不会进入此分支
+                }
+            }
+
+            Integer baselineResultCount =
+                    baselineResult == null
+                            ? null
+                            : zeroIfNull(
+                                    baselineResult.getResultCount()
+                            );
+
+            Integer candidateResultCount =
+                    candidateResult == null
+                            ? null
+                            : zeroIfNull(
+                                    candidateResult.getResultCount()
+                            );
+
+            Integer resultCountChange =
+                    baselineResultCount == null
+                            || candidateResultCount == null
+                            ? null
+                            : candidateResultCount
+                            - baselineResultCount;
+
+            BigDecimal accuracyChange =
+                    baselineCaseAccuracy == null
+                            || candidateCaseAccuracy == null
+                            ? null
+                            : decimalChange(
+                                    baselineCaseAccuracy,
+                                    candidateCaseAccuracy
+                            );
+
+            caseComparisons.add(
+                    new RecommendationEvalRunComparisonResponse
+                            .CaseComparison(
+                            caseId,
+
+                            baselineResult == null
+                                    ? null
+                                    : baselineResult.getId(),
+                            candidateResult == null
+                                    ? null
+                                    : candidateResult.getId(),
+
+                            baselineResult == null
+                                    ? null
+                                    : baselineResult.getStatus(),
+                            candidateResult == null
+                                    ? null
+                                    : candidateResult.getStatus(),
+
+                            baselineCaseAccuracy,
+                            candidateCaseAccuracy,
+                            accuracyChange,
+
+                            baselineResultCount,
+                            candidateResultCount,
+                            resultCountChange,
+
+                            changeType
+                    )
+            );
+        }
+
+        return new RecommendationEvalRunComparisonResponse(
+                baselineRunId,
+                candidateRunId,
+                baselineRun.getDatasetId(),
+
+                toComparisonRunSnapshot(baselineRun),
+                toComparisonRunSnapshot(candidateRun),
+
+                metricComparison,
+                caseComparisons,
+
+                improvedCaseIds,
+                regressedCaseIds,
+                unchangedCaseIds,
+                addedCaseIds,
+                removedCaseIds
+        );
+    }
+
+    /**
+     * 人工标注单个评测案例结果。
+     */
+    @Transactional
+    public RecommendationEvalCaseResultResponse annotateResult(
+            Long runId,
+            Long resultId,
+            RecommendationEvalAnnotationRequest request,
+            Long annotatedBy
+    ) {
+        /*
+         * 复用现有查询方法校验运行记录存在。
+         */
+        getRun(runId);
+
+        RecommendationEvalCaseResult result =
+                caseResultMapper.selectById(resultId);
+
+        /*
+         * 不区分“结果不存在”和“结果不属于该运行”，
+         * 避免通过接口探测其他运行中的结果。
+         */
+        if (result == null
+                || !runId.equals(result.getRunId())) {
+            throw new ApiException(
+                    HttpStatus.NOT_FOUND,
+                    "EVAL_RESULT_NOT_FOUND",
+                    "评测案例结果不存在"
+            );
+        }
+
+        String annotationNote = request.annotationNote();
+
+        result.setRelevanceLabel(
+                request.relevanceLabel().trim()
+        );
+        result.setAnnotationNote(
+                annotationNote == null
+                        || annotationNote.isBlank()
+                        ? null
+                        : annotationNote.trim()
+        );
+        result.setAnnotatedBy(annotatedBy);
+
+        OffsetDateTime now = OffsetDateTime.now();
+
+        result.setAnnotatedAt(now);
+        result.setUpdatedAt(now);
+
+        if (caseResultMapper.updateById(result) != 1) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "EVAL_RESULT_ANNOTATION_FAILED",
+                    "评测结果标注失败，请稍后重试"
+            );
+        }
+
+        return toCaseResultResponse(result);
     }
 
     private CaseExecutionSummary evaluateCase(
@@ -970,6 +1328,265 @@ public class RecommendationEvaluationRunService {
         }
 
         return null;
+    }
+
+    /**
+     * 查询一次运行下的案例结果，并按caseId组织。
+     */
+    private Map<Long, RecommendationEvalCaseResult>
+    loadCaseResultMap(Long runId) {
+        List<RecommendationEvalCaseResult> results =
+                caseResultMapper.selectList(
+                        new LambdaQueryWrapper
+                                <RecommendationEvalCaseResult>()
+                                .eq(
+                                        RecommendationEvalCaseResult::getRunId,
+                                        runId
+                                )
+                                .orderByAsc(
+                                        RecommendationEvalCaseResult::getCaseId
+                                )
+                );
+
+        Map<Long, RecommendationEvalCaseResult> resultMap =
+                new LinkedHashMap<>();
+
+        for (RecommendationEvalCaseResult result
+                : results == null
+                ? List.<RecommendationEvalCaseResult>of()
+                : results) {
+            resultMap.put(
+                    result.getCaseId(),
+                    result
+            );
+        }
+
+        return resultMap;
+    }
+
+    /**
+     * 只有已经结束的运行可以参与比较。
+     */
+    private void ensureComparableRun(
+            RecommendationEvalRun run
+    ) {
+        String status = run.getStatus();
+
+        if ("PENDING".equalsIgnoreCase(status)
+                || "RUNNING".equalsIgnoreCase(status)) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "EVAL_RUN_NOT_COMPLETED",
+                    "评测运行尚未结束，暂时不能比较"
+            );
+        }
+    }
+
+    /**
+     * 将运行转换为对比接口中的版本快照。
+     */
+    private RecommendationEvalRunComparisonResponse.RunSnapshot
+    toComparisonRunSnapshot(
+            RecommendationEvalRun run
+    ) {
+        return new RecommendationEvalRunComparisonResponse
+                .RunSnapshot(
+                run.getStatus(),
+                run.getModelName(),
+                run.getModelVersion(),
+                run.getPromptVersion(),
+                run.getAlgorithmVersion(),
+                run.getDataVersion()
+        );
+    }
+
+    /**
+     * 解析数据库中保存的JSON对象。
+     */
+    private JsonNode parseStoredJsonObject(
+            String rawJson,
+            String fieldName
+    ) {
+        if (rawJson == null || rawJson.isBlank()) {
+            return objectMapper.createObjectNode();
+        }
+
+        try {
+            JsonNode node = objectMapper.readTree(rawJson);
+
+            if (node != null && node.isObject()) {
+                return node;
+            }
+        } catch (JsonProcessingException exception) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "EVAL_STORED_JSON_INVALID",
+                    fieldName + "格式错误"
+            );
+        }
+
+        throw new ApiException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "EVAL_STORED_JSON_INVALID",
+                fieldName + "不是JSON对象"
+        );
+    }
+
+    /**
+     * 读取运行指标中的小数。
+     */
+    private BigDecimal metricDecimal(
+            JsonNode metrics,
+            String fieldName
+    ) {
+        JsonNode value = metrics.path(fieldName);
+
+        if (value.isNumber()) {
+            return value.decimalValue()
+                    .setScale(
+                            4,
+                            RoundingMode.HALF_UP
+                    );
+        }
+
+        if (value.isTextual()) {
+            try {
+                return new BigDecimal(
+                        value.asText().trim()
+                ).setScale(
+                        4,
+                        RoundingMode.HALF_UP
+                );
+            } catch (NumberFormatException ignored) {
+                return BigDecimal.ZERO.setScale(4);
+            }
+        }
+
+        return BigDecimal.ZERO.setScale(4);
+    }
+
+    /**
+     * 读取运行指标中的整数。
+     */
+    private int metricInteger(
+            JsonNode metrics,
+            String fieldName
+    ) {
+        JsonNode value = metrics.path(fieldName);
+
+        if (value.isIntegralNumber()) {
+            return value.asInt();
+        }
+
+        if (value.isTextual()) {
+            try {
+                return Integer.parseInt(
+                        value.asText().trim()
+                );
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * 读取单案例的条件准确率。
+     */
+    private BigDecimal caseConstraintAccuracy(
+            RecommendationEvalCaseResult result
+    ) {
+        JsonNode hardMetrics =
+                parseStoredJsonObject(
+                        result.getHardConditionMetrics(),
+                        "hardConditionMetrics"
+                );
+
+        return metricDecimal(
+                hardMetrics,
+                "constraintAccuracy"
+        );
+    }
+
+    /**
+     * 判断单个测试案例是提升、退步还是不变。
+     */
+    private String resolveCaseChangeType(
+            RecommendationEvalCaseResult baseline,
+            RecommendationEvalCaseResult candidate,
+            BigDecimal baselineAccuracy,
+            BigDecimal candidateAccuracy
+    ) {
+        if (baseline == null) {
+            return "ADDED";
+        }
+
+        if (candidate == null) {
+            return "REMOVED";
+        }
+
+        int baselineStatusRank =
+                caseStatusRank(baseline.getStatus());
+
+        int candidateStatusRank =
+                caseStatusRank(candidate.getStatus());
+
+        if (candidateStatusRank > baselineStatusRank) {
+            return "IMPROVED";
+        }
+
+        if (candidateStatusRank < baselineStatusRank) {
+            return "REGRESSED";
+        }
+
+        int accuracyComparison =
+                candidateAccuracy.compareTo(
+                        baselineAccuracy
+                );
+
+        if (accuracyComparison > 0) {
+            return "IMPROVED";
+        }
+
+        if (accuracyComparison < 0) {
+            return "REGRESSED";
+        }
+
+        return "UNCHANGED";
+    }
+
+    /**
+     * SUCCESS优于SKIPPED，SKIPPED优于FAILED。
+     */
+    private int caseStatusRank(String status) {
+        if (status == null) {
+            return 0;
+        }
+
+        return switch (status.toUpperCase(Locale.ROOT)) {
+            case "SUCCESS" -> 2;
+            case "SKIPPED" -> 1;
+            default -> 0;
+        };
+    }
+
+    /**
+     * 计算候选值相对于基准值的变化。
+     */
+    private BigDecimal decimalChange(
+            BigDecimal baseline,
+            BigDecimal candidate
+    ) {
+        return candidate.subtract(baseline)
+                .setScale(
+                        4,
+                        RoundingMode.HALF_UP
+                );
+    }
+
+    private Integer zeroIfNull(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private String writeJson(Object value) {
