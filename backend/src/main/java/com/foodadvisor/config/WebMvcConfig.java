@@ -1,5 +1,6 @@
 package com.foodadvisor.config;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -12,10 +13,12 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     public WebMvcConfig(
             JwtInterceptor jwtInterceptor,
-            RateLimitInterceptor rateLimitInterceptor
+            ObjectProvider<RateLimitInterceptor> rateLimitInterceptorProvider
     ) {
         this.jwtInterceptor = jwtInterceptor;
-        this.rateLimitInterceptor = rateLimitInterceptor;
+        // RateLimitInterceptor may be absent when Redis is unavailable (e.g. in tests);
+        // in that case the bean is never created and we skip rate-limit registration.
+        this.rateLimitInterceptor = rateLimitInterceptorProvider.getIfAvailable();
     }
 
     @Override
@@ -35,12 +38,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/reviews/issue-categories"
                 )
                 .order(0);
-        registry.addInterceptor(rateLimitInterceptor)
-                .addPathPatterns("/api/**")
-                .excludePathPatterns(
-                        "/api/health",
-                        "/error"
-                )
-                .order(1);
+        if (rateLimitInterceptor != null) {
+            registry.addInterceptor(rateLimitInterceptor)
+                    .addPathPatterns("/api/**")
+                    .excludePathPatterns(
+                            "/api/health",
+                            "/error"
+                    )
+                    .order(1);
+        }
     }
 }

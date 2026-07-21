@@ -289,3 +289,70 @@ class GenerateReplyResponse(BaseModel):
     businessTraceId: Optional[str] = Field(default=None, description="调用追踪 ID")
     status: str = Field(default="SUCCESS", description="SUCCESS / FAILED")
     errorMessage: Optional[str] = Field(default=None, description="失败时的错误信息")
+
+
+# ============================================
+# 周边竞品对比（EPIC-02 Story 6）
+# ============================================
+
+class CompetitorMerchantData(BaseModel):
+    """
+    单个竞品商家的统计数据，由 Spring Boot 从数据库查询后传入。
+    每个字段都是真实统计数据，AI 只做文字总结，不编造数据。
+    """
+    merchantId: int = Field(description="商家ID")
+    merchantName: str = Field(description="商家名称")
+    category: str = Field(description="商家类别，如 火锅、川菜、咖啡厅")
+    cuisine: Optional[str] = Field(default=None, description="菜系")
+    address: Optional[str] = Field(default=None, description="地址")
+    averagePrice: Optional[float] = Field(default=None, description="人均消费金额")
+    rating: Optional[float] = Field(default=None, ge=0, le=5, description="综合评分（0~5）")
+    reviewCount: int = Field(default=0, ge=0, description="评价总数")
+    positiveRate: Optional[float] = Field(default=None, ge=0, le=1, description="好评率（0~1）")
+    tasteRating: Optional[float] = Field(default=None, ge=0, le=5, description="口味评分均值")
+    environmentRating: Optional[float] = Field(default=None, ge=0, le=5, description="环境评分均值")
+    serviceRating: Optional[float] = Field(default=None, ge=0, le=5, description="服务评分均值")
+    topPositiveTags: List[str] = Field(default_factory=list, description="高频正面标签（Top-5）")
+    topNegativeIssues: List[str] = Field(default_factory=list, description="主要差评问题（Top-5）")
+
+
+class CompetitorComparisonRequest(BaseModel):
+    """
+    竞品对比请求 — 由 Spring Boot 传入本店与竞品的统计数据。
+    本店为列表中第一个（isSelf=True），竞品为其余。
+    """
+    requestId: Optional[str] = Field(default=None, description="请求追踪ID")
+    merchantId: int = Field(description="发起对比的商家ID（本店）")
+    competitors: List[CompetitorMerchantData] = Field(
+        ..., min_length=2, max_length=4,
+        description="包含本店在内的商家数据列表，第一个必须是本店，总数为2~4家"
+    )
+
+
+class CompetitorSingleComparisonResult(BaseModel):
+    """单家商家的对比结果（AI 生成的文字分析）"""
+    merchantId: int
+    merchantName: str
+    strengths: List[str] = Field(default_factory=list, description="相对于竞品的优势")
+    weaknesses: List[str] = Field(default_factory=list, description="相对于竞品的短板")
+    overallAssessment: str = Field(default="", description="综合评价（1~2句）")
+
+
+class CompetitorComparisonResponse(BaseModel):
+    """
+    竞品对比响应 — AI 生成对比分析文字。
+    前端配合 Spring Boot 提供的统计数据渲染图表。
+    """
+    merchantId: int = Field(description="本店ID")
+    comparisonStatus: str = Field(default="SUCCESS", description="SUCCESS / FAILED")
+    # AI 对每家商家的分析（包含本店）
+    merchantAnalyses: List[CompetitorSingleComparisonResult] = Field(default_factory=list)
+    # 横向对比总结（2~3 句话概括本店在竞品中的定位）
+    summaryText: Optional[str] = Field(default=None, description="横向对比总结")
+    # 给本店的改进建议
+    improvementSuggestions: List[str] = Field(default_factory=list, description="基于对比差距的改进建议")
+    modelName: Optional[str] = Field(default=None)
+    modelVersion: Optional[str] = None
+    promptVersion: Optional[str] = Field(default="competitor-comparison:v1")
+    businessTraceId: Optional[str] = Field(default=None, description="AI 调用追踪ID")
+    errorMessage: Optional[str] = Field(default=None)
