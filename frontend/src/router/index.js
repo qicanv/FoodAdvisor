@@ -184,6 +184,19 @@ const routes = [
     component: () => import('../views/admin/BehaviorAnalysisView.vue'),
     meta: { requiresAuth: true, role: 'admin' },
   },
+  {
+    path: '/admin/recommendation-evaluations',
+    name: 'admin-recommendation-evaluations',
+    component: () =>
+      import(
+        '../views/admin/RecommendationEvaluationView.vue'
+      ),
+    meta: {
+      requiresAuth: true,
+      role: 'admin',
+      allowedRoles: ['ADMIN', 'OPERATOR'],
+    },
+  },
 ]
 
 const router = createRouter({
