@@ -195,6 +195,23 @@ public class AdminRecommendationEvaluationController {
     }
 
     /**
+     * 查询测试集的历史评测运行。
+     */
+    @GetMapping("/datasets/{datasetId}/runs")
+    public ApiResponse<List<RecommendationEvalRunResponse>> listRuns(
+            @PathVariable Long datasetId,
+            @RequestParam(required = false) String status,
+            HttpServletRequest request
+    ) {
+        accessGuard.requireOperatorOrAdmin(request);
+
+        return ApiResponse.success(
+                runService.listRuns(datasetId, status)
+        );
+    }
+
+
+    /**
      * 同步执行一次标准测试集评测。
      */
     @PostMapping("/datasets/{datasetId}/runs")
