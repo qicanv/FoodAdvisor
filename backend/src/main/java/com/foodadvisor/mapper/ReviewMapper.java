@@ -27,7 +27,7 @@ public interface ReviewMapper extends BaseMapper<Review> {
             "<if test='moderationStatus != null and moderationStatus != \"\"'>AND r.moderation_status = #{moderationStatus}</if> " +
             "<if test='merchantId != null'>AND r.merchant_id = #{merchantId}</if> " +
             "<if test='startTime != null'>AND r.created_at >= #{startTime}</if> " +
-            "<if test='endTime != null'>AND r.created_at <= #{endTime}</if> " +
+            "<if test='endTime != null'>AND r.created_at &lt;= #{endTime}</if> " +
             "ORDER BY r.created_at DESC " +
             "LIMIT #{limit} OFFSET #{offset}" +
             "</script>")
@@ -48,7 +48,7 @@ public interface ReviewMapper extends BaseMapper<Review> {
             "<if test='moderationStatus != null and moderationStatus != \"\"'>AND r.moderation_status = #{moderationStatus}</if> " +
             "<if test='merchantId != null'>AND r.merchant_id = #{merchantId}</if> " +
             "<if test='startTime != null'>AND r.created_at >= #{startTime}</if> " +
-            "<if test='endTime != null'>AND r.created_at <= #{endTime}</if>" +
+            "<if test='endTime != null'>AND r.created_at &lt;= #{endTime}</if>" +
             "</script>")
     Long countModerationList(
             @Param("riskLevel") String riskLevel,

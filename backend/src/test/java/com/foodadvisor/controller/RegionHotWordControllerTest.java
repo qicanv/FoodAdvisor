@@ -5,12 +5,14 @@ import com.foodadvisor.dto.RegionHotWordVO;
 import com.foodadvisor.dto.RegionHotWordVO.HotWordMerchantBrief;
 import com.foodadvisor.dto.RegionHotWordVO.RegionBriefVO;
 import com.foodadvisor.service.RegionHotWordService;
+import com.foodadvisor.config.RateLimitInterceptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.BeforeEach;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -48,6 +50,19 @@ class RegionHotWordControllerTest {
 
     @MockitoBean
     private com.foodadvisor.util.SensitiveLogSanitizer sensitiveLogSanitizer;
+
+    @MockitoBean
+    private RateLimitInterceptor rateLimitInterceptor;
+
+
+    @BeforeEach
+    void allowRequestsThroughRateLimitInterceptor() {
+        when(rateLimitInterceptor.preHandle(
+                any(),
+                any(),
+                any()
+        )).thenReturn(true);
+    }
 
     // ==================== GET /api/hot-words ====================
 
