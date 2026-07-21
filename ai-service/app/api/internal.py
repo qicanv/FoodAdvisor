@@ -9,7 +9,8 @@ FastAPI 内部接口 — 供 Spring Boot 后端调用
 - POST /internal/content/query             查询/导出处理结果
 - POST /internal/knowledge/upsert          知识向量化与存储
 - POST /internal/knowledge/deactivate      停用知识文档
-- POST /internal/search/semantic           语义检索
+- POST /internal/search/semantic                    语义检索
+- POST /internal/reviews/summary-faithfulness-test  摘要忠实性测试（EPIC-06 S3，LLM-as-Judge）
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,6 +43,8 @@ from app.models.schemas import GenerateReplyRequest, GenerateReplyResponse
 from app.services.reply_draft_service import reply_draft_service
 from app.models.schemas import CompetitorComparisonRequest, CompetitorComparisonResponse
 from app.services.competitor_comparison_service import competitor_comparison_service
+from app.models.schemas import FaithfulnessTestRequest, FaithfulnessTestResponse
+from app.services.faithfulness_test_service import faithfulness_test_service
 
 logger = logging.getLogger(__name__)
 
@@ -408,3 +411,70 @@ async def generate_competitor_comparison(request: CompetitorComparisonRequest):
         f"competitorCount={len(request.competitors) - 1}"
     )
     return await competitor_comparison_service.compare(request)
+
+
+# ---- 评论摘要忠实性测试（EPIC-06 Story 3） ----
+
+@router.post(
+    "/reviews/summary-faithfulness-test",
+    response_model=FaithfulnessTestResponse,
+)
+async def test_summary_faithfulness(request: FaithfulnessTestRequest):
+    """
+    评论摘要忠实性测试（EPIC-06 Story 3）
+
+    采用 LLM-as-Judge 模式，对已生成的商家口碑摘要进行忠实性验证。
+    将摘要中的每个声明（优点/不足/推荐菜/环境/服务/近期变化/总结文本）
+    与引用的原始评价原文进行对比，判断声明是否忠实于评价内容。
+
+    输入：
+    - summary: 已生成的 ReviewSummaryResponse（商家口碑摘要）
+    - reviews: 参与生成该摘要的原始评价列表（必须包含原文内容）
+
+    输出：
+    - overallScore: 整体忠实性得分（FAITHFUL 占比，0~1）
+    - claimResults: 每个声明的详细判定结果（FAITHFUL/UNFAITHFUL/UNCERTAIN +
+      置信度 + 详细理由）
+    - 各类计数统计（faithfulCount / unfaithfulCount / uncertainCount）
+
+    验收准则对齐：
+    1. 摘要中的每个事实性声明都能追溯到原始评价并验证一致性
+    2. 模型准确率按月记录，低于阈值时触发优化流程
+    3. 整体忠实性得分 < 0.8 时 testStatus="PARTIAL"，前端可据此展示告警
+    4. 未匹配到原文的声明标记为 UNCERTAIN（信息不足）
+    5. 服务不可用或 LLM 调用失败时返回 testStatus="FAILED"
+    """
+    if not request.reviews:
+        raise HTTPException(status_code=422, detail="评价列表不能为空")
+
+    if not request.summary:
+        raise HTTPException(status_code=422, detail="摘要结果不能为空")
+
+    logger.info(
+        f"摘要忠实性测试 merchantId={request.merchantId}, "
+        f"reviewCount={len(request.reviews)}, "
+        f"summaryStatus={request.summary.summaryStatus}"
+    )
+
+    # 摘要本身状态不是 SUCCESS 时，跳过测试直接返回
+    if request.summary.summaryStatus != "SUCCESS":
+        logger.info(
+            f"摘要状态为 {request.summary.summaryStatus}，跳过忠实性测试 "
+            f"merchantId={request.merchantId}"
+        )
+        return FaithfulnessTestResponse(
+            merchantId=request.merchantId,
+            testStatus="SUCCESS",
+            overallScore=1.0,
+            totalClaims=0,
+            faithfulCount=0,
+            unfaithfulCount=0,
+            uncertainCount=0,
+            claimResults=[],
+            summaryText=request.summary.summaryText,
+            modelName=None,
+            businessTraceId=None,
+            errorMessage=f"摘要状态为 {request.summary.summaryStatus}，无需测试",
+        )
+
+    return await faithfulness_test_service.test(request)
