@@ -36,7 +36,7 @@
             </div>
             <div class="merchant-tags">
               <span class="tag cuisine">{{ merchant.cuisine }}</span>
-              <span class="tag price">人均 ¥{{ merchant.averagePrice }}</span>
+              <span class="tag price">人均 ￥{{ merchant.averagePrice }}</span>
               <span class="tag status" :class="{ open: merchant.isOpen }">{{ merchant.isOpen ? '营业中' : '已打烊' }}</span>
             </div>
             <p class="merchant-desc">{{ merchant.description }}</p>
@@ -99,7 +99,7 @@
                 <div class="dish-tags">
                   <span v-for="(taste, i) in dish.taste" :key="i" class="dish-taste-tag">{{ taste }}</span>
                 </div>
-                <div class="dish-price">¥{{ dish.price }}</div>
+                <div class="dish-price">￥{{ dish.price }}</div>
               </div>
             </div>
           </div>

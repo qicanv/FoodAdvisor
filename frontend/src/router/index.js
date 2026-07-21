@@ -92,7 +92,7 @@ const routes = [
   {
     path: '/merchant/statistics',
     name: 'merchant-statistics',
-    component: () => import('../views/merchant/MerchantHomeView.vue'),
+    component: () => import('../views/merchant/MerchantStatisticsView.vue'),
     meta: { requiresAuth: true, role: 'merchant' },
   },
   {

@@ -60,7 +60,7 @@
           <div class="info-row">
             <div v-if="review.averageSpend" class="info-item">
               <span class="info-label">人均消费</span>
-              <span class="info-value">¥{{ review.averageSpend }}</span>
+              <span class="info-value">￥{{ review.averageSpend }}</span>
             </div>
             <div v-if="review.consumptionDate" class="info-item">
               <span class="info-label">消费日期</span>

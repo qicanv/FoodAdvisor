@@ -64,7 +64,7 @@
                 </div>
               </td>
               <td>{{ dish.category || '-' }}</td>
-              <td class="price-cell">¥{{ dish.price }}</td>
+              <td class="price-cell">￥{{ dish.price }}</td>
               <td>
                 <div class="tags-container">
                   <span v-for="tag in getTasteTags(dish)" :key="tag" class="taste-tag">{{ tag }}</span>
