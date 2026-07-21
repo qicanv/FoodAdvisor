@@ -82,6 +82,16 @@ class AnalyzeRequest(BaseModel):
     reviewVersion: int = Field(default=1, ge=1, description="评价版本号")
     content: str = Field(..., min_length=1, description="评价原文内容")
     modelVersion: Optional[str] = Field(default=None)
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+        description="Spring Boot 解析出的运行时系统提示词",
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="本次请求使用的提示词版本标签",
+    )
 
 
 class AnalyzeResponse(BaseModel):
@@ -110,6 +120,14 @@ class BatchAnalyzeRequest(BaseModel):
     """批量分析请求"""
     reviews: List[AnalyzeRequest] = Field(..., max_length=100)
     modelVersion: Optional[str] = Field(default=None)
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+    )
 
 
 class BatchAnalyzeResponse(BaseModel):
@@ -148,6 +166,16 @@ class ReviewSummaryRequest(BaseModel):
     version: int = Field(default=1, ge=1)
     reviews: List[SummaryReviewItem] = Field(default_factory=list)
     minimumReviewCount: int = Field(default=5, ge=1)
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+        description="运行时系统提示词",
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="运行时提示词版本",
+    )
 
 
 class SummaryPoint(BaseModel):
@@ -276,6 +304,16 @@ class GenerateReplyRequest(BaseModel):
     content: str = Field(..., min_length=1, description="评价正文内容")
     strategy: ReplyStrategyEnum = Field(..., description="回复策略：POSITIVE 或 NEGATIVE")
     rating: int = Field(default=3, ge=1, le=5, description="评价评分（1-5）")
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+        description="运行时系统提示词",
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="运行时提示词版本",
+    )
 
 
 class GenerateReplyResponse(BaseModel):
@@ -326,6 +364,16 @@ class CompetitorComparisonRequest(BaseModel):
     competitors: List[CompetitorMerchantData] = Field(
         ..., min_length=2, max_length=4,
         description="包含本店在内的商家数据列表，第一个必须是本店，总数为2~4家"
+    )
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+        description="运行时系统提示词",
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="运行时提示词版本",
     )
 
 

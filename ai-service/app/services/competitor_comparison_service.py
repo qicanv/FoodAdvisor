@@ -119,12 +119,23 @@ class CompetitorComparisonService:
         """
         trace_id = self._generate_trace_id()
 
+        system_prompt = (
+            request.systemPrompt
+            if request.systemPrompt and request.systemPrompt.strip()
+            else COMPETITOR_COMPARISON_PROMPT
+        )
+        prompt_version = (
+            request.promptVersion.strip()
+            if request.promptVersion and request.promptVersion.strip()
+            else "competitor-comparison:v1"
+        )
+
         # ---- 构造给 LLM 的用户消息 ----
         user_message = self._build_user_message(request)
 
         try:
             result = await llm_service.chat_json(
-                system_prompt=COMPETITOR_COMPARISON_PROMPT,
+                system_prompt=system_prompt,
                 user_message=user_message,
                 temperature=0.3,  # 适中温度，允许一定表达多样性但要忠实数据
                 max_tokens=6000,
@@ -137,6 +148,7 @@ class CompetitorComparisonService:
                 merchantId=request.merchantId,
                 comparisonStatus="FAILED",
                 modelName=f"fallback:{llm_service.model}",
+                promptVersion=prompt_version,
                 businessTraceId=trace_id,
                 errorMessage=repr(e)[:500],
             )
@@ -155,6 +167,7 @@ class CompetitorComparisonService:
             summaryText=summary_text,
             improvementSuggestions=suggestions,
             modelName=llm_service.model,
+            promptVersion=prompt_version,
             businessTraceId=trace_id,
         )
 

@@ -190,7 +190,7 @@ public class ReviewController {
         completeStage(promptStage, Map.of("reviewId", review.getId(), "promptVersion", "review-analysis:v1"),
                 null, null, null, "review-analysis:v1");
 
-        JsonNode result = traceService == null
+        JsonNode result = (traceService == null || context == null)
                 ? aiClientService.analyzeReview(review.getId(), review.getMerchantId(),
                         review.getContent(), reviewVersion)
                 : aiClientService.analyzeReview(review.getId(), review.getMerchantId(),
