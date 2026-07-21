@@ -40,6 +40,8 @@ from app.models.schemas import HighlightGenerateRequest, HighlightGenerateRespon
 from app.services.highlight_service import highlight_service
 from app.models.schemas import GenerateReplyRequest, GenerateReplyResponse
 from app.services.reply_draft_service import reply_draft_service
+from app.models.schemas import CompetitorComparisonRequest, CompetitorComparisonResponse
+from app.services.competitor_comparison_service import competitor_comparison_service
 
 logger = logging.getLogger(__name__)
 
@@ -359,3 +361,50 @@ async def generate_review_reply(request: GenerateReplyRequest):
         f"strategy={request.strategy.value}, rating={request.rating}"
     )
     return await reply_draft_service.generate(request)
+
+
+# ---- 周边竞品对比（EPIC-02 Story 6） ----
+
+@router.post(
+    "/merchants/competitor-comparison",
+    response_model=CompetitorComparisonResponse,
+)
+async def generate_competitor_comparison(request: CompetitorComparisonRequest):
+    """
+    周边竞品对比分析（EPIC-02 Story 6）
+
+    由 Spring Boot 传入本店和竞品的统计数据，AI 生成：
+    - 每家商家的优势/短板分析
+    - 横向对比总结（本店在竞品中的定位）
+    - 基于数据差距的改进建议
+
+    验收准则对齐：
+    1. 对比维度至少包括价格、评分、好评率、评价数量（由 Spring Boot 提供）
+    2. 明显差异时突出优势/短板，无明显差异时明确说明
+    3. 所有分析基于传入的真实统计数据，AI 不编造数值
+    4. 竞品数量限制 2~4 家（含本店）
+    """
+    if len(request.competitors) < 2:
+        raise HTTPException(
+            status_code=422,
+            detail="至少需要本店 + 1家竞品（共2家）才能进行对比"
+        )
+    if len(request.competitors) > 4:
+        raise HTTPException(
+            status_code=422,
+            detail="最多支持4家商家（本店 + 最多3家竞品）"
+        )
+
+    # 校验本店在列表中
+    self_ids = [c.merchantId for c in request.competitors if c.merchantId == request.merchantId]
+    if not self_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="竞品列表中必须包含本店（merchantId 与请求中的 merchantId 一致）"
+        )
+
+    logger.info(
+        f"竞品对比分析 merchantId={request.merchantId}, "
+        f"competitorCount={len(request.competitors) - 1}"
+    )
+    return await competitor_comparison_service.compare(request)

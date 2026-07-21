@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
@@ -30,13 +31,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private final PathMatcher pathMatcher = new AntPathMatcher();
 
     public RateLimitInterceptor(
-            RateLimitProperties properties,
-            RateLimitService rateLimitService,
-            RateLimitAuditService rateLimitAuditService
+            ObjectProvider<RateLimitProperties> propertiesProvider,
+            ObjectProvider<RateLimitService> rateLimitServiceProvider,
+            ObjectProvider<RateLimitAuditService> rateLimitAuditServiceProvider
     ) {
-        this.properties = properties;
-        this.rateLimitService = rateLimitService;
-        this.rateLimitAuditService = rateLimitAuditService;
+        this.properties = propertiesProvider.getIfAvailable();
+        this.rateLimitService = rateLimitServiceProvider.getIfAvailable();
+        this.rateLimitAuditService = rateLimitAuditServiceProvider.getIfAvailable();
     }
 
     @Override
@@ -46,6 +47,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             Object handler
     ) {
         if (properties == null || !properties.isEnabled()) {
+            return true;
+        }
+
+        if (rateLimitService == null) {
             return true;
         }
 

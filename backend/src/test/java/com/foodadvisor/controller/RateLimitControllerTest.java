@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -58,9 +59,9 @@ class RateLimitControllerTest {
         properties.getRules().put("constraint-extract-user", rule);
         RateLimitInterceptor rateLimitInterceptor =
                 new RateLimitInterceptor(
-                        properties,
-                        rateLimitService,
-                        rateLimitAuditService
+                        providerOf(properties),
+                        providerOf(rateLimitService),
+                        providerOf(rateLimitAuditService)
                 );
 
         mockMvc = MockMvcBuilders
@@ -145,5 +146,18 @@ class RateLimitControllerTest {
         rule.setMaxRequests(2);
         rule.setWindowSeconds(60);
         return rule;
+    }
+
+    private static <T> ObjectProvider<T> providerOf(T value) {
+        return new ObjectProvider<>() {
+            @Override
+            public T getObject() { return value; }
+            @Override
+            public T getIfAvailable() { return value; }
+            @Override
+            public T getIfUnique() { return value; }
+            @Override
+            public T getObject(Object... args) { return value; }
+        };
     }
 }

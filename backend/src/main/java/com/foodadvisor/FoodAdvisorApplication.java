@@ -1,10 +1,13 @@
 package com.foodadvisor;
 
+import com.foodadvisor.config.RateLimitProperties;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication
+@EnableConfigurationProperties(RateLimitProperties.class)
 public class FoodAdvisorApplication {
 
     public static void main(String[] args) {
