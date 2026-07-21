@@ -73,8 +73,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, provide } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { getMyMerchants } from '../api/merchantConsole'
 
 const router = useRouter()
 const route = useRoute()
@@ -98,13 +99,49 @@ const toggleSidebar = () => {
 
 const currentPath = computed(() => route.path)
 
-const userInfo = ref(() => {
+const userInfo = computed(() => {
   const user = localStorage.getItem('user')
   return user ? JSON.parse(user) : {}
 })
 
+// 店铺选择器
+const myStores = ref([])
+const activeStoreId = ref(null)
+
+provide('activeMerchantId', activeStoreId)
+
+const loadStores = async () => {
+  try {
+    const response = await getMyMerchants()
+    if (response.success && response.data) {
+      myStores.value = response.data
+      if (myStores.value.length > 0) {
+        const savedId = localStorage.getItem('activeMerchantId')
+        const savedIdNum = savedId ? Number(savedId) : null
+        const exists = myStores.value.some(s => s.id === savedIdNum)
+        if (exists) {
+          activeStoreId.value = savedIdNum
+        } else if (!activeStoreId.value) {
+          activeStoreId.value = myStores.value[0].id
+        }
+      }
+    }
+  } catch (error) {
+    console.error('加载店铺列表失败:', error)
+  }
+}
+
+const onStoreChange = () => {
+  if (activeStoreId.value) {
+    localStorage.setItem('activeMerchantId', String(activeStoreId.value))
+  }
+}
+
+defineExpose({ loadStores, activeStoreId })
+
 const navItems = [
   { path: '/merchant/home', label: '店铺首页', iconViewBox: '0 0 24 24', iconPath: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z M9 22l3-3 3 3' },
+  { path: '/merchant/stores', label: '店铺管理', iconViewBox: '0 0 24 24', iconPath: 'M8 21l1-17a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4l1 17' },
   { path: '/merchant/dishes', label: '菜品管理', iconViewBox: '0 0 24 24', iconPath: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 7a4 4 0 1 1 0 8 4 4 0 0 1 0-8z' },
   { path: '/merchant/statistics', label: '经营统计', iconViewBox: '0 0 24 24', iconPath: 'M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z' },
 ]
@@ -113,8 +150,13 @@ const handleLogout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
   localStorage.removeItem('userRole')
+  localStorage.removeItem('activeMerchantId')
   router.push('/merchant')
 }
+
+onMounted(() => {
+  loadStores()
+})
 </script>
 
 <style scoped>
