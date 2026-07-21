@@ -4,6 +4,7 @@ import com.foodadvisor.config.RateLimitKeyType;
 import com.foodadvisor.config.RateLimitProperties;
 import com.foodadvisor.dto.ratelimit.RateLimitDecision;
 import com.foodadvisor.exception.ApiException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 @Service
+@ConditionalOnBean(StringRedisTemplate.class)
 public class RateLimitService {
     private static final String FIXED_WINDOW_SCRIPT = """
             local current = redis.call('INCR', KEYS[1])
