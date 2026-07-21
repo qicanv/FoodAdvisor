@@ -149,6 +149,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
   },
   {
+    path: '/admin/reports',
+    name: 'admin-reports',
+    component: () => import('../views/admin/ReportReviewView.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
+  },
+  {
     path: '/admin/merchant-statistics',
     name: 'admin-merchant-statistics',
     component: () => import('../views/admin/MerchantStatistics.vue'),
