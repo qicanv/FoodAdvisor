@@ -368,6 +368,70 @@ public class AIClientService {
     }
 
     /**
+     * 调用周边竞品对比分析接口（EPIC-02 Story 6）
+     *
+     * 将本店和竞品的统计数据发送给 AI 服务，
+     * 由大模型生成对比分析文字（优势/短板/总结/建议）。
+     *
+     * 统计数据的查询和组装由 CompetitorComparisonService 负责，
+     * AI 服务只负责基于数据生成自然语言分析，不修改数值。
+     *
+     * @param merchantId  发起对比的本店 ID
+     * @param competitors 商家统计数据列表（第一个为本店，其余为竞品）
+     * @return AI 服务返回的 JSON，包含 merchantAnalyses, summaryText, improvementSuggestions
+     */
+    public JsonNode generateCompetitorComparison(
+            Long merchantId,
+            List<Map<String, Object>> competitors
+    ) {
+        String url =
+                aiServiceBaseUrl
+                        + "/internal/merchants/competitor-comparison";
+
+        Map<String, Object> request = Map.of(
+                "requestId",
+                "competitor-" + merchantId + "-"
+                        + System.currentTimeMillis(),
+                "merchantId",
+                merchantId,
+                "competitors",
+                competitors
+        );
+
+        return post(
+                url,
+                request,
+                "COMPETITOR_ANALYSIS"
+        );
+    }
+
+    /**
+     * 调用周边竞品对比分析接口（带追踪上下文）。
+     *
+     * @see #generateCompetitorComparison(Long, List)
+     */
+    public JsonNode generateCompetitorComparison(
+            Long merchantId,
+            List<Map<String, Object>> competitors,
+            AiTraceContext context
+    ) {
+        Map<String, Object> request = new java.util.LinkedHashMap<>();
+        request.put("requestId", context.requestId() == null
+                ? "competitor-" + merchantId + "-" + System.currentTimeMillis()
+                : context.requestId());
+        request.put("merchantId", merchantId);
+        request.put("competitors", competitors);
+
+        return post(
+                aiServiceBaseUrl + "/internal/merchants/competitor-comparison",
+                request,
+                "COMPETITOR_ANALYSIS",
+                context,
+                "MODEL_CALL"
+        );
+    }
+
+    /**
      * 健康检查
      */
     public JsonNode analyzeReview(
