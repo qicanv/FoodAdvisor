@@ -131,6 +131,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin' },
   },
   {
+    path: '/admin/ai-monitor',
+    name: 'admin-ai-monitor',
+    component: () => import('../views/admin/AiMonitorView.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
+  {
     path: '/admin/dashboard',
     name: 'admin-dashboard',
     component: () => import('../views/admin/OperationsDashboard.vue'),

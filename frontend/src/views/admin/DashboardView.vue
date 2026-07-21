@@ -245,7 +245,7 @@ const stats = ref([
   },
 ])
 
-const QUICK_ACTIONS_VERSION = '9'
+const QUICK_ACTIONS_VERSION = '13'
 
 const defaultQuickActions = [
   {
@@ -295,7 +295,14 @@ const defaultQuickActions = [
     description: '审核系统标记的可疑评价和内容',
     path: '/admin/moderation',
     emoji: '🔍',
-    bgClass: 'action-card-orange',
+    bgClass: 'action-card-rose',
+  },
+  {
+    label: '推荐测评',
+    description: '管理AI推荐算法测评任务',
+    path: '/admin/evaluation',
+    emoji: '🎯',
+    bgClass: 'action-card-amber',
   },
   {
     label: 'AI请求追踪',
@@ -305,11 +312,25 @@ const defaultQuickActions = [
     bgClass: 'action-card-lime',
   },
   {
+    label: 'AI监控',
+    description: '监控AI功能运行状态和性能指标',
+    path: '/admin/ai-monitor',
+    emoji: '📡',
+    bgClass: 'action-card-indigo',
+  },
+  {
+    label: '举报审核',
+    description: '审核用户举报的违规内容',
+    path: '/admin/reports',
+    emoji: '🚨',
+    bgClass: 'action-card-pink',
+  },
+  {
     label: '行为分析',
     description: '分析用户搜索、点击和反馈行为',
     path: '/admin/behavior-analysis',
     emoji: '📊',
-    bgClass: 'action-card-cyan',
+    bgClass: 'action-card-teal',
   },
 ]
 
@@ -365,9 +386,12 @@ const availableActions = computed(() => {
     { label: '专题管理', description: '管理分类标签和探店专题', path: '/admin/topics', emoji: '📚', bgClass: 'action-card-pink' },
     { label: '食客管理', description: '管理平台注册用户和食客信息', path: '/admin/diners', emoji: '👥', bgClass: 'action-card-red' },
     { label: '审计日志', description: '查询系统和重要操作的审计日志', path: '/admin/logs', emoji: '📋', bgClass: 'action-card-teal' },
-    { label: '内容审核', description: '审核系统标记的可疑评价和内容', path: '/admin/moderation', emoji: '🔍', bgClass: 'action-card-orange' },
+    { label: '内容审核', description: '审核系统标记的可疑评价和内容', path: '/admin/moderation', emoji: '🔍', bgClass: 'action-card-rose' },
+    { label: '推荐测评', description: '管理AI推荐算法测评任务', path: '/admin/evaluation', emoji: '🎯', bgClass: 'action-card-amber' },
     { label: 'AI请求追踪', description: '追踪AI服务的请求和响应详情', path: '/admin/ai-traces', emoji: '🔬', bgClass: 'action-card-lime' },
-    { label: '行为分析', description: '分析用户搜索、点击和反馈行为', path: '/admin/behavior-analysis', emoji: '📊', bgClass: 'action-card-indigo' },
+    { label: 'AI监控', description: '监控AI功能运行状态和性能指标', path: '/admin/ai-monitor', emoji: '📡', bgClass: 'action-card-indigo' },
+    { label: '举报审核', description: '审核用户举报的违规内容', path: '/admin/reports', emoji: '🚨', bgClass: 'action-card-pink' },
+    { label: '行为分析', description: '分析用户搜索、点击和反馈行为', path: '/admin/behavior-analysis', emoji: '📊', bgClass: 'action-card-teal' },
   ].filter(a => !usedLabels.includes(a.label))
 })
 
@@ -830,6 +854,16 @@ onMounted(() => {
 .action-card-olive {
   background: linear-gradient(135deg, #558b2f 0%, #689f38 100%);
   border: 1px solid rgba(85, 139, 47, 0.3);
+}
+
+.action-card-rose {
+  background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%);
+  border: 1px solid rgba(225, 29, 72, 0.3);
+}
+
+.action-card-amber {
+  background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+  border: 1px solid rgba(217, 119, 6, 0.3);
 }
 
 .empty-actions {
