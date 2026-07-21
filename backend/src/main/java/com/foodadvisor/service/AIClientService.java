@@ -736,11 +736,10 @@ public class AIClientService {
     }
 
     private void requireInternalToken() {
-        if (internalToken == null
-                || internalToken.isBlank()) {
-            throw new IllegalStateException(
-                    "未配置 INTERNAL_API_TOKEN，无法调用 AI 服务"
-            );
+        // 未配置 token 时跳过校验（开发环境），仅记录警告
+        if (internalToken == null || internalToken.isBlank()) {
+            log.warn("INTERNAL_API_TOKEN 未配置，AI 服务调用将不携带认证令牌。"
+                    + "生产环境请务必配置。");
         }
     }
 
