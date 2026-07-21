@@ -26,3 +26,4 @@ $canonical_preflight$;
 \ir 01_rate_limit_events.inc
 \ir 01_region_hot_words.inc
 \ir 01_ai_request_tracing.inc
+\ir 01_recommendation_evaluation.inc
