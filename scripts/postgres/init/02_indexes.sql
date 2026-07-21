@@ -411,3 +411,25 @@ CREATE INDEX IF NOT EXISTS idx_recommendation_eval_case_results_relevance
 
 CREATE INDEX IF NOT EXISTS idx_recommendation_eval_case_results_created_at
     ON recommendation_eval_case_results(created_at DESC);
+
+-- ============================================================
+-- Prompt version management indexes
+-- ============================================================
+
+CREATE INDEX IF NOT EXISTS idx_prompt_definitions_status
+    ON prompt_definitions(status);
+
+CREATE INDEX IF NOT EXISTS idx_prompt_definitions_active_version
+    ON prompt_definitions(active_version_id);
+
+CREATE INDEX IF NOT EXISTS idx_prompt_versions_definition
+    ON prompt_versions(prompt_definition_id, version_no DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prompt_versions_created_at
+    ON prompt_versions(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prompt_activation_definition
+    ON prompt_activation_logs(prompt_definition_id, operated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_prompt_activation_to_version
+    ON prompt_activation_logs(to_version_id);
