@@ -8,9 +8,9 @@ import com.foodadvisor.service.RateLimitService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -48,9 +48,36 @@ class RateLimitInterceptorTest {
         properties = new RateLimitProperties();
         properties.setRules(new LinkedHashMap<>());
         interceptor = new RateLimitInterceptor(
-                properties,
-                rateLimitService,
-                rateLimitAuditService
+                new ObjectProvider<>() {
+                    @Override
+                    public RateLimitProperties getObject() { return properties; }
+                    @Override
+                    public RateLimitProperties getIfAvailable() { return properties; }
+                    @Override
+                    public RateLimitProperties getIfUnique() { return properties; }
+                    @Override
+                    public RateLimitProperties getObject(Object... args) { return properties; }
+                },
+                new ObjectProvider<>() {
+                    @Override
+                    public RateLimitService getObject() { return rateLimitService; }
+                    @Override
+                    public RateLimitService getIfAvailable() { return rateLimitService; }
+                    @Override
+                    public RateLimitService getIfUnique() { return rateLimitService; }
+                    @Override
+                    public RateLimitService getObject(Object... args) { return rateLimitService; }
+                },
+                new ObjectProvider<>() {
+                    @Override
+                    public RateLimitAuditService getObject() { return rateLimitAuditService; }
+                    @Override
+                    public RateLimitAuditService getIfAvailable() { return rateLimitAuditService; }
+                    @Override
+                    public RateLimitAuditService getIfUnique() { return rateLimitAuditService; }
+                    @Override
+                    public RateLimitAuditService getObject(Object... args) { return rateLimitAuditService; }
+                }
         );
     }
 
