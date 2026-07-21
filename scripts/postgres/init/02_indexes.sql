@@ -373,3 +373,41 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_review_images_review_sort_active
 
 CREATE INDEX IF NOT EXISTS idx_review_images_review
     ON review_images(review_id, status, sort_order);
+
+
+-- ============================================================
+-- 推荐结果评测模块索引
+-- ============================================================
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_datasets_status
+    ON recommendation_eval_datasets(status);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_datasets_created_at
+    ON recommendation_eval_datasets(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_cases_dataset
+    ON recommendation_eval_cases(dataset_id, enabled, sequence_no);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_runs_dataset
+    ON recommendation_eval_runs(dataset_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_runs_status
+    ON recommendation_eval_runs(status);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_runs_created_at
+    ON recommendation_eval_runs(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_case_results_run
+    ON recommendation_eval_case_results(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_case_results_case
+    ON recommendation_eval_case_results(case_id);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_case_results_status
+    ON recommendation_eval_case_results(status);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_case_results_relevance
+    ON recommendation_eval_case_results(relevance_label);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_eval_case_results_created_at
+    ON recommendation_eval_case_results(created_at DESC);

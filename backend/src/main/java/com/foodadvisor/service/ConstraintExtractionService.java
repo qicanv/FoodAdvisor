@@ -84,7 +84,8 @@ public class ConstraintExtractionService {
             Pattern.compile(
                     "(?:人均|每人|每个人)"
                             + "\\s*(?:预算)?"
-                            + "\\s*(?:是|为|改成|改为|调整为|换成)?"
+                            + "\\s*(?:是|为|不超过|不高于|最多|至多|最高"
+                            + "|控制在|改成|改为|调整为|换成)?"
                             + "\\s*(" + NUMBER_TOKEN + ")"
                             + "\\s*(?:元|块)?"
             );
@@ -202,6 +203,17 @@ public class ConstraintExtractionService {
                     "(?:评分\\s*)?"
                             + "([0-5](?:\\.\\d+)?)"
                             + "\\s*分"
+                            + "\\s*(?:以上|及以上|起)"
+            );
+
+    /**
+     * 带有明确“评分”前缀、但数字后没有“分”的表达：
+     * 评分4.5以上、评分在4分以上。
+     */
+    private static final Pattern MIN_RATING_SCORE_SUFFIX_PATTERN =
+            Pattern.compile(
+                    "评分\\s*(?:在)?\\s*"
+                            + "([0-5](?:\\.\\d+)?)"
                             + "\\s*(?:以上|及以上|起)"
             );
 
@@ -466,6 +478,38 @@ public class ConstraintExtractionService {
                 aiExtraction.degraded(),
                 aiExtraction.modelName(),
                 aiExtraction.promptVersion(),
+                detectConflicts(message)
+        );
+    }
+
+    /**
+     * 为离线评测准备无状态条件提取结果。
+     *
+     * 不校验真实会话，不读取或修改会话状态，
+     * 不保存聊天消息、条件提取记录或会话快照。
+     *
+     * 当前使用正式业务中的规则降级提取器，
+     * 作为可重复、确定性的评测基线。
+     */
+    public PreparedExtraction prepareEvaluationExtraction(
+            String message
+    ) {
+        if (message == null || message.isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "MESSAGE_REQUIRED",
+                    "message不能为空"
+            );
+        }
+
+        return new PreparedExtraction(
+                extractByRules(message),
+                List.of(),
+                "MERCHANT_RECOMMENDATION",
+                "RULE_FALLBACK",
+                true,
+                null,
+                "NOT_APPLICABLE",
                 detectConflicts(message)
         );
     }
@@ -1427,6 +1471,15 @@ public class ConstraintExtractionService {
                 rating = parseNumberAsBigDecimal(
                         suffixMatcher.group(1)
                 );
+            } else {
+                Matcher scoreSuffixMatcher =
+                        MIN_RATING_SCORE_SUFFIX_PATTERN.matcher(message);
+
+                if (scoreSuffixMatcher.find()) {
+                    rating = parseNumberAsBigDecimal(
+                            scoreSuffixMatcher.group(1)
+                    );
+                }
             }
         }
 
