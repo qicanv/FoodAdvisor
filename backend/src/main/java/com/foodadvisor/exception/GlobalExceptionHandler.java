@@ -12,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -165,6 +166,33 @@ public class GlobalExceptionHandler {
                 "INVALID_REQUEST",
                 exception
         );
+        return result;
+    }
+
+    /**
+     * 处理请求体缺失、JSON 格式错误或字段类型无法转换。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>>
+    handleMessageNotReadable(
+            HttpMessageNotReadableException exception,
+            HttpServletRequest request
+    ) {
+        ResponseEntity<ApiResponse<Void>> result =
+                ResponseEntity
+                        .status(HttpStatus.BAD_REQUEST)
+                        .body(ApiResponse.failure(
+                                "INVALID_REQUEST",
+                                "Request body is missing or malformed"
+                        ));
+
+        recordApiException(
+                request,
+                "WARN",
+                "INVALID_REQUEST",
+                exception
+        );
+
         return result;
     }
 
