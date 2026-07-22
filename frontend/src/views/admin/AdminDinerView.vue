@@ -15,8 +15,8 @@
           <select v-model="statusFilter" class="filter-select" @change="loadDiners">
             <option value="">全部状态</option>
             <option value="ACTIVE">活跃</option>
-            <option value="INACTIVE">不活跃</option>
-            <option value="SUSPENDED">已暂停</option>
+            <option value="DISABLED">不活跃</option>
+            <option value="LOCKED">已暂停</option>
           </select>
         </div>
         <button class="add-btn" @click="showAddModal = true">
@@ -114,6 +114,193 @@
       </div>
     </div>
 
+    <div v-if="showDetailModal" class="modal-overlay" @click.self="closeDetailModal">
+      <div class="detail-modal-content">
+        <div class="detail-modal-header">
+          <div class="detail-header-left">
+            <div class="avatar">
+              <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#1890ff" stroke-width="1.5">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            </div>
+            <div class="header-info">
+              <h3>{{ selectedDiner?.nickname }}</h3>
+              <p class="username">@{{ selectedDiner?.username }}</p>
+            </div>
+          </div>
+          <button class="modal-close" @click="closeDetailModal">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="detail-modal-body">
+          <div class="detail-section">
+            <h4 class="section-title">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              基本信息
+            </h4>
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-label">用户ID</span>
+                <span class="info-value">{{ selectedDiner?.id }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">用户名</span>
+                <span class="info-value">{{ selectedDiner?.username }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">昵称</span>
+                <span class="info-value">{{ selectedDiner?.nickname }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">手机号</span>
+                <span class="info-value">{{ selectedDiner?.phone }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">邮箱</span>
+                <span class="info-value">{{ selectedDiner?.email }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">状态</span>
+                <span :class="['info-value', 'status', selectedDiner?.status.toLowerCase()]">
+                  {{ getStatusText(selectedDiner?.status) }}
+                </span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">注册时间</span>
+                <span class="info-value">{{ selectedDiner?.createdAt }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">更新时间</span>
+                <span class="info-value">{{ selectedDiner?.updatedAt }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">最近登录</span>
+                <span class="info-value">{{ selectedDiner?.lastLoginTime }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <h4 class="section-title">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+              </svg>
+              统计数据
+            </h4>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-icon stat-icon-blue">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </div>
+                <div class="stat-content">
+                  <span class="stat-value">{{ selectedDiner?.reviewCount || 0 }}</span>
+                  <span class="stat-label">评价数量</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon stat-icon-green">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                  </svg>
+                </div>
+                <div class="stat-content">
+                  <span class="stat-value">{{ selectedDiner?.avgRating || 0.0 }}</span>
+                  <span class="stat-label">平均评分</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon stat-icon-orange">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    <path d="M9 12l2 2 4-4"></path>
+                  </svg>
+                </div>
+                <div class="stat-content">
+                  <span class="stat-value">{{ selectedDiner?.likeCount || 0 }}</span>
+                  <span class="stat-label">获赞数量</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon stat-icon-purple">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                  </svg>
+                </div>
+                <div class="stat-content">
+                  <span class="stat-value">{{ selectedDiner?.followCount || 0 }}</span>
+                  <span class="stat-label">关注商家</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <h4 class="section-title">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              最近活动
+            </h4>
+            <div v-if="selectedDiner?.recentActivities?.length" class="activity-list">
+              <div v-for="(activity, index) in selectedDiner.recentActivities" :key="index" class="activity-item">
+                <div :class="['activity-icon', activity.type]">
+                  {{ getActivityIcon(activity.type) }}
+                </div>
+                <div class="activity-content">
+                  <p class="activity-text">{{ activity.content }}</p>
+                  <span class="activity-time">{{ activity.time }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-activity">
+              <p>暂无活动记录</p>
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <h4 class="section-title">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              </svg>
+              评价统计
+            </h4>
+            <div class="rating-distribution">
+              <div v-for="rating in [5, 4, 3, 2, 1]" :key="rating" class="rating-bar">
+                <span class="rating-label">{{ rating }}星</span>
+                <div class="rating-bar-container">
+                  <div 
+                    class="rating-bar-fill" 
+                    :style="{ width: getRatingPercent(rating) + '%' }"
+                  ></div>
+                </div>
+                <span class="rating-count">{{ getRatingCount(rating) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-modal-footer">
+          <button class="btn btn-secondary" @click="closeDetailModal">关闭</button>
+          <button class="btn btn-primary" @click="editDiner(selectedDiner)">编辑信息</button>
+          <button 
+            :class="['btn', selectedDiner?.status === 'ACTIVE' ? 'btn-danger' : 'btn-success']" 
+            @click="toggleStatus(selectedDiner)"
+          >
+            {{ selectedDiner?.status === 'ACTIVE' ? '暂停账号' : '激活账号' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showAddModal" class="modal-overlay" @click.self="closeModal">
       <div class="modal-content">
         <div class="modal-header">
@@ -145,14 +332,37 @@
             <label>状态</label>
             <select v-model="formData.status" class="form-select">
               <option value="ACTIVE">活跃</option>
-              <option value="INACTIVE">不活跃</option>
-              <option value="SUSPENDED">已暂停</option>
+              <option value="DISABLED">不活跃</option>
+              <option value="LOCKED">已暂停</option>
             </select>
           </div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="closeModal">取消</button>
           <button class="btn btn-primary" @click="saveDiner">{{ isEditing ? '保存修改' : '确认添加' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showConfirmModal" class="modal-overlay" @click.self="closeConfirmModal">
+      <div class="confirm-modal-content">
+        <div class="confirm-modal-header">
+          <h3>{{ confirmTitle }}</h3>
+        </div>
+        <div class="confirm-modal-body">
+          <div class="confirm-icon">{{ confirmTitle.includes('失败') ? '❌' : confirmTitle.includes('暂停') ? '⚠️' : '✅' }}</div>
+          <p v-html="confirmMessage"></p>
+        </div>
+        <div class="confirm-modal-footer">
+          <button v-if="confirmAction" class="btn btn-secondary" @click="closeConfirmModal">取消</button>
+          <button 
+            v-if="confirmAction" 
+            :class="['btn', confirmTitle.includes('暂停') ? 'btn-danger' : 'btn-primary']" 
+            @click="confirmAction"
+          >
+            {{ confirmTitle.includes('暂停') ? '确认暂停' : '确认' }}
+          </button>
+          <button v-else class="btn btn-primary" @click="closeConfirmModal">确定</button>
         </div>
       </div>
     </div>
@@ -163,18 +373,113 @@
 import { ref, computed, onMounted } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
 
+const STORAGE_KEY = 'foodadvisor_diners'
+const STORAGE_VERSION = '2.0'
+
 const searchKeyword = ref('')
 const statusFilter = ref('')
 const showAddModal = ref(false)
+const showDetailModal = ref(false)
+const showConfirmModal = ref(false)
 const isEditing = ref(false)
+const selectedDiner = ref(null)
+const confirmAction = ref(null)
+const confirmTitle = ref('')
+const confirmMessage = ref('')
 
-const diners = ref([
-  { id: 1, username: 'foodie001', nickname: '美食达人小王', phone: '138****0001', email: 'foodie001@example.com', registerTime: '2026-01-15 10:30', lastLoginTime: '2026-07-18 09:15', reviewCount: 23, status: 'ACTIVE' },
-  { id: 2, username: 'reviewking', nickname: '评价小王子', phone: '139****0002', email: 'reviewking@example.com', registerTime: '2026-02-20 14:20', lastLoginTime: '2026-07-17 16:45', reviewCount: 56, status: 'ACTIVE' },
-  { id: 3, username: 'hungrycat', nickname: '馋嘴猫', phone: '137****0003', email: 'hungrycat@example.com', registerTime: '2026-03-10 09:00', lastLoginTime: '2026-07-16 11:30', reviewCount: 12, status: 'INACTIVE' },
-  { id: 4, username: 'dinnerlover', nickname: '晚餐爱好者', phone: '136****0004', email: 'dinnerlover@example.com', registerTime: '2026-04-05 15:45', lastLoginTime: '2026-07-15 20:00', reviewCount: 8, status: 'ACTIVE' },
-  { id: 5, username: 'foodcritic', nickname: '美食评论家', phone: '135****0005', email: 'foodcritic@example.com', registerTime: '2026-05-12 11:15', lastLoginTime: '2026-07-10 14:30', reviewCount: 45, status: 'SUSPENDED' },
-])
+const generateMockDiners = () => {
+  const now = new Date()
+  const formatDate = (date) => {
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  const diners = []
+  const usernames = ['foodie001', 'reviewking', 'hungrycat', 'dinnerlover', 'foodcritic', 'tasteexplorer', 'gourmetgirl', 'foodhunter', 'yummyfan', 'eatwell']
+  const nicknames = ['美食达人小王', '评价小王子', '馋嘴猫', '晚餐爱好者', '美食评论家', '味蕾探险家', '美食女孩', '吃货猎人', '美味粉丝', '吃得好']
+  
+  for (let i = 1; i <= 10; i++) {
+    const daysAgo = Math.floor(Math.random() * 180)
+    const registerDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000)
+    const lastLoginDays = Math.floor(Math.random() * 7)
+    const lastLoginDate = new Date(now.getTime() - lastLoginDays * 24 * 60 * 60 * 1000)
+    
+    const reviewCount = Math.floor(Math.random() * 100)
+    const ratingDist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
+    for (let j = 0; j < reviewCount; j++) {
+      ratingDist[Math.ceil(Math.random() * 5)]++
+    }
+    
+    const activities = []
+    const activityTypes = ['review', 'like', 'follow', 'search', 'view']
+    const activityContents = {
+      review: ['发布了评价', '发表了新评论', '分享了用餐体验'],
+      like: ['点赞了一条评价', '喜欢了一个餐厅'],
+      follow: ['关注了新商家', '订阅了店铺'],
+      search: ['搜索了美食', '查找了餐厅'],
+      view: ['浏览了餐厅详情', '查看了评价']
+    }
+    
+    for (let j = 0; j < Math.floor(Math.random() * 5) + 2; j++) {
+      const type = activityTypes[Math.floor(Math.random() * activityTypes.length)]
+      activities.push({
+        type,
+        content: `${nicknames[i - 1]}${activityContents[type][Math.floor(Math.random() * activityContents[type].length)]}`,
+        time: formatDate(new Date(now.getTime() - j * 24 * 60 * 60 * 1000 - Math.floor(Math.random() * 24 * 60 * 60 * 1000)))
+      })
+    }
+    
+    diners.push({
+      id: i,
+      username: usernames[i - 1],
+      nickname: nicknames[i - 1],
+      phone: `13${Math.floor(Math.random() * 10)}${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`,
+      email: `${usernames[i - 1]}@example.com`,
+      role: 'USER',
+      status: i <= 6 ? 'ACTIVE' : (i <= 8 ? 'DISABLED' : 'LOCKED'),
+      createdAt: formatDate(registerDate),
+      updatedAt: formatDate(new Date(now.getTime() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000)),
+      lastLoginTime: lastLoginDays === 0 ? '今天' : formatDate(lastLoginDate),
+      reviewCount,
+      avgRating: (Math.random() * 2 + 3).toFixed(1),
+      likeCount: Math.floor(Math.random() * 500),
+      followCount: Math.floor(Math.random() * 50),
+      ratingDistribution: ratingDist,
+      recentActivities: activities
+    })
+  }
+  
+  return diners
+}
+
+const loadFromStorage = () => {
+  const saved = localStorage.getItem(STORAGE_KEY)
+  const version = localStorage.getItem(`${STORAGE_KEY}_version`)
+  
+  if (saved && version === STORAGE_VERSION) {
+    try {
+      return JSON.parse(saved)
+    } catch {
+      return generateMockDiners()
+    }
+  } else {
+    const diners = generateMockDiners()
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(diners))
+    localStorage.setItem(`${STORAGE_KEY}_version`, STORAGE_VERSION)
+    return diners
+  }
+}
+
+const saveToStorage = (data) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+}
+
+const diners = ref(loadFromStorage())
 
 const formData = ref({
   id: null,
@@ -194,27 +499,82 @@ const loadDiners = () => {
 const getStatusText = (status) => {
   switch (status) {
     case 'ACTIVE': return '活跃'
-    case 'INACTIVE': return '不活跃'
-    case 'SUSPENDED': return '已暂停'
+    case 'DISABLED': return '不活跃'
+    case 'LOCKED': return '已暂停'
     default: return status
   }
 }
 
+const openConfirmModal = (title, message, action) => {
+  confirmTitle.value = title
+  confirmMessage.value = message
+  confirmAction.value = action
+  showConfirmModal.value = true
+}
+
+const closeConfirmModal = () => {
+  showConfirmModal.value = false
+  confirmAction.value = null
+}
+
+const getActivityIcon = (type) => {
+  const icons = {
+    review: '📝',
+    like: '👍',
+    follow: '👤',
+    search: '🔍',
+    view: '👀'
+  }
+  return icons[type] || '📌'
+}
+
+const getRatingPercent = (rating) => {
+  if (!selectedDiner.value?.ratingDistribution) return 0
+  const total = selectedDiner.value.reviewCount || 1
+  return Math.round((selectedDiner.value.ratingDistribution[rating] || 0) / total * 100)
+}
+
+const getRatingCount = (rating) => {
+  if (!selectedDiner.value?.ratingDistribution) return 0
+  return selectedDiner.value.ratingDistribution[rating] || 0
+}
+
 const viewDiner = (diner) => {
-  alert(`查看食客: ${diner.nickname}`)
+  selectedDiner.value = diner
+  showDetailModal.value = true
 }
 
 const editDiner = (diner) => {
   isEditing.value = true
   formData.value = { ...diner }
   showAddModal.value = true
+  showDetailModal.value = false
 }
 
 const toggleStatus = (diner) => {
-  const newStatus = diner.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'
-  if (confirm(`${diner.status === 'ACTIVE' ? '暂停' : '激活'}食客 ${diner.nickname}？`)) {
-    diner.status = newStatus
-  }
+  if (!diner) return
+  const newStatus = diner.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE'
+  const actionText = diner.status === 'ACTIVE' ? '暂停' : '激活'
+  const title = diner.status === 'ACTIVE' ? '确认暂停账号' : '确认激活账号'
+  const icon = diner.status === 'ACTIVE' ? '⚠️' : '✅'
+  
+  openConfirmModal(
+    title,
+    `${icon} 确定要${actionText}食客「${diner.nickname}」的账号吗？`,
+    () => {
+      diner.status = newStatus
+      saveToStorage(diners.value)
+      if (showDetailModal.value) {
+        selectedDiner.value = { ...selectedDiner.value }
+      }
+      closeConfirmModal()
+    }
+  )
+}
+
+const closeDetailModal = () => {
+  showDetailModal.value = false
+  selectedDiner.value = null
 }
 
 const closeModal = () => {
@@ -224,27 +584,59 @@ const closeModal = () => {
 }
 
 const saveDiner = () => {
-  if (!formData.value.username || !formData.value.nickname) {
-    alert('请填写用户名和昵称')
+  const errors = []
+  
+  if (!formData.value.username) {
+    errors.push('用户名不能为空')
+  }
+  
+  if (!formData.value.nickname) {
+    errors.push('昵称不能为空')
+  }
+  
+  if (formData.value.phone && !/^1\d{10}$/.test(formData.value.phone)) {
+    errors.push('手机号必须是11位数字')
+  }
+  
+  if (formData.value.email && !formData.value.email.includes('@')) {
+    errors.push('邮箱格式不正确，必须包含@')
+  }
+  
+  if (errors.length > 0) {
+    openConfirmModal('输入验证失败', errors.join('<br>'), null)
     return
   }
   
   if (isEditing.value) {
     const index = diners.value.findIndex(d => d.id === formData.value.id)
     if (index !== -1) {
-      diners.value[index] = { ...formData.value }
+      diners.value[index] = { 
+        ...diners.value[index],
+        ...formData.value,
+        updatedAt: new Date().toLocaleString('zh-CN')
+      }
     }
   } else {
     const newId = Math.max(...diners.value.map(d => d.id), 0) + 1
+    const now = new Date()
+    const nowStr = now.toLocaleString('zh-CN')
     diners.value.unshift({
       ...formData.value,
       id: newId,
-      registerTime: new Date().toLocaleString(),
+      role: 'USER',
+      createdAt: nowStr,
+      updatedAt: nowStr,
       lastLoginTime: '-',
-      reviewCount: 0
+      reviewCount: 0,
+      avgRating: '0.0',
+      likeCount: 0,
+      followCount: 0,
+      ratingDistribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+      recentActivities: []
     })
   }
   
+  saveToStorage(diners.value)
   closeModal()
 }
 
@@ -396,12 +788,12 @@ onMounted(() => {
   color: #52c41a;
 }
 
-.status-tag.inactive {
+.status-tag.disabled {
   background: #f5f5f5;
   color: #999;
 }
 
-.status-tag.suspended {
+.status-tag.locked {
   background: #fff2f0;
   color: #ff4d4f;
 }
@@ -498,6 +890,286 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.detail-modal-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-modal-header {
+  padding: 24px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.detail-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.username {
+  margin: 0;
+  font-size: 14px;
+  color: #999;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  color: #666;
+  background: #f5f5f5;
+}
+
+.detail-modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.detail-section {
+  margin-bottom: 28px;
+}
+
+.detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2d3d;
+  margin: 0 0 16px 0;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-label {
+  font-size: 13px;
+  color: #667085;
+}
+
+.info-value {
+  font-size: 14px;
+  color: #1f2d3d;
+  font-weight: 500;
+}
+
+.info-value.status.active {
+  color: #52c41a;
+}
+
+.info-value.status.disabled {
+  color: #999;
+}
+
+.info-value.status.locked {
+  color: #ff4d4f;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.stat-card {
+  background: #fafafa;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-icon-blue {
+  color: #1890ff;
+  background: rgba(24, 144, 255, 0.1);
+}
+
+.stat-icon-green {
+  color: #52c41a;
+  background: rgba(82, 196, 26, 0.1);
+}
+
+.stat-icon-orange {
+  color: #ff6700;
+  background: rgba(255, 103, 0, 0.1);
+}
+
+.stat-icon-purple {
+  color: #722ed1;
+  background: rgba(114, 46, 209, 0.1);
+}
+
+.stat-content {
+  text-align: center;
+}
+
+.stat-content .stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2d3d;
+}
+
+.stat-content .stat-label {
+  font-size: 12px;
+  color: #667085;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 8px;
+}
+
+.activity-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.activity-content {
+  flex: 1;
+}
+
+.activity-text {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  color: #1f2d3d;
+}
+
+.activity-time {
+  font-size: 12px;
+  color: #999;
+}
+
+.empty-activity {
+  text-align: center;
+  padding: 20px;
+  background: #fafafa;
+  border-radius: 8px;
+}
+
+.empty-activity p {
+  margin: 0;
+  font-size: 14px;
+  color: #999;
+}
+
+.rating-distribution {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rating-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rating-label {
+  width: 32px;
+  font-size: 13px;
+  color: #667085;
+}
+
+.rating-bar-container {
+  flex: 1;
+  height: 12px;
+  background: #f0f0f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.rating-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1890ff 0%, #40a9ff 100%);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.rating-count {
+  width: 32px;
+  font-size: 13px;
+  color: #667085;
+  text-align: right;
+}
+
+.detail-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
 .modal-header {
   padding: 20px 24px;
   border-bottom: 1px solid #f0f0f0;
@@ -511,18 +1183,6 @@ onMounted(() => {
   font-weight: 600;
   color: #1f2d3d;
   margin: 0;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  color: #999;
-  cursor: pointer;
-  padding: 4px;
-}
-
-.modal-close:hover {
-  color: #666;
 }
 
 .modal-body {
@@ -593,6 +1253,71 @@ onMounted(() => {
   opacity: 0.9;
 }
 
+.btn-danger {
+  background: linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
+  color: #fff;
+}
+
+.btn-success:hover {
+  opacity: 0.9;
+}
+
+.confirm-modal-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 420px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+}
+
+.confirm-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: center;
+}
+
+.confirm-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.confirm-modal-body {
+  padding: 24px;
+  text-align: center;
+}
+
+.confirm-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.confirm-modal-body p {
+  margin: 0;
+  font-size: 14px;
+  color: #667085;
+  line-height: 1.6;
+}
+
+.confirm-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
 @media (max-width: 768px) {
   .search-bar {
     flex-direction: column;
@@ -610,6 +1335,18 @@ onMounted(() => {
   .diners-table {
     display: block;
     overflow-x: auto;
+  }
+  
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .detail-modal-content {
+    width: 95%;
   }
 }
 </style>
