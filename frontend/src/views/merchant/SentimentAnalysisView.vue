@@ -642,7 +642,7 @@ async function loadHighlights() {
         if (data.length === 1 && (data[0].status === 'INSUFFICIENT_DATA' || data[0].status === 'NONE')) {
           highlightsStatus.value = data[0].status
           highlightsAvailCount.value = data[0].availablePositiveCount || 0
-          highlightsMinCount.value = data[0].minimumReviewCount || 5
+          highlightsMinCount.value = data[0].minimumReviewCount || 3
           highlights.value = []
           if (data[0].status === 'NONE') {
             showMessage('该店铺尚未生成亮点，点击"生成亮点"按钮开始', 'info')

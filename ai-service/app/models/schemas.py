@@ -165,7 +165,7 @@ class ReviewSummaryRequest(BaseModel):
     merchantId: int
     version: int = Field(default=1, ge=1)
     reviews: List[SummaryReviewItem] = Field(default_factory=list)
-    minimumReviewCount: int = Field(default=5, ge=1)
+    minimumReviewCount: int = Field(default=3, ge=1)
     systemPrompt: Optional[str] = Field(
         default=None,
         max_length=50000,
@@ -214,7 +214,7 @@ class ReviewSummaryResponse(BaseModel):
     serviceSummary: dict = Field(default_factory=dict)
     recentChanges: List[dict] = Field(default_factory=list)
     reviewCount: int = 0
-    minimumReviewCount: int = 5
+    minimumReviewCount: int = 3
     evidences: List[SummaryEvidence] = Field(default_factory=list)
     modelName: Optional[str] = None
     modelVersion: Optional[str] = None
