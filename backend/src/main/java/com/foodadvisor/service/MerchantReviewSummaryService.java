@@ -468,10 +468,23 @@ public class MerchantReviewSummaryService {
             vo.setEvidenceType(evidence.getEvidenceType());
 
             Review review = reviewMap.get(evidence.getReviewId());
-            // sourceMerchantId 为实体虚拟字段(未持久化)，以 review 自身 merchantId 为准
-            boolean available = review != null
-                    && summary.getMerchantId().equals(review.getMerchantId())
-                    && isPublicReview(review);
+
+            Long expectedMerchantId = summary.getMerchantId();
+            Long storedSourceMerchantId =
+                    evidence.getSourceMerchantId();
+
+            boolean available =
+                    REVIEW_SOURCE_TYPE.equals(evidence.getSourceType())
+                            && expectedMerchantId != null
+                            && storedSourceMerchantId != null
+                            && expectedMerchantId.equals(
+                                    storedSourceMerchantId
+                            )
+                            && review != null
+                            && expectedMerchantId.equals(
+                                    review.getMerchantId()
+                            )
+                            && isPublicReview(review);
             vo.setReviewAvailable(available);
             vo.setAvailable(available);
             if (available) {
@@ -487,12 +500,17 @@ public class MerchantReviewSummaryService {
                 log.warn(
                         "Unavailable summary evidence: evidenceId={}, "
                                 + "summaryId={}, reviewId={}, "
-                                + "expectedMerchantId={}, actualMerchantId={}",
+                                + "expectedMerchantId={}, "
+                                + "storedSourceMerchantId={}, "
+                                + "actualReviewMerchantId={}",
                         evidence.getId(),
                         summary.getId(),
                         evidence.getReviewId(),
-                        summary.getMerchantId(),
-                        review == null ? null : review.getMerchantId()
+                        expectedMerchantId,
+                        storedSourceMerchantId,
+                        review == null
+                                ? null
+                                : review.getMerchantId()
                 );
             }
             vos.add(vo);
