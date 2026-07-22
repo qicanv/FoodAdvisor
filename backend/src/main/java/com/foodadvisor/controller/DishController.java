@@ -28,19 +28,24 @@ public class DishController {
     @GetMapping
     public ApiResponse<List<Dish>> listByMerchant(@RequestParam Long merchantId) {
         List<Dish> dishes = dishMapper.selectByMerchantId(merchantId);
-        
+
+        // 公开接口只返回上架中的菜品
+        List<Dish> activeDishes = new ArrayList<>();
         for (Dish dish : dishes) {
-            if (dish.getTasteTags() != null) {
-                try {
-                    List<String> tags = objectMapper.readValue(
-                            dish.getTasteTags(),
-                            new TypeReference<List<String>>() {}
-                    );
-                } catch (Exception ignored) {
+            if ("ACTIVE".equals(dish.getStatus())) {
+                if (dish.getTasteTags() != null) {
+                    try {
+                        objectMapper.readValue(
+                                dish.getTasteTags(),
+                                new TypeReference<List<String>>() {}
+                        );
+                    } catch (Exception ignored) {
+                    }
                 }
+                activeDishes.add(dish);
             }
         }
-        
-        return ApiResponse.success(dishes);
+
+        return ApiResponse.success(activeDishes);
     }
 }
