@@ -580,6 +580,30 @@ public class AIClientService {
         return post(url, request, "KNOWLEDGE_DEACTIVATE");
     }
 
+    /**
+     * 调用内容清洗与切分接口。
+     *
+     * @param items 待处理内容列表，每项包含 merchantId/sourceType/sourceId/content
+     * @return AI 服务返回的 JSON，包含 chunks 列表
+     */
+    public JsonNode processContent(List<Map<String, Object>> items) {
+        String url = aiServiceBaseUrl + "/internal/content/process";
+        Map<String, Object> request = Map.of("items", items);
+        return post(url, request, "CONTENT_PROCESS");
+    }
+
+    /**
+     * 调用知识向量化与存储接口。
+     *
+     * @param documents 文档列表，每项包含 chunkId/merchantId/sourceType/text 等
+     * @return AI 服务返回的 JSON，包含 successCount/skipCount/failCount
+     */
+    public JsonNode upsertKnowledge(List<Map<String, Object>> documents) {
+        String url = aiServiceBaseUrl + "/internal/knowledge/upsert";
+        Map<String, Object> request = Map.of("documents", documents);
+        return post(url, request, "KNOWLEDGE_UPSERT");
+    }
+
     public boolean isHealthy() {
         try {
             String url = aiServiceBaseUrl + "/health";

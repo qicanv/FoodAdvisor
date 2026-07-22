@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.dto.recommendation.RecommendationWeights;
+import com.foodadvisor.dto.recommendation.SemanticMatchResult;
 import com.foodadvisor.entity.Merchant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -323,7 +324,7 @@ class MatchScoreCalculatorTest {
         RecommendationItemVO result = calculator.calculate(
                 createBaseMerchant(), createBaseConstraints(), weights,
                 new BigDecimal("30.5728"), new BigDecimal("104.0668"),
-                java.util.Map.of(2L, new BigDecimal("0.80300000000000004707345624410663731396198272705078125"))
+                java.util.Map.of(2L, createSemanticMatch(new BigDecimal("0.80300000000000004707345624410663731396198272705078125")))
         ).orElseThrow();
 
         String explanation = result.getScoreItems().get("semantic").getExplanation();
@@ -342,11 +343,11 @@ class MatchScoreCalculatorTest {
         RecommendationItemVO zero = calculator.calculate(
                 createBaseMerchant(), createBaseConstraints(), weights,
                 new BigDecimal("30.5728"), new BigDecimal("104.0668"),
-                java.util.Map.of(2L, BigDecimal.ZERO)).orElseThrow();
+                java.util.Map.of(2L, createSemanticMatch(BigDecimal.ZERO))).orElseThrow();
         RecommendationItemVO aboveOne = calculator.calculate(
                 createBaseMerchant(), createBaseConstraints(), weights,
                 new BigDecimal("30.5728"), new BigDecimal("104.0668"),
-                java.util.Map.of(2L, new BigDecimal("1.2"))).orElseThrow();
+                java.util.Map.of(2L, createSemanticMatch(new BigDecimal("1.2")))).orElseThrow();
 
         assertTrue(zero.getScoreItems().get("semantic").getExplanation().contains("0.00%"));
         assertTrue(aboveOne.getScoreItems().get("semantic").getExplanation().contains("100.00%"));
@@ -472,6 +473,13 @@ class MatchScoreCalculatorTest {
         merchant.setOperationStatus("OPERATING");
 
         return merchant;
+    }
+
+    private SemanticMatchResult createSemanticMatch(BigDecimal weightedScore) {
+        SemanticMatchResult result = new SemanticMatchResult();
+        result.setMerchantId(2L);
+        result.setWeightedScore(weightedScore);
+        return result;
     }
 
     private ConstraintState createBaseConstraints() {
