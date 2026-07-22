@@ -35,6 +35,15 @@ public class Merchant {
     /** OPERATING / SUSPENDED / CLOSED_PERMANENTLY */
     private String operationStatus;
 
+    /** 状态变更时间 */
+    private OffsetDateTime statusChangedAt;
+
+    /** 联系邮箱 */
+    private String contactEmail;
+
+    /** 封面图片URL */
+    private String coverImageUrl;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

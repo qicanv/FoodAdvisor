@@ -6,6 +6,7 @@ import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.entity.Dish;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.mapper.DishMapper;
+import com.foodadvisor.service.ContentStatusService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,15 +30,18 @@ public class MerchantDishesController {
     private final DishMapper dishMapper;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ContentStatusService contentStatusService;
 
     public MerchantDishesController(
             DishMapper dishMapper,
             JdbcTemplate jdbcTemplate,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ContentStatusService contentStatusService
     ) {
         this.dishMapper = dishMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.contentStatusService = contentStatusService;
     }
 
     /**
@@ -203,8 +207,19 @@ public class MerchantDishesController {
                     "状态值无效，可选值：ACTIVE/OFF_SHELF/ARCHIVED");
         }
 
+        String oldStatus = dish.getStatus();
         dish.setStatus(newStatus);
         dishMapper.updateById(dish);
+
+        // 记录状态变更历史
+        if (!newStatus.equals(oldStatus)) {
+            String reason = body.get("reason");
+            contentStatusService.recordChange(
+                    "DISH", dishId,
+                    oldStatus, newStatus,
+                    userId, reason
+            );
+        }
 
         log.info("商户 userId={} 修改菜品 dishId={} 状态为 {}", userId, dishId, newStatus);
         return ApiResponse.success("菜品状态已更新", dish);

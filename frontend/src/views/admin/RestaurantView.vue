@@ -18,6 +18,26 @@
     </template>
 
     <div v-if="activeTab === 'list'" class="tab-content">
+      <!-- 状态统计卡片 -->
+      <div class="status-inline-cards">
+        <div class="status-stat-card">
+          <div class="stat-card-value">{{ totalCount }}</div>
+          <div class="stat-card-label">总商家数</div>
+        </div>
+        <div class="status-stat-card">
+          <div class="stat-card-value success">{{ activeCount }}</div>
+          <div class="stat-card-label">正常营业</div>
+        </div>
+        <div class="status-stat-card">
+          <div class="stat-card-value warning">{{ disabledCount }}</div>
+          <div class="stat-card-label">已禁用</div>
+        </div>
+        <div class="status-stat-card">
+          <div class="stat-card-value danger">{{ suspendedCount }}</div>
+          <div class="stat-card-label">停业中</div>
+        </div>
+      </div>
+
       <div class="search-bar">
         <div class="search-item">
           <input 
@@ -86,14 +106,25 @@
                     <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
                   </svg>
                 </button>
-                <button 
-                  class="action-btn status-btn" 
+                <button
+                  class="action-btn status-btn"
                   @click="openStatusModal(merchant)"
                   :title="getChangeStatusTitle(merchant)"
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="3"></circle>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                  </svg>
+                </button>
+                <button
+                  v-if="merchant.platformStatus !== 'ACTIVE'"
+                  class="action-btn restore-btn"
+                  @click="restoreMerchant(merchant)"
+                  :title="'恢复商家：' + merchant.name"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="1 4 1 10 7 10"></polyline>
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
                   </svg>
                 </button>
               </td>
@@ -283,34 +314,61 @@
       </div>
     </div>
 
-    <div v-if="activeTab === 'status'" class="tab-content">
-      <div class="status-container">
-        <h2 class="form-title">批量状态管理</h2>
-        <div class="status-info-card">
-          <div class="status-stat">
-            <div class="stat-value">{{ totalCount }}</div>
-            <div class="stat-label">总商家数</div>
-          </div>
-          <div class="status-stat">
-            <div class="stat-value success">{{ activeCount }}</div>
-            <div class="stat-label">正常营业</div>
-          </div>
-          <div class="status-stat">
-            <div class="stat-value warning">{{ disabledCount }}</div>
-            <div class="stat-label">已禁用</div>
-          </div>
-          <div class="status-stat">
-            <div class="stat-value danger">{{ suspendedCount }}</div>
-            <div class="stat-label">停业中</div>
-          </div>
+    <!-- 变更记录标签页 -->
+    <div v-if="activeTab === 'history'" class="tab-content">
+      <div class="history-container">
+        <h2 class="form-title">商家状态变更记录</h2>
+        <div class="history-toolbar">
+          <button class="btn btn-primary" @click="loadAllHistory" :disabled="historyLoading">
+            {{ historyLoading ? '加载中...' : '刷新记录' }}
+          </button>
         </div>
-        <div class="status-tips">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#faad14" stroke-width="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-            <line x1="12" y1="9" x2="12" y2="13"></line>
-            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-          </svg>
-          <span>商家设为禁用或停业后，将不再出现在用户搜索和推荐结果中，但历史评论和分析记录仍可查询。</span>
+
+        <div v-if="historyLoading" class="loading-cell">
+          <div class="loading-spinner"></div>
+          <span>加载中...</span>
+        </div>
+
+        <div v-else-if="allHistory.length === 0" class="empty-cell" style="padding: 60px; text-align: center; color: #909399;">
+          暂无状态变更记录
+        </div>
+
+        <div v-else class="history-table-wrapper">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>商家ID</th>
+                <th>原状态</th>
+                <th>新状态</th>
+                <th>操作人ID</th>
+                <th>原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="record in allHistory" :key="record.id">
+                <td>{{ formatDateTime(record.createdAt) }}</td>
+                <td>
+                  <a href="javascript:void(0)" @click="viewMerchantHistory(record.contentId)" class="link-text">
+                    #{{ record.contentId }}
+                  </a>
+                </td>
+                <td>
+                  <span v-if="record.oldStatus" :class="['status-tag', getPlatformStatusClass(record.oldStatus)]">
+                    {{ getPlatformStatusText(record.oldStatus) }}
+                  </span>
+                  <span v-else class="text-muted">创建</span>
+                </td>
+                <td>
+                  <span :class="['status-tag', getPlatformStatusClass(record.newStatus)]">
+                    {{ getPlatformStatusText(record.newStatus) }}
+                  </span>
+                </td>
+                <td>{{ record.operatorUserId || '-' }}</td>
+                <td class="reason-cell">{{ record.reason || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -519,6 +577,15 @@
                 <option value="CLOSED_PERMANENTLY">永久关闭</option>
               </select>
             </div>
+            <div class="form-item full-width">
+              <label>变更原因</label>
+              <textarea
+                v-model="statusForm.reason"
+                class="form-textarea"
+                placeholder="请输入状态变更原因（选填）"
+                rows="2"
+              ></textarea>
+            </div>
           </div>
           <div class="warning-message" v-if="isDisabling">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#faad14" stroke-width="2">
@@ -527,6 +594,29 @@
               <line x1="12" y1="17" x2="12.01" y2="17"></line>
             </svg>
             <span>商家设为禁用或停业后，将不再出现在用户搜索和推荐结果中，但历史评论和分析记录仍可查询。</span>
+          </div>
+
+          <!-- 状态变更历史 -->
+          <div class="status-history-section" v-if="statusHistory.length > 0">
+            <h4 class="history-title">状态变更历史</h4>
+            <div class="history-list">
+              <div v-for="record in statusHistory" :key="record.id" class="history-item">
+                <div class="history-header">
+                  <span class="history-time">{{ formatDateTime(record.createdAt) }}</span>
+                </div>
+                <div class="history-detail">
+                  <span :class="['status-tag', 'status-archived']">{{ record.oldStatus || '创建' }}</span>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#909399" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"></path>
+                  </svg>
+                  <span :class="['status-tag', getPlatformStatusClass(record.newStatus)]">{{ record.newStatus }}</span>
+                </div>
+                <div class="history-reason" v-if="record.reason">{{ record.reason }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="status-history-section" v-else-if="statusHistoryLoaded">
+            <p class="history-empty">暂无状态变更记录</p>
           </div>
         </div>
         <div class="modal-footer">
@@ -539,13 +629,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
-import { 
-  getAdminMerchants, 
-  createAdminMerchant, 
-  updateAdminMerchant, 
+import {
+  getAdminMerchants,
+  createAdminMerchant,
+  updateAdminMerchant,
   updateAdminMerchantStatus,
+  restoreAdminMerchant,
+  getAdminMerchantStatusHistory,
   getAdminMerchantStatistics
 } from '../../api/adminMerchant'
 
@@ -554,7 +646,7 @@ const activeTab = ref('list')
 const sidebarItems = [
   { key: 'list', label: '商家列表', icon: '🏪' },
   { key: 'add', label: '新增商家', icon: '✨' },
-  { key: 'status', label: '状态管理', icon: '⚙️' },
+  { key: 'history', label: '变更记录', icon: '📋' },
 ]
 
 const merchants = ref([])
@@ -593,8 +685,12 @@ const showStatusModal = ref(false)
 const statusMerchant = ref(null)
 const statusForm = ref({
   platformStatus: '',
-  operationStatus: ''
+  operationStatus: '',
+  reason: ''
 })
+
+const statusHistory = ref([])
+const statusHistoryLoaded = ref(false)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
 
@@ -608,6 +704,9 @@ const totalCount = ref(0)
 const activeCount = ref(0)
 const disabledCount = ref(0)
 const suspendedCount = ref(0)
+
+const allHistory = ref([])
+const historyLoading = ref(false)
 
 const loadMerchants = async () => {
   loading.value = true
@@ -845,13 +944,55 @@ const submitForm = async () => {
   }
 }
 
-const openStatusModal = (merchant) => {
+const openStatusModal = async (merchant) => {
   statusMerchant.value = merchant
   statusForm.value = {
     platformStatus: merchant.platformStatus || 'ACTIVE',
-    operationStatus: merchant.operationStatus || 'OPERATING'
+    operationStatus: merchant.operationStatus || 'OPERATING',
+    reason: ''
   }
+  statusHistory.value = []
+  statusHistoryLoaded.value = false
   showStatusModal.value = true
+  await loadStatusHistory(merchant.id)
+}
+
+const loadStatusHistory = async (merchantId) => {
+  try {
+    const response = await getAdminMerchantStatusHistory(merchantId)
+    if (response.success && response.data) {
+      statusHistory.value = response.data
+    }
+  } catch (error) {
+    console.error('加载状态历史失败:', error)
+  } finally {
+    statusHistoryLoaded.value = true
+  }
+}
+
+const restoreMerchant = async (merchant) => {
+  if (!confirm(`确认恢复商家"${merchant.name}"吗？恢复后将重新参与搜索和推荐。`)) return
+
+  try {
+    const response = await restoreAdminMerchant(merchant.id, { reason: '管理员手动恢复' })
+    if (response.success) {
+      loadMerchants()
+      loadStatistics()
+    } else {
+      alert(response.message || '恢复失败')
+    }
+  } catch (error) {
+    console.error('恢复请求失败:', error)
+  }
+}
+
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return '-'
+  try {
+    return new Date(dateStr).toLocaleString('zh-CN')
+  } catch {
+    return dateStr
+  }
 }
 
 const closeStatusModal = () => {
@@ -861,19 +1002,20 @@ const closeStatusModal = () => {
 
 const submitStatus = async () => {
   if (!statusMerchant.value) return
-  
+
   try {
     const response = await updateAdminMerchantStatus(statusMerchant.value.id, {
       platformStatus: statusForm.value.platformStatus,
-      operationStatus: statusForm.value.operationStatus
+      operationStatus: statusForm.value.operationStatus,
+      reason: statusForm.value.reason || null
     })
-    
+
     if (response.success) {
       closeStatusModal()
       loadMerchants()
       loadStatistics()
     } else {
-      console.error('修改状态失败:', response.message)
+      alert(response.message || '修改状态失败')
     }
   } catch (error) {
     console.error('修改状态失败:', error)
@@ -934,9 +1076,56 @@ const loadStatistics = async () => {
   }
 }
 
+const loadAllHistory = async () => {
+  historyLoading.value = true
+  allHistory.value = []
+  try {
+    const merchantIds = merchants.value.map(m => m.id)
+    if (merchantIds.length === 0) {
+      await loadMerchants()
+      merchantIds.push(...merchants.value.map(m => m.id))
+    }
+
+    const allRecords = []
+    for (const id of merchantIds.slice(0, 20)) {
+      try {
+        const response = await getAdminMerchantStatusHistory(id)
+        if (response.success && Array.isArray(response.data)) {
+          allRecords.push(...response.data)
+        }
+      } catch (e) {
+        // 跳过加载失败的商家
+      }
+    }
+
+    allRecords.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    allHistory.value = allRecords.slice(0, 50)
+  } catch (error) {
+    console.error('加载变更记录失败:', error)
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+const viewMerchantHistory = (merchantId) => {
+  // 跳转到商家列表并打开该商家的状态弹窗
+  activeTab.value = 'list'
+  const merchant = merchants.value.find(m => m.id === merchantId)
+  if (merchant) {
+    openStatusModal(merchant)
+  }
+}
+
 onMounted(() => {
   loadMerchants()
   loadStatistics()
+})
+
+// 切换到"变更记录"标签时自动加载
+watch(activeTab, (newTab) => {
+  if (newTab === 'history') {
+    loadAllHistory()
+  }
 })
 </script>
 
@@ -1416,6 +1605,38 @@ onMounted(() => {
   margin-bottom: 28px;
 }
 
+/* 搜索上方纯白统计卡片 */
+.status-inline-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.status-stat-card {
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.stat-card-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1f2d3d;
+}
+
+.stat-card-value.success { color: #52c41a; }
+.stat-card-value.warning { color: #ffb100; }
+.stat-card-value.danger { color: #ff4d4f; }
+
+.stat-card-label {
+  font-size: 13px;
+  color: #909399;
+  margin-top: 4px;
+}
+
 .status-stat {
   text-align: center;
   padding: 24px;
@@ -1616,6 +1837,112 @@ onMounted(() => {
   font-weight: 600;
   color: #1f2d3d;
 }
+
+.restore-btn {
+  background: linear-gradient(135deg, rgba(82, 196, 26, 0.1) 0%, rgba(82, 196, 26, 0.05) 100%);
+  color: #52c41a;
+  box-shadow: 0 2px 8px rgba(82, 196, 26, 0.15);
+}
+
+.restore-btn:hover {
+  background: linear-gradient(135deg, rgba(82, 196, 26, 0.2) 0%, rgba(82, 196, 26, 0.1) 100%);
+  box-shadow: 0 4px 16px rgba(82, 196, 26, 0.3);
+}
+
+.status-history-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 2px solid #f0f0f0;
+}
+
+.history-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #5a6a7a;
+  margin-bottom: 12px;
+}
+
+.history-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.history-item {
+  padding: 10px 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: #fafafa;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.history-time {
+  font-size: 12px;
+  color: #909399;
+}
+
+.history-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-reason {
+  font-size: 12px;
+  color: #667085;
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.history-empty {
+  text-align: center;
+  color: #909399;
+  font-size: 13px;
+  padding: 10px;
+}
+
+/* 变更记录标签页 */
+.history-container {
+  background: #fff; border-radius: 16px; padding: 32px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06); border: 1px solid #f0f0f0;
+}
+
+.history-toolbar {
+  margin-bottom: 20px; display: flex; gap: 12px;
+}
+
+.history-table-wrapper {
+  border-radius: 12px; overflow: hidden; border: 1px solid #f0f0f0;
+}
+
+.history-table { width: 100%; border-collapse: collapse; }
+
+.history-table thead { background: linear-gradient(180deg, #fafafa 0%, #f5f5f5 100%); }
+
+.history-table th {
+  padding: 14px 16px; text-align: left; font-weight: 600;
+  color: #5a6a7a; font-size: 13px; border-bottom: 2px solid #e8e8e8;
+}
+
+.history-table td {
+  padding: 12px 16px; font-size: 13px; color: #1f2d3d;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.history-table tbody tr:hover td { background-color: #f8fcff; }
+
+.link-text { color: #1890ff; text-decoration: none; font-weight: 500; }
+.link-text:hover { text-decoration: underline; }
+
+.text-muted { color: #909399; font-size: 12px; }
+
+.reason-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 1200px) {
   .main-content {

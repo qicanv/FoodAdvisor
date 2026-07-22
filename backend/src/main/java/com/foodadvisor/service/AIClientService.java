@@ -538,6 +538,28 @@ public class AIClientService {
                 "REVIEW_REPLY_GENERATION", context, "MODEL_CALL");
     }
 
+    /**
+     * 停用 OpenSearch 知识文档（内容状态变更时调用）。
+     *
+     * @param sourceType 来源类型：MERCHANT / MERCHANT_INTRO / MENU / REVIEW
+     * @param sourceIds 来源ID列表
+     * @return AI 服务返回的 JSON，包含 deactivatedCount
+     */
+    public JsonNode deactivateKnowledge(
+            String sourceType,
+            List<Long> sourceIds
+    ) {
+        String url =
+                aiServiceBaseUrl + "/internal/knowledge/deactivate";
+
+        Map<String, Object> request = Map.of(
+                "sourceType", sourceType,
+                "sourceIds", sourceIds
+        );
+
+        return post(url, request, "KNOWLEDGE_DEACTIVATE");
+    }
+
     public boolean isHealthy() {
         try {
             String url = aiServiceBaseUrl + "/health";

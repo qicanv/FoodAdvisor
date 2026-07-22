@@ -16,8 +16,16 @@ export const updateAdminMerchant = (id, data) => {
   return request.put(`/api/admin/merchants/${id}`, data)
 }
 
-export const updateAdminMerchantStatus = (id, params) => {
-  return request.put(`/api/admin/merchants/${id}/status`, null, { params })
+export const updateAdminMerchantStatus = (id, data) => {
+  return request.put(`/api/admin/merchants/${id}/status`, data)
+}
+
+export const restoreAdminMerchant = (id, data) => {
+  return request.put(`/api/admin/merchants/${id}/restore`, data)
+}
+
+export const getAdminMerchantStatusHistory = (id) => {
+  return request.get(`/api/admin/merchants/${id}/status-history`)
 }
 
 export const deleteAdminMerchant = id => {
