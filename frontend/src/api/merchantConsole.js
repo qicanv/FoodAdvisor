@@ -63,3 +63,26 @@ export const updateMyDishStatus = (dishId, data) => {
 export const deleteMyDish = (dishId) => {
   return request.delete(`/api/merchant-console/dishes/${dishId}`)
 }
+
+// ========== 亮点挖掘 ==========
+
+/** 获取商家亮点列表 */
+export const getMerchantHighlights = (merchantId) => {
+  return request.get(`/api/merchants/${merchantId}/highlights`)
+}
+
+/** 查看亮点依据 */
+export const getMerchantHighlightEvidences = (merchantId, highlightId) => {
+  return request.get(`/api/merchants/${merchantId}/highlights/evidences`, {
+    params: highlightId ? { highlightId } : {},
+  })
+}
+
+/** 生成/刷新亮点 */
+export const generateMerchantHighlights = (merchantId, force) => {
+  return request.post(
+    `/api/merchant-console/merchants/${merchantId}/highlights/generate?force=${!!force}`,
+    null,
+    { timeout: 60000 }
+  )
+}
