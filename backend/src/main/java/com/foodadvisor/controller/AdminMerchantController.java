@@ -529,4 +529,82 @@ public class AdminMerchantController {
     private boolean isValidOperationStatus(String status) {
         return "OPERATING".equals(status) || "SUSPENDED".equals(status) || "CLOSED_PERMANENTLY".equals(status);
     }
+
+    // ============================================
+    // 知识库同步
+    // ============================================
+
+    /**
+     * 触发单个商家的知识库全量同步。
+     */
+    @PostMapping("/{id}/sync-knowledge")
+    public ApiResponse<Map<String, Object>> syncKnowledge(
+            @PathVariable Long id,
+            HttpServletRequest request
+    ) {
+        adminAccessGuard.requireAdmin(request);
+
+        Merchant merchant = merchantMapper.selectById(id);
+        if (merchant == null) {
+            return ApiResponse.notFound("商家不存在");
+        }
+
+        Map<String, Integer> result =
+                knowledgeEnrichmentService.syncMerchantAll(id);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("merchantId", id);
+        response.put("synced", result);
+        response.put("totalChunks",
+                result.values().stream().mapToInt(Integer::intValue).sum());
+
+        return ApiResponse.success(response);
+    }
+
+    /**
+     * 批量重导所有活跃商家的知识库。
+     *
+     * 异步执行，耗时取决于商家和评论数量（每个商家需调用 Embedding 模型）。
+     */
+    @PostMapping("/sync-all-knowledge")
+    public ApiResponse<Map<String, Object>> syncAllKnowledge(
+            HttpServletRequest request
+    ) {
+        adminAccessGuard.requireAdmin(request);
+
+        List<Merchant> activeMerchants = merchantMapper.selectList(
+                new LambdaQueryWrapper<Merchant>()
+                        .eq(Merchant::getPlatformStatus, "ACTIVE")
+                        .isNull(Merchant::getDeletedAt)
+        );
+
+        if (activeMerchants.isEmpty()) {
+            return ApiResponse.success(Map.of("message", "无活跃商家需要同步"));
+        }
+
+        int total = activeMerchants.size();
+        log.info("开始批量同步 {} 家商家的知识库", total);
+
+        new Thread(() -> {
+            int synced = 0;
+            int failed = 0;
+            for (Merchant merchant : activeMerchants) {
+                try {
+                    knowledgeEnrichmentService.syncMerchantAll(merchant.getId());
+                    synced++;
+                } catch (Exception e) {
+                    failed++;
+                    log.error("同步商家失败: merchantId={}, error={}",
+                            merchant.getId(), e.getMessage());
+                }
+            }
+            log.info("批量知识同步完成: total={}, synced={}, failed={}",
+                    total, synced, failed);
+        }, "knowledge-sync-all").start();
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("message", "已开始后台同步");
+        response.put("totalMerchants", total);
+        return ApiResponse.success(response);
+    }
 }
