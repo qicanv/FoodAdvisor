@@ -4,32 +4,42 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.PageResult;
+import com.foodadvisor.entity.ContentStatusHistory;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.mapper.MerchantMapper;
+import com.foodadvisor.security.AdminAccessGuard;
+import com.foodadvisor.service.ContentStatusService;
+import com.foodadvisor.service.OpenSearchSyncService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.OffsetDateTime;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/admin/merchants")
 @Slf4j
 public class AdminMerchantController {
 
+    private static final String CONTENT_TYPE_MERCHANT = "MERCHANT";
+
     private final MerchantMapper merchantMapper;
+    private final AdminAccessGuard adminAccessGuard;
+    private final ContentStatusService contentStatusService;
+    private final OpenSearchSyncService openSearchSyncService;
 
-    public AdminMerchantController(MerchantMapper merchantMapper) {
+    public AdminMerchantController(
+            MerchantMapper merchantMapper,
+            AdminAccessGuard adminAccessGuard,
+            ContentStatusService contentStatusService,
+            OpenSearchSyncService openSearchSyncService
+    ) {
         this.merchantMapper = merchantMapper;
-    }
-
-    private boolean isAdmin(HttpServletRequest request) {
-        String role = (String) request.getAttribute("role");
-        return "ADMIN".equals(role);
+        this.adminAccessGuard = adminAccessGuard;
+        this.contentStatusService = contentStatusService;
+        this.openSearchSyncService = openSearchSyncService;
     }
 
     @GetMapping
@@ -41,9 +51,7 @@ public class AdminMerchantController {
             @RequestParam(required = false) String operationStatus,
             HttpServletRequest request
     ) {
-        if (!isAdmin(request)) {
-            return ApiResponse.failure("FORBIDDEN", "无管理权限");
-        }
+        adminAccessGuard.requireAdmin(request);
 
         Page<Merchant> page = Page.of(pageNum, pageSize);
 
@@ -77,38 +85,43 @@ public class AdminMerchantController {
 
     @GetMapping("/statistics")
     public ApiResponse<Map<String, Object>> getStatistics(HttpServletRequest request) {
-        if (!isAdmin(request)) {
-            return ApiResponse.failure("FORBIDDEN", "无管理权限");
-        }
+        adminAccessGuard.requireAdmin(request);
 
         Map<String, Object> stats = new HashMap<>();
-        
+
         long total = merchantMapper.selectCount(null);
         log.info("商家统计 - 总商家数: {}", total);
-        
+
         long activeCount = merchantMapper.selectCount(
                 new LambdaQueryWrapper<Merchant>()
                         .eq(Merchant::getPlatformStatus, "ACTIVE")
                         .eq(Merchant::getOperationStatus, "OPERATING")
         );
         log.info("商家统计 - 正常营业: {}", activeCount);
-        
+
         long disabledCount = merchantMapper.selectCount(
                 new LambdaQueryWrapper<Merchant>()
                         .eq(Merchant::getPlatformStatus, "DISABLED")
         );
         log.info("商家统计 - 已禁用: {}", disabledCount);
-        
+
         long suspendedCount = merchantMapper.selectCount(
                 new LambdaQueryWrapper<Merchant>()
                         .in(Merchant::getOperationStatus, "SUSPENDED", "CLOSED_PERMANENTLY")
         );
         log.info("商家统计 - 停业中: {}", suspendedCount);
 
+        long archivedCount = merchantMapper.selectCount(
+                new LambdaQueryWrapper<Merchant>()
+                        .eq(Merchant::getPlatformStatus, "ARCHIVED")
+        );
+        log.info("商家统计 - 已归档: {}", archivedCount);
+
         stats.put("total", total);
         stats.put("activeCount", activeCount);
         stats.put("disabledCount", disabledCount);
         stats.put("suspendedCount", suspendedCount);
+        stats.put("archivedCount", archivedCount);
 
         return ApiResponse.success(stats);
     }
@@ -118,9 +131,7 @@ public class AdminMerchantController {
             @PathVariable Long id,
             HttpServletRequest request
     ) {
-        if (!isAdmin(request)) {
-            return ApiResponse.failure("FORBIDDEN", "无管理权限");
-        }
+        adminAccessGuard.requireAdmin(request);
 
         Merchant merchant = merchantMapper.selectById(id);
         if (merchant == null) {
@@ -135,9 +146,7 @@ public class AdminMerchantController {
             @RequestBody Merchant merchant,
             HttpServletRequest request
     ) {
-        if (!isAdmin(request)) {
-            return ApiResponse.failure("FORBIDDEN", "无管理权限");
-        }
+        adminAccessGuard.requireAdmin(request);
 
         List<String> errors = validateMerchant(merchant);
         if (!errors.isEmpty()) {
@@ -165,6 +174,14 @@ public class AdminMerchantController {
 
         merchantMapper.insert(merchant);
 
+        // 记录初始状态
+        Long userId = getUserId(request);
+        contentStatusService.recordChange(
+                CONTENT_TYPE_MERCHANT, merchant.getId(),
+                null, merchant.getPlatformStatus(),
+                userId, "商家创建"
+        );
+
         return ApiResponse.success(merchant);
     }
 
@@ -174,9 +191,7 @@ public class AdminMerchantController {
             @RequestBody Merchant merchant,
             HttpServletRequest request
     ) {
-        if (!isAdmin(request)) {
-            return ApiResponse.failure("FORBIDDEN", "无管理权限");
-        }
+        adminAccessGuard.requireAdmin(request);
 
         Merchant existing = merchantMapper.selectById(id);
         if (existing == null) {
@@ -196,40 +211,171 @@ public class AdminMerchantController {
             }
         }
 
+        // 检测平台状态是否发生变化
+        String oldPlatformStatus = existing.getPlatformStatus();
+        String newPlatformStatus = merchant.getPlatformStatus();
+
         merchant.setId(id);
         merchant.setCreatedAt(existing.getCreatedAt());
 
+        // 平台状态变更时更新 status_changed_at
+        if (newPlatformStatus != null && !newPlatformStatus.equals(oldPlatformStatus)) {
+            merchant.setStatusChangedAt(OffsetDateTime.now());
+        }
+
         merchantMapper.updateById(merchant);
+
+        // 记录状态变更历史并触发同步
+        if (newPlatformStatus != null && !newPlatformStatus.equals(oldPlatformStatus)) {
+            Long userId = getUserId(request);
+            contentStatusService.recordChange(
+                    CONTENT_TYPE_MERCHANT, id,
+                    oldPlatformStatus, newPlatformStatus,
+                    userId, "编辑商家时修改状态"
+            );
+            triggerSync(id, newPlatformStatus);
+        }
 
         return ApiResponse.success(merchantMapper.selectById(id));
     }
 
+    /**
+     * 修改商家平台状态和营业状态。
+     * 请求体：{ platformStatus, operationStatus, reason }
+     */
     @PutMapping("/{id}/status")
     public ApiResponse<Merchant> updateStatus(
             @PathVariable Long id,
-            @RequestParam String platformStatus,
-            @RequestParam(required = false) String operationStatus,
+            @RequestBody Map<String, String> body,
             HttpServletRequest request
     ) {
-        if (!isAdmin(request)) {
-            return ApiResponse.failure("FORBIDDEN", "无管理权限");
-        }
+        adminAccessGuard.requireAdmin(request);
 
         Merchant merchant = merchantMapper.selectById(id);
         if (merchant == null) {
             return ApiResponse.notFound("商家不存在");
         }
 
-        if (platformStatus != null && !platformStatus.isBlank()) {
-            merchant.setPlatformStatus(platformStatus);
+        String oldPlatformStatus = merchant.getPlatformStatus();
+        String oldOperationStatus = merchant.getOperationStatus();
+
+        String newPlatformStatus = body.get("platformStatus");
+        String newOperationStatus = body.get("operationStatus");
+        String reason = body.get("reason");
+
+        boolean statusChanged = false;
+
+        if (newPlatformStatus != null && !newPlatformStatus.isBlank()
+                && isValidPlatformStatus(newPlatformStatus)) {
+            if (!newPlatformStatus.equals(oldPlatformStatus)) {
+                merchant.setPlatformStatus(newPlatformStatus);
+                statusChanged = true;
+            }
         }
-        if (operationStatus != null && !operationStatus.isBlank()) {
-            merchant.setOperationStatus(operationStatus);
+
+        if (newOperationStatus != null && !newOperationStatus.isBlank()
+                && isValidOperationStatus(newOperationStatus)) {
+            if (!newOperationStatus.equals(oldOperationStatus)) {
+                merchant.setOperationStatus(newOperationStatus);
+                statusChanged = true;
+            }
+        }
+
+        if (statusChanged) {
+            merchant.setStatusChangedAt(OffsetDateTime.now());
         }
 
         merchantMapper.updateById(merchant);
 
+        // 记录状态变更历史
+        if (statusChanged) {
+            Long userId = getUserId(request);
+
+            // 分别记录平台状态和营业状态的变化
+            if (newPlatformStatus != null && !newPlatformStatus.equals(oldPlatformStatus)) {
+                contentStatusService.recordChange(
+                        CONTENT_TYPE_MERCHANT, id,
+                        oldPlatformStatus, newPlatformStatus,
+                        userId, reason
+                );
+                triggerSync(id, newPlatformStatus);
+            }
+
+            if (newOperationStatus != null && !newOperationStatus.equals(oldOperationStatus)) {
+                contentStatusService.recordChange(
+                        CONTENT_TYPE_MERCHANT, id,
+                        oldOperationStatus, newOperationStatus,
+                        userId, reason
+                );
+            }
+        }
+
         return ApiResponse.success(merchant);
+    }
+
+    /**
+     * 恢复已停用/归档的商家。
+     * 请求体：{ reason }
+     */
+    @PutMapping("/{id}/restore")
+    public ApiResponse<Merchant> restore(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request
+    ) {
+        adminAccessGuard.requireAdmin(request);
+
+        Merchant merchant = merchantMapper.selectById(id);
+        if (merchant == null) {
+            return ApiResponse.notFound("商家不存在");
+        }
+
+        String oldStatus = merchant.getPlatformStatus();
+        String reason = body != null ? body.get("reason") : null;
+
+        if ("ACTIVE".equals(oldStatus)) {
+            return ApiResponse.failure("INVALID_STATUS", "该商家当前为正常状态，无需恢复");
+        }
+
+        // 恢复为正常状态
+        merchant.setPlatformStatus("ACTIVE");
+        merchant.setStatusChangedAt(OffsetDateTime.now());
+        merchantMapper.updateById(merchant);
+
+        // 记录历史
+        Long userId = getUserId(request);
+        contentStatusService.recordChange(
+                CONTENT_TYPE_MERCHANT, id,
+                oldStatus, "ACTIVE",
+                userId, reason != null ? reason : "恢复商家"
+        );
+
+        // 触发同步（恢复为启用状态）
+        triggerSync(id, "ACTIVE");
+
+        log.info("商家已恢复: merchantId={}, {} -> ACTIVE, operator={}", id, oldStatus, userId);
+        return ApiResponse.success(merchant);
+    }
+
+    /**
+     * 查询商家状态变更历史。
+     */
+    @GetMapping("/{id}/status-history")
+    public ApiResponse<List<ContentStatusHistory>> getStatusHistory(
+            @PathVariable Long id,
+            HttpServletRequest request
+    ) {
+        adminAccessGuard.requireAdmin(request);
+
+        Merchant merchant = merchantMapper.selectById(id);
+        if (merchant == null) {
+            return ApiResponse.notFound("商家不存在");
+        }
+
+        List<ContentStatusHistory> history =
+                contentStatusService.getHistory(CONTENT_TYPE_MERCHANT, id);
+
+        return ApiResponse.success(history);
     }
 
     @DeleteMapping("/{id}")
@@ -237,19 +383,61 @@ public class AdminMerchantController {
             @PathVariable Long id,
             HttpServletRequest request
     ) {
-        if (!isAdmin(request)) {
-            return ApiResponse.failure("FORBIDDEN", "无管理权限");
-        }
+        adminAccessGuard.requireAdmin(request);
 
         Merchant merchant = merchantMapper.selectById(id);
         if (merchant == null) {
             return ApiResponse.notFound("商家不存在");
         }
 
+        String oldStatus = merchant.getPlatformStatus();
         merchant.setPlatformStatus("DISABLED");
+        merchant.setStatusChangedAt(OffsetDateTime.now());
         merchantMapper.updateById(merchant);
 
+        // 记录历史
+        Long userId = getUserId(request);
+        contentStatusService.recordChange(
+                CONTENT_TYPE_MERCHANT, id,
+                oldStatus, "DISABLED",
+                userId, "管理员删除（软删除）"
+        );
+
+        // 触发 OpenSearch 同步
+        triggerSync(id, "DISABLED");
+
         return ApiResponse.success(null);
+    }
+
+    // ============================================
+    // 辅助方法
+    // ============================================
+
+    private Long getUserId(HttpServletRequest request) {
+        Object userId = request.getAttribute("userId");
+        if (userId instanceof Number number) {
+            return number.longValue();
+        }
+        return null;
+    }
+
+    private void triggerSync(Long merchantId, String newStatus) {
+        try {
+            if ("DISABLED".equals(newStatus) || "ARCHIVED".equals(newStatus)) {
+                openSearchSyncService.createSyncTask(
+                        CONTENT_TYPE_MERCHANT, merchantId,
+                        com.foodadvisor.entity.OpenSearchSyncTask.OP_DISABLE
+                );
+            } else if ("ACTIVE".equals(newStatus)) {
+                openSearchSyncService.createSyncTask(
+                        CONTENT_TYPE_MERCHANT, merchantId,
+                        com.foodadvisor.entity.OpenSearchSyncTask.OP_UPSERT
+                );
+            }
+        } catch (Exception e) {
+            log.error("创建同步任务失败: merchantId={}, newStatus={}, error={}",
+                    merchantId, newStatus, e.getMessage(), e);
+        }
     }
 
     private List<String> validateMerchant(Merchant merchant) {
