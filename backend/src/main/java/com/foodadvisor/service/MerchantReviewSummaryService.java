@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -51,7 +52,7 @@ public class MerchantReviewSummaryService {
     );
 
     /** 生成摘要所需的最少有效评论数（验收准则 1/5） */
-    private static final int MIN_REVIEW_COUNT = 5;
+    private static final int MIN_REVIEW_COUNT = 3;
 
     /** 单次送入模型的最大评论条数，取最新的 N 条，防止提示词过长 */
     private static final int MAX_REVIEWS_FOR_SUMMARY = 100;
@@ -70,6 +71,9 @@ public class MerchantReviewSummaryService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final AiRequestTraceService traceService;
+
+    /** 防止同一商家重复触发异步生成 */
+    private final Set<Long> pendingGenerations = ConcurrentHashMap.newKeySet();
 
     public MerchantReviewSummaryService(
             MerchantReviewSummaryMapper summaryMapper,
@@ -106,18 +110,59 @@ public class MerchantReviewSummaryService {
     }
 
     /**
-     * 读取商家当前可展示的摘要 — 只查库，绝不调用模型（验收准则 7）。
+     * 读取商家当前可展示的摘要 — 缓存命中直接返回；
+     * 若从未生成且评论数达标，则异步触发首次生成，前端轮询等待；
+     * 若已有摘要但缺少依据（旧版本数据），则异步强制刷新一次（验收准则 1/3）。
      */
     public MerchantReviewSummaryVO getDisplaySummary(Long merchantId) {
         MerchantReviewSummary latest = findLatestDisplayable(merchantId);
 
         if (latest == null) {
-            // 从未生成过摘要
+            int reviewCount = countPublicReviews(merchantId);
+            if (reviewCount >= MIN_REVIEW_COUNT) {
+                log.info("首次访问触发摘要异步生成: merchantId={}, reviewCount={}",
+                        merchantId, reviewCount);
+                triggerAsyncGeneration(merchantId, false);
+                return generatingResponse(merchantId, reviewCount);
+            }
+
             MerchantReviewSummaryVO vo = new MerchantReviewSummaryVO();
             vo.setMerchantId(merchantId);
+            vo.setReviewCount(reviewCount);
             vo.setStatus("NONE");
             vo.setMinimumReviewCount(MIN_REVIEW_COUNT);
             return vo;
+        }
+
+        // INSUFFICIENT_DATA → 检查评论是否已达门槛
+        if ("INSUFFICIENT_DATA".equals(latest.getStatus())) {
+            int currentCount = countPublicReviews(merchantId);
+            if (currentCount >= MIN_REVIEW_COUNT) {
+                log.info("评论数已达门槛, 触发异步生成: merchantId={}, reviewCount={}",
+                        merchantId, currentCount);
+                triggerAsyncGeneration(merchantId, false);
+                return generatingResponse(merchantId, currentCount);
+            }
+            MerchantReviewSummaryVO vo = toVO(latest);
+            vo.setReviewCount(currentCount);
+            return vo;
+        }
+
+        // SUCCESS 但缺依据 → 异步强制刷新
+        if ("SUCCESS".equals(latest.getStatus())) {
+            Long evidenceCount = evidenceMapper.selectCount(
+                    new LambdaQueryWrapper<MerchantSummaryEvidence>()
+                            .eq(MerchantSummaryEvidence::getSummaryId, latest.getId())
+            );
+            if (evidenceCount == 0) {
+                int reviewCount = countPublicReviews(merchantId);
+                if (reviewCount >= MIN_REVIEW_COUNT) {
+                    log.info("摘要缺少依据, 触发异步刷新: merchantId={}, summaryId={}",
+                            merchantId, latest.getId());
+                    triggerAsyncGeneration(merchantId, true);
+                    return generatingResponse(merchantId, reviewCount);
+                }
+            }
         }
 
         return toVO(latest);
@@ -329,19 +374,15 @@ public class MerchantReviewSummaryService {
                 jdbcTemplate.update(
                         """
                         INSERT INTO merchant_summary_evidences (
-                            summary_id, review_id, source_type,
-                            source_merchant_id, review_version,
+                            summary_id, review_id,
                             evidence_type, evidence_excerpt, created_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                         ON CONFLICT (summary_id, review_id, evidence_type)
                         DO NOTHING
                         """,
                         summaryId,
                         reviewId,
-                        REVIEW_SOURCE_TYPE,
-                        merchantId,
-                        sourceReview.getCurrentVersion(),
                         evidenceType,
                         textOrNull(ev, "evidenceExcerpt")
                 );
@@ -427,10 +468,8 @@ public class MerchantReviewSummaryService {
             vo.setEvidenceType(evidence.getEvidenceType());
 
             Review review = reviewMap.get(evidence.getReviewId());
-            boolean sourceMerchantMatches =
-                    summary.getMerchantId().equals(evidence.getSourceMerchantId());
-            boolean available = sourceMerchantMatches
-                    && review != null
+            // sourceMerchantId 为实体虚拟字段(未持久化)，以 review 自身 merchantId 为准
+            boolean available = review != null
                     && summary.getMerchantId().equals(review.getMerchantId())
                     && isPublicReview(review);
             vo.setReviewAvailable(available);
@@ -568,6 +607,46 @@ public class MerchantReviewSummaryService {
                         .orderByDesc(Review::getPublishedAt)
                         .last("LIMIT " + MAX_REVIEWS_FOR_SUMMARY)
         );
+    }
+
+    /** 统计公开有效评论数（仅计数，不查询内容） */
+    private int countPublicReviews(Long merchantId) {
+        return Math.toIntExact(reviewMapper.selectCount(
+                new LambdaQueryWrapper<Review>()
+                        .eq(Review::getMerchantId, merchantId)
+                        .eq(Review::getReviewType, "ORIGINAL")
+                        .eq(Review::getStatus, "PUBLISHED")
+                        .eq(Review::getModerationStatus, "APPROVED")
+        ));
+    }
+
+    /** 异步触发摘要生成（防重），调用方立即返回 GENERATING 状态 */
+    private boolean triggerAsyncGeneration(Long merchantId, boolean force) {
+        if (!pendingGenerations.add(merchantId)) {
+            log.info("跳过重复异步生成: merchantId={}", merchantId);
+            return false;
+        }
+        new Thread(() -> {
+            try {
+                generateSummary(merchantId, force);
+            } catch (Exception e) {
+                log.error("异步生成摘要失败: merchantId={}, error={}",
+                        merchantId, e.getMessage());
+            } finally {
+                pendingGenerations.remove(merchantId);
+            }
+        }, "summary-gen-" + merchantId).start();
+        return true;
+    }
+
+    /** 构建 GENERATING 占位响应，供前端轮询 */
+    private MerchantReviewSummaryVO generatingResponse(Long merchantId, int reviewCount) {
+        MerchantReviewSummaryVO vo = new MerchantReviewSummaryVO();
+        vo.setMerchantId(merchantId);
+        vo.setStatus("GENERATING");
+        vo.setReviewCount(reviewCount);
+        vo.setMinimumReviewCount(MIN_REVIEW_COUNT);
+        return vo;
     }
 
     private boolean isPublicReview(Review review) {

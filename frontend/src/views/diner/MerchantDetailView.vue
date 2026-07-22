@@ -44,6 +44,79 @@
         </div>
       </section>
 
+      <!-- AI 评价摘要 -->
+      <section v-if="reviewSummary" class="summary-top-section">
+        <div class="container">
+          <!-- 状态：正在生成中 -->
+          <div v-if="reviewSummary.status === 'GENERATING'" class="summary-top-card summary-generating">
+            <div class="summary-top-header">
+              <span class="summary-top-icon">🤖</span>
+              <h2>AI 评价摘要</h2>
+              <div class="summary-generating-spinner"></div>
+            </div>
+            <p class="summary-placeholder-text">
+              正在生成评价摘要，请稍候...
+            </p>
+            <p class="summary-placeholder-hint">
+              基于 {{ reviewSummary.reviewCount || 0 }} 条评论进行分析
+            </p>
+          </div>
+          <!-- 状态：正常摘要 -->
+          <div v-else-if="reviewSummary.status === 'SUCCESS'" class="summary-top-card">
+            <div class="summary-top-header">
+              <span class="summary-top-icon">🤖</span>
+              <h2>AI 评价摘要</h2>
+              <span class="summary-top-badge">AI 生成</span>
+              <button type="button" class="summary-evidence-btn" @click="openSummaryEvidence">查看依据</button>
+            </div>
+            <p class="summary-top-text">{{ reviewSummary.summaryText }}</p>
+            <div class="summary-top-details" v-if="reviewSummary.advantages?.length || reviewSummary.disadvantages?.length">
+              <div class="summary-top-col" v-if="reviewSummary.advantages?.length">
+                <span class="st-label good">✅ 优点</span>
+                <span v-for="a in reviewSummary.advantages" :key="a.name" class="st-tag good">{{ a.name }}<small>{{ a.mentionCount }}</small></span>
+              </div>
+              <div class="summary-top-col" v-if="reviewSummary.disadvantages?.length">
+                <span class="st-label bad">⚠️ 不足</span>
+                <span v-for="d in reviewSummary.disadvantages" :key="d.name" class="st-tag bad">{{ d.name }}<small>{{ d.mentionCount }}</small></span>
+              </div>
+            </div>
+          </div>
+          <!-- 状态：评论数量不足 -->
+          <div v-else-if="reviewSummary.status === 'INSUFFICIENT_DATA'" class="summary-top-card summary-insufficient">
+            <div class="summary-top-header">
+              <span class="summary-top-icon">🤖</span>
+              <h2>AI 评价摘要</h2>
+            </div>
+            <p class="summary-placeholder-text">
+              评论数量不足，至少需要 {{ reviewSummary.minimumReviewCount || 3 }} 条有效评论才能生成评价摘要。
+            </p>
+            <p class="summary-placeholder-hint">
+              当前有效评论数：{{ reviewSummary.reviewCount || 0 }} 条
+            </p>
+          </div>
+          <!-- 状态：从未生成 -->
+          <div v-else class="summary-top-card summary-none">
+            <div class="summary-top-header">
+              <span class="summary-top-icon">🤖</span>
+              <h2>AI 评价摘要</h2>
+            </div>
+            <template v-if="reviewSummary.reviewCount >= reviewSummary.minimumReviewCount">
+              <p class="summary-placeholder-text">
+                摘要生成失败，请稍后刷新页面重试。
+              </p>
+            </template>
+            <template v-else>
+              <p class="summary-placeholder-text">
+                评论数量不足，至少需要 {{ reviewSummary.minimumReviewCount || 3 }} 条有效评论才能生成评价摘要。
+              </p>
+              <p class="summary-placeholder-hint">
+                当前有效评论数：{{ reviewSummary.reviewCount || 0 }} 条
+              </p>
+            </template>
+          </div>
+        </div>
+      </section>
+
       <section class="info-section">
         <div class="container">
           <div class="info-grid">
@@ -106,85 +179,6 @@
         </div>
       </section>
 
-      <!-- ========== 评价列表 & 标签筛选 ========== -->
-      <section class="review-list-section">
-        <div class="container">
-          <div class="review-list-card">
-            <h2 class="section-title">💬 用户评价</h2>
-
-            <!-- 标签筛选栏 -->
-            <div class="review-tag-bar" v-if="reviewTags.length > 0">
-              <span class="tag-bar-label">筛选：</span>
-              <button
-                :class="['tag-chip', { active: activeTag === '' }]"
-                @click="filterReviewsByTag('')"
-              >全部</button>
-              <button
-                v-for="tag in reviewTags"
-                :key="tag.tagCode"
-                :class="['tag-chip', getTagChipClass(tag), { active: activeTag === tag.tagCode }]"
-                @click="filterReviewsByTag(tag.tagCode)"
-              >
-                {{ tag.tagName || tag.tagCode }}
-                <span class="tag-chip-count">{{ tag.totalCount || tag.count || 0 }}</span>
-              </button>
-            </div>
-
-            <!-- 评价列表 -->
-            <div v-if="filteredReviews.length > 0" class="review-items">
-              <div v-for="rv in filteredReviews" :key="rv.id" class="review-item">
-                <div class="review-item-header">
-                  <span class="review-user-avatar">{{ (rv.username || '用户')[0] }}</span>
-                  <span class="review-username">{{ rv.username || '匿名用户' }}</span>
-                  <span class="review-stars">{{ '⭐'.repeat(rv.rating || 0) }}</span>
-                  <span class="review-time">{{ formatReviewTime(rv.reviewTime || rv.createdAt) }}</span>
-                </div>
-                <p class="review-item-content">{{ rv.content }}</p>
-                <!-- AI 情感标签 -->
-                <div class="review-item-tags" v-if="rv.analysis">
-                  <span :class="['review-sentiment-tag', (rv.analysis.sentiment || '').toLowerCase()]">
-                    {{ sentimentLabel(rv.analysis.sentiment) }}
-                  </span>
-                  <span v-for="tag in (rv.analysis.tags || []).slice(0,4)" :key="tag.tagCode"
-                        :class="['review-aspect-tag', (tag.sentiment || '').toLowerCase()]">
-                    {{ tag.tagName || tag.tagCode }}
-                  </span>
-                </div>
-                <!-- 商家回复 -->
-                <div v-if="rv.replyContent" class="review-reply">
-                  <span class="reply-label">商家回复：</span>{{ rv.replyContent }}
-                </div>
-              </div>
-            </div>
-            <div v-else class="review-empty">暂无符合条件的评价</div>
-
-            <!-- 举报弹窗 -->
-            <div v-if="reportDialogOpen" class="report-mask" @click.self="closeReportDialog">
-              <div class="report-dialog">
-                <h3>举报评价</h3>
-                <select v-model="reportForm.reason" class="report-select">
-                  <option value="">请选择举报原因</option>
-                  <option value="ADVERTISING">广告引流</option>
-                  <option value="FALSE_REVIEW">虚假评价</option>
-                  <option value="MALICIOUS_ATTACK">恶意攻击</option>
-                  <option value="SEXUAL_OR_VULGAR">色情低俗</option>
-                  <option value="PRIVACY_LEAK">泄露隐私</option>
-                  <option value="OTHER">其他</option>
-                </select>
-                <textarea v-model="reportForm.description" placeholder="补充说明（选填，最多500字）" maxlength="500" rows="3"></textarea>
-                <div v-if="reportError" class="review-message error">{{ reportError }}</div>
-                <div v-if="reportSuccess" class="review-message success">{{ reportSuccess }}</div>
-                <div class="report-actions">
-                  <button class="action-btn secondary" @click="closeReportDialog" :disabled="reportSubmitting">取消</button>
-                  <button class="action-btn primary" @click="submitReportAction" :disabled="!reportForm.reason || reportSubmitting">
-                    {{ reportSubmitting ? '提交中...' : '提交举报' }}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       <section class="review-submit-section">
         <div class="container">
@@ -341,23 +335,30 @@
         </div>
       </section>
 
-      <section v-if="reviewSummary?.status === 'SUCCESS'" class="summary-section">
-        <div class="container">
-          <div class="summary-card">
-            <div class="summary-header">
-              <h2 class="section-title">AI 评价摘要</h2>
-              <button
-                type="button"
-                class="summary-evidence-button"
-                @click="openSummaryEvidence"
-              >
-                查看依据
-              </button>
-            </div>
-            <p>{{ reviewSummary.summaryText || '暂无摘要内容' }}</p>
+      <!-- 举报弹窗 -->
+      <div v-if="reportDialogOpen" class="report-mask" @click.self="closeReportDialog">
+        <div class="report-dialog">
+          <h3>举报评价</h3>
+          <select v-model="reportForm.reason" class="report-select">
+            <option value="">请选择举报原因</option>
+            <option value="ADVERTISING">广告引流</option>
+            <option value="FALSE_REVIEW">虚假评价</option>
+            <option value="MALICIOUS_ATTACK">恶意攻击</option>
+            <option value="SEXUAL_OR_VULGAR">色情低俗</option>
+            <option value="PRIVACY_LEAK">泄露隐私</option>
+            <option value="OTHER">其他</option>
+          </select>
+          <textarea v-model="reportForm.description" placeholder="补充说明（选填，最多500字）" maxlength="500" rows="3"></textarea>
+          <div v-if="reportError" class="review-message error">{{ reportError }}</div>
+          <div v-if="reportSuccess" class="review-message success">{{ reportSuccess }}</div>
+          <div class="report-actions">
+            <button class="action-btn secondary" @click="closeReportDialog" :disabled="reportSubmitting">取消</button>
+            <button class="action-btn primary" @click="submitReportAction" :disabled="!reportForm.reason || reportSubmitting">
+              {{ reportSubmitting ? '提交中...' : '提交举报' }}
+            </button>
           </div>
         </div>
-      </section>
+      </div>
 
       <section class="recommend-section">
         <div class="container">
@@ -737,10 +738,39 @@ const loadMerchant = async () => {
     reviewSummary.value = summaryResponse.success
       ? summaryResponse.data
       : null
+    // 若状态为 GENERATING，启动轮询等待异步生成完成
+    if (reviewSummary.value?.status === 'GENERATING') {
+      startSummaryPolling(merchantId)
+    }
   } catch (error) {
     console.error('加载商家信息失败:', error)
   } finally {
     loading.value = false
+  }
+}
+
+let summaryPollTimer = null
+
+function startSummaryPolling(merchantId) {
+  clearSummaryPolling()
+  summaryPollTimer = setInterval(async () => {
+    try {
+      const res = await getMerchantReviewSummary(merchantId)
+      if (!res.success) return
+      reviewSummary.value = res.data
+      if (res.data?.status !== 'GENERATING') {
+        clearSummaryPolling()
+      }
+    } catch (_) {
+      // 网络异常时不停止轮询，沿用上次结果
+    }
+  }, 1500)
+}
+
+function clearSummaryPolling() {
+  if (summaryPollTimer) {
+    clearInterval(summaryPollTimer)
+    summaryPollTimer = null
   }
 }
 
@@ -976,6 +1006,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearSummaryPolling()
   selectedImages.value.forEach(image => URL.revokeObjectURL(image.previewUrl))
 })
 </script>
@@ -1485,6 +1516,61 @@ onBeforeUnmount(() => {
 .reviews-section {
   padding: 20px 0;
 }
+
+/* ===== AI 摘要（顶部） ===== */
+.summary-top-section { margin-top: 24px; }
+.summary-top-card {
+  background: linear-gradient(135deg, #f6ffed 0%, #e6f7ff 100%);
+  border: 1px solid #b7eb8f; border-radius: 16px; padding: 20px 24px;
+}
+.summary-top-card.summary-insufficient {
+  background: linear-gradient(135deg, #fffbe6 0%, #fff7e6 100%);
+  border-color: #ffe58f;
+}
+.summary-top-card.summary-none {
+  background: linear-gradient(135deg, #f5f5f5 0%, #fafafa 100%);
+  border-color: #d9d9d9;
+}
+.summary-top-card.summary-generating {
+  background: linear-gradient(135deg, #e6f7ff 0%, #f0f5ff 100%);
+  border-color: #91d5ff;
+}
+.summary-generating-spinner {
+  width: 18px; height: 18px; border: 2px solid #e8e8e8;
+  border-top-color: #1890ff; border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-left: auto;
+}
+.summary-placeholder-text {
+  font-size: 15px; color: #666; line-height: 1.8; margin: 0 0 8px;
+}
+.summary-placeholder-hint {
+  font-size: 13px; color: #999; margin: 0;
+}
+.summary-top-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.summary-top-icon { font-size: 22px; }
+.summary-top-header h2 { font-size: 17px; font-weight: 700; color: #1f2d3d; margin: 0; }
+.summary-top-badge {
+  font-size: 11px; color: #52c41a; background: #f6ffed;
+  border: 1px solid #b7eb8f; padding: 2px 10px; border-radius: 12px; font-weight: 500;
+}
+.summary-evidence-btn {
+  margin-left: auto; padding: 6px 14px; font-size: 13px; color: #1890ff;
+  background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+}
+.summary-evidence-btn:hover { background: #bae7ff; }
+.summary-top-text { font-size: 15px; color: #444; line-height: 1.8; margin: 0 0 12px; }
+.summary-top-details { display: flex; gap: 24px; flex-wrap: wrap; }
+.summary-top-col { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.st-label { font-size: 13px; font-weight: 600; }
+.st-label.good { color: #52c41a; }
+.st-label.bad { color: #ff4d4f; }
+.st-tag {
+  padding: 3px 12px; border-radius: 20px; font-size: 13px; font-weight: 500;
+}
+.st-tag.good { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+.st-tag.bad { background: #fff2f0; color: #ff4d4f; border: 1px solid #ffccc7; }
+.st-tag small { margin-left: 3px; opacity: 0.7; font-size: 11px; }
 
 .summary-section {
   padding: 20px 0;
