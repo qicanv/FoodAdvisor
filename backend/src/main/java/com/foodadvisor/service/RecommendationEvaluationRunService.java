@@ -86,6 +86,109 @@ public class RecommendationEvaluationRunService {
 
 
     /**
+     * 执行一个不落库的推荐评测案例。
+     *
+     * 该入口供通用回归测试模块复用：
+     * - 使用正式的规则条件提取；
+     * - 使用正式的营业时间过滤；
+     * - 使用正式的硬条件过滤和评分排序；
+     * - 不创建 recommendation_eval_runs；
+     * - 不写入 recommendation_eval_case_results。
+     */
+    @Transactional(readOnly = true)
+    public AdHocRecommendationEvaluation evaluateAdHoc(
+            String inputText,
+            String expectedConstraints,
+            String locationSnapshot,
+            Integer requestedTopK
+    ) {
+        if (inputText == null || inputText.isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "REGRESSION_RECOMMENDATION_INPUT_REQUIRED",
+                    "推荐回归案例的message不能为空"
+            );
+        }
+
+        int topK =
+                requestedTopK == null
+                        ? DEFAULT_TOP_K
+                        : requestedTopK;
+
+        validateTopK(topK);
+
+        RecommendationEvalCase evalCase =
+                new RecommendationEvalCase();
+
+        evalCase.setInputText(inputText.trim());
+        evalCase.setExpectedConstraints(
+                defaultJsonObject(expectedConstraints)
+        );
+        evalCase.setLocationSnapshot(
+                defaultJsonObject(locationSnapshot)
+        );
+
+        /*
+         * 仅借助原有结果实体承接 evaluateCase 的输出，
+         * 该对象不会写入数据库。
+         */
+        RecommendationEvalCaseResult caseResult =
+                createBaseCaseResult(
+                        null,
+                        evalCase
+                );
+
+        List<Merchant> candidates =
+                loadCandidateMerchants();
+
+        Map<Long, List<MerchantBusinessHours>> businessHours =
+                businessHoursService.loadGrouped(
+                        candidates.stream()
+                                .map(Merchant::getId)
+                                .toList()
+                );
+
+        long startedNanos =
+                System.nanoTime();
+
+        CaseExecutionSummary summary =
+                evaluateCase(
+                        evalCase,
+                        caseResult,
+                        candidates,
+                        businessHours,
+                        topK
+                );
+
+        long durationMs =
+                elapsedMilliseconds(startedNanos);
+
+        caseResult.setStatus("SUCCESS");
+        caseResult.setDurationMs(durationMs);
+        caseResult.setUpdatedAt(OffsetDateTime.now());
+
+        return new AdHocRecommendationEvaluation(
+                caseResult.getExtractedConstraints(),
+                caseResult.getMergedConstraints(),
+                caseResult.getRecommendationSnapshot(),
+                caseResult.getHardConditionMetrics(),
+                caseResult.getFailureReasons(),
+
+                caseResult.getResultCount() == null
+                        ? 0
+                        : caseResult.getResultCount(),
+
+                summary.exactConstraintMatch(),
+                summary.noResult(),
+                new LinkedHashSet<>(
+                        summary.merchantIds()
+                ),
+                durationMs
+        );
+    }
+
+
+    /**
      * 查询指定测试集的历史评测运行。
      */
     public List<RecommendationEvalRunResponse> listRuns(
@@ -1739,6 +1842,23 @@ public class RecommendationEvaluationRunService {
                 result.getCreatedAt(),
                 result.getUpdatedAt()
         );
+    }
+
+    /**
+     * 通用回归测试调用推荐评测后获得的内存结果。
+     */
+    public record AdHocRecommendationEvaluation(
+            String extractedConstraints,
+            String mergedConstraints,
+            String recommendationSnapshot,
+            String hardConditionMetrics,
+            String failureReasons,
+            int returnedCount,
+            boolean exactConstraintMatch,
+            boolean noResult,
+            Set<Long> merchantIds,
+            long durationMs
+    ) {
     }
 
     private record EvaluationMatches(
