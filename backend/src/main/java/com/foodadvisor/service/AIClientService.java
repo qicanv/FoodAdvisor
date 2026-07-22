@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.foodadvisor.dto.ai.DialogueExtractAiRequest;
 import com.foodadvisor.dto.ai.DialogueExtractAiResponse;
+import com.foodadvisor.dto.ai.RuntimeModelConfig;
 import com.foodadvisor.dto.prompt.ResolvedPrompt;
 import com.foodadvisor.entity.AiCallLog;
 import com.foodadvisor.entity.AuditLog;
@@ -52,6 +53,7 @@ public class AIClientService {
     private final SensitiveLogSanitizer sanitizer;
     private final AiRequestTraceService traceService;
     private final PromptManagementService promptManagementService;
+    private final RuntimeModelConfigResolver runtimeModelConfigResolver;
 
     @Value("${ai-service.base-url}")
     private String aiServiceBaseUrl;
@@ -80,6 +82,7 @@ public class AIClientService {
                 auditLogService,
                 sanitizer,
                 null,
+                null,
                 null
         );
     }
@@ -100,6 +103,29 @@ public class AIClientService {
                 auditLogService,
                 sanitizer,
                 traceService,
+                null,
+                null
+        );
+    }
+
+    /**
+     * 保留原有六参数构造方法，兼容现有单元测试。
+     */
+    public AIClientService(
+            ObjectMapper objectMapper,
+            AiCallLogService aiCallLogService,
+            AuditLogService auditLogService,
+            SensitiveLogSanitizer sanitizer,
+            AiRequestTraceService traceService,
+            PromptManagementService promptManagementService
+    ) {
+        this(
+                objectMapper,
+                aiCallLogService,
+                auditLogService,
+                sanitizer,
+                traceService,
+                promptManagementService,
                 null
         );
     }
@@ -114,7 +140,8 @@ public class AIClientService {
             AuditLogService auditLogService,
             SensitiveLogSanitizer sanitizer,
             AiRequestTraceService traceService,
-            PromptManagementService promptManagementService
+            PromptManagementService promptManagementService,
+            RuntimeModelConfigResolver runtimeModelConfigResolver
     ) {
         this.restTemplate = new RestTemplate();
         this.objectMapper = objectMapper;
@@ -123,6 +150,7 @@ public class AIClientService {
         this.sanitizer = sanitizer;
         this.traceService = traceService;
         this.promptManagementService = promptManagementService;
+        this.runtimeModelConfigResolver = runtimeModelConfigResolver;
     }
 
     @PostConstruct
@@ -671,14 +699,22 @@ public class AIClientService {
         String requestSummary =
                 requestSummary(body, functionType);
 
-        Object requestBody =
-                attachRuntimePrompt(body, functionType);
-
-        Integer inputLength =
-                payloadLength(requestBody);
+        Integer inputLength = null;
 
         try {
             requireInternalToken();
+
+            Object requestBody =
+                    attachRuntimeModel(
+                            attachRuntimePrompt(
+                                    body,
+                                    functionType
+                            ),
+                            functionType
+                    );
+
+            inputLength =
+                    payloadLength(requestBody);
 
             HttpHeaders headers =
                     new HttpHeaders();
@@ -848,6 +884,52 @@ public class AIClientService {
     }
 
     /**
+     * 为探店条件提取请求附加数据库中绑定的运行时模型配置。
+     *
+     * 请求摘要在本方法执行前已经生成，因此明文 API Key 不会进入
+     * ai_call_logs 或审计日志。
+     */
+    private Object attachRuntimeModel(
+            Object body,
+            String functionType
+    ) {
+        if (!"DIALOGUE_CONSTRAINT_EXTRACTION".equals(
+                functionType
+        )) {
+            return body;
+        }
+
+        if (runtimeModelConfigResolver == null) {
+            throw new IllegalStateException(
+                    "Runtime model configuration resolver is unavailable"
+            );
+        }
+
+        RuntimeModelConfig runtimeModel =
+                runtimeModelConfigResolver
+                        .resolveStoreRecommendation();
+
+        JsonNode bodyTree =
+                objectMapper.valueToTree(body);
+
+        if (!(bodyTree instanceof ObjectNode objectBody)) {
+            throw new IllegalStateException(
+                    "AI request body must be a JSON object"
+            );
+        }
+
+        ObjectNode enrichedBody =
+                objectBody.deepCopy();
+
+        enrichedBody.set(
+                "runtimeModel",
+                objectMapper.valueToTree(runtimeModel)
+        );
+
+        return enrichedBody;
+    }
+
+    /**
      * 根据 AI 功能类型，将当前启用的提示词附加到请求体。
      *
      * 原请求对象不会被修改。数据库没有启用版本、场景不受管理，
@@ -947,10 +1029,11 @@ public class AIClientService {
     }
 
     private void requireInternalToken() {
-        // 未配置 token 时跳过校验（开发环境），仅记录警告
-        if (internalToken == null || internalToken.isBlank()) {
-            log.warn("INTERNAL_API_TOKEN 未配置，AI 服务调用将不携带认证令牌。"
-                    + "生产环境请务必配置。");
+        if (internalToken == null
+                || internalToken.isBlank()) {
+            throw new IllegalStateException(
+                    "INTERNAL_API_TOKEN is not configured"
+            );
         }
     }
 

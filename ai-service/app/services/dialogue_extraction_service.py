@@ -8,7 +8,7 @@ from app.schemas.dialogue import (
     DialogueExtractRequest,
     DialogueExtractResponse,
 )
-from app.services.llm_service import llm_service
+from app.services.llm_service import LLMService
 
 
 SYSTEM_PROMPT = """
@@ -109,10 +109,22 @@ class DialogueExtractionService:
             if request.promptVersion and request.promptVersion.strip()
             else "dialogue-extraction:v1"
         )
-        if not llm_service.is_configured():
+        runtime_model = request.runtimeModel
+
+        model_client = LLMService(
+            api_key=runtime_model.apiKey.get_secret_value(),
+            base_url=runtime_model.baseUrl,
+            model=runtime_model.modelName,
+            provider=runtime_model.provider,
+            request_timeout_seconds=(
+                runtime_model.timeoutMs / 1000.0
+            ),
+        )
+
+        if not model_client.is_configured():
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="LLM model is not configured",
+                detail="Runtime LLM model is not configured",
             )
 
         payload = {
@@ -125,14 +137,14 @@ class DialogueExtractionService:
         }
 
         try:
-            result = await llm_service.chat_json(
+            result = await model_client.chat_json(
                 system_prompt=system_prompt,
                 user_message=json.dumps(
                     payload,
                     ensure_ascii=False,
                 ),
-                temperature=0.1,
-                max_tokens=1200,
+                temperature=runtime_model.temperature,
+                max_tokens=runtime_model.maxOutputTokens,
             )
 
             normalized_result = normalize_model_result(result)
@@ -145,8 +157,8 @@ class DialogueExtractionService:
             # from model-generated output.
             response.extractor = "AI_MODEL"
             response.degraded = False
-            response.modelName = llm_service.model
-            response.provider = llm_service.provider
+            response.modelName = model_client.model
+            response.provider = model_client.provider
             response.promptVersion = prompt_version
 
             return response
