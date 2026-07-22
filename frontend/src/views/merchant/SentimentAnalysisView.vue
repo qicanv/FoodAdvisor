@@ -422,7 +422,7 @@ import { getMyMerchants } from '../../api/merchantConsole'
 // ========== 状态 ==========
 const stores = ref([{ id: 0, name: '全部店铺' }])
 const selectedStoreId = ref(0)
-const timeRange = ref('30d')
+const timeRange = ref('all')
 const analyzing = ref(false)
 const lastUpdateTime = ref('')
 
@@ -686,8 +686,13 @@ async function loadStores() {
   } catch (e) { /* use default */ }
 }
 
-onMounted(() => {
-  loadStores()
+onMounted(async () => {
+  await loadStores()
+  // 默认选中第一个真实店铺
+  const realStores = stores.value.filter(s => s.id !== 0)
+  if (realStores.length > 0 && selectedStoreId.value === 0) {
+    selectedStoreId.value = realStores[0].id
+  }
   loadAll()
 })
 </script>
