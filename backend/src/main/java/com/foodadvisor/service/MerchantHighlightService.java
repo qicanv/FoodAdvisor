@@ -46,7 +46,7 @@ import java.util.stream.Collectors;
 public class MerchantHighlightService {
 
     /** 生成亮点所需的最少正面评论数（验收准则 5） */
-    private static final int MIN_POSITIVE_COUNT = 5;
+    private static final int MIN_POSITIVE_COUNT = 1;
 
     /** 单次送入模型的最大正面评价条数，防止提示词过长 */
     private static final int MAX_REVIEWS_FOR_HIGHLIGHT = 100;

@@ -115,20 +115,20 @@
           </div>
           <div class="chart-body">
             <div class="donut-chart-wrapper">
-              <svg viewBox="0 0 200 200" class="donut-chart">
-                <circle cx="100" cy="100" r="70" fill="none" stroke="#f0f0f0" stroke-width="24"/>
+              <svg viewBox="0 0 220 220" class="donut-chart">
+                <circle cx="110" cy="110" r="80" fill="none" stroke="#f0f0f0" stroke-width="26"/>
                 <circle
                   v-for="(seg, i) in sentimentDonutSegments"
                   :key="i"
-                  cx="100" cy="100" r="70" fill="none"
-                  :stroke="seg.color" stroke-width="24"
+                  cx="110" cy="110" r="80" fill="none"
+                  :stroke="seg.color" stroke-width="26"
                   :stroke-dasharray="seg.dashArray"
                   :stroke-dashoffset="seg.dashOffset"
-                  transform="rotate(-90 100 100)"
+                  transform="rotate(-90 110 110)"
                   class="donut-segment"
                 />
-                <text x="100" y="95" text-anchor="middle" class="donut-center-value">{{ summary.totalAnalyzed }}</text>
-                <text x="100" y="115" text-anchor="middle" class="donut-center-label">总分析数</text>
+                <text x="110" y="110" text-anchor="middle" class="donut-center-value">{{ summary.totalAnalyzed }}</text>
+                <text x="110" y="128" text-anchor="middle" class="donut-center-label">总分析数</text>
               </svg>
               <div class="donut-legend">
                 <div v-for="item in sentimentDist" :key="item.label" class="legend-row">
@@ -138,6 +138,32 @@
                   <span class="legend-pct">{{ item.percentage }}%</span>
                 </div>
               </div>
+            </div>
+            <!-- 口碑趋势小图 -->
+            <div class="trend-mini" style="margin-top:16px; padding-top:12px; border-top:1px solid #f0f0f0">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <span style="font-size:13px;font-weight:600;color:#1f2d3d">📈 口碑趋势</span>
+                <div class="trend-tabs">
+                  <button :class="['dim-tab', { active: trendPeriod === 'week' }]" @click="trendPeriod='week'">周</button>
+                  <button :class="['dim-tab', { active: trendPeriod === 'month' }]" @click="trendPeriod='month'">月</button>
+                </div>
+              </div>
+              <div v-if="trendLabels.length === 0" class="empty-hint">暂无趋势数据</div>
+              <svg v-else viewBox="0 0 440 150" class="trend-svg" style="width:100%;height:auto">
+                <line v-for="i in 5" :key="'gy'+i" :x1="35" :y1="8 + i * 24" :x2="432" :y2="8 + i * 24" stroke="#f5f5f5" stroke-width="0.8"/>
+                <text v-for="i in 5" :key="'yl'+i" x="30" :y="12 + i * 24" fill="#bbb" font-size="8" text-anchor="end">{{ 5 - i }}</text>
+                <text v-for="(l, i) in trendLabels" :key="'xl'+i" :x="35 + i * xStep" y="145" fill="#bbb" font-size="7" text-anchor="middle" :transform="'rotate(-30 ' + (35 + i * xStep) + ' 145)'">{{ l }}</text>
+                <polyline :points="ratingLine" fill="none" stroke="#1890ff" stroke-width="1.6"/>
+                <circle v-for="(p, i) in ratingPoints" :key="'rd'+i" :cx="p.x" :cy="p.y" r="2.5" fill="#fff" stroke="#1890ff" stroke-width="1.2"/>
+                <polyline :points="posRateLine" fill="none" stroke="#52c41a" stroke-width="1" stroke-dasharray="4 2"/>
+                <polyline :points="negRateLine" fill="none" stroke="#ff4d4f" stroke-width="1" stroke-dasharray="4 2"/>
+                <rect x="300" y="1" width="7" height="7" fill="#1890ff" rx="1.5"/>
+                <text x="309" y="8" fill="#aaa" font-size="8">均分</text>
+                <rect x="335" y="1" width="7" height="7" fill="#52c41a" rx="1.5"/>
+                <text x="344" y="8" fill="#aaa" font-size="8">好评率</text>
+                <rect x="378" y="1" width="7" height="7" fill="#ff4d4f" rx="1.5"/>
+                <text x="387" y="8" fill="#aaa" font-size="8">差评率</text>
+              </svg>
             </div>
           </div>
         </div>
@@ -223,6 +249,37 @@
                 <span class="issue-pct">{{ issue.percentage }}%</span>
               </div>
               <div v-if="complaintIssues.length === 0" class="empty-hint">暂无差评数据</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 商家亮点挖掘 ========== -->
+      <div class="highlights-card">
+        <div class="chart-header">
+          <h3>🌟 商家亮点</h3>
+          <button class="btn-generate-highlights" @click="generateHighlights" :disabled="highlightsLoading">
+            {{ highlightsLoading ? '生成中...' : (highlights.length > 0 ? '刷新亮点' : '生成亮点') }}
+          </button>
+        </div>
+        <div class="chart-body">
+          <div v-if="highlightsLoading" class="empty-hint">正在生成亮点...</div>
+          <div v-else-if="highlightsStatus === 'INSUFFICIENT_DATA'" class="highlight-status-warn">
+            ⚠️ 正面评论数量不足（当前 {{ highlightsAvailCount || 0 }} 条，需要 {{ highlightsMinCount || 5 }} 条），暂无法生成亮点
+          </div>
+          <div v-else-if="highlightsStatus === 'NONE'" class="empty-hint">点击"生成亮点"按钮，AI 将从好评中挖掘您的店铺优势</div>
+          <div v-else-if="highlights.length === 0" class="empty-hint">暂无亮点数据</div>
+          <div v-else class="highlights-grid">
+            <div v-for="hl in highlights" :key="hl.highlightId" :class="['highlight-item', getHighlightClass(hl.highlightType)]" @click="showHighlightEvidence(hl)">
+              <div class="hl-type-icon">{{ getHighlightIcon(hl.highlightType) }}</div>
+              <div class="hl-content">
+                <h4>{{ hl.title }}</h4>
+                <p>{{ hl.description }}</p>
+                <div class="hl-meta">
+                  <span class="hl-count">🔥 {{ hl.mentionCount }} 次提及</span>
+                  <span class="hl-ratio">👍 {{ (hl.positiveRatio * 100).toFixed(0) }}% 好评</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -413,6 +470,36 @@
         </div>
       </div>
 
+      <!-- ========== 亮点证据弹窗 ========== -->
+      <div v-if="hlEvidenceVisible" class="modal-overlay" @click.self="hlEvidenceVisible = false">
+        <div class="modal-panel">
+          <div class="modal-header">
+            <h3>🌟 亮点依据：{{ currentHlTitle }}</h3>
+            <button class="modal-close" @click="hlEvidenceVisible = false">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="hlEvidenceLoading" class="empty-hint">加载中...</div>
+            <div v-else-if="hlEvidences.length === 0" class="empty-hint">暂无评价依据</div>
+            <div v-else class="issue-review-list">
+              <div v-for="ev in hlEvidences" :key="ev.evidenceId || ev.reviewId" class="issue-review-item" style="border-left-color:#52c41a">
+                <div class="ir-header">
+                  <span v-if="ev.rating" class="rating-badge r4">{{ ev.rating }}分</span>
+                  <span class="ir-confidence">提及于 {{ ev.reviewTime || '-' }}</span>
+                </div>
+                <p class="ir-content">{{ ev.reviewContent || ev.evidenceExcerpt }}</p>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="hlEvidenceVisible = false">关闭</button>
+          </div>
+        </div>
+      </div>
+
       <!-- ========== 差评归因钻取弹窗 ========== -->
       <div v-if="issueDetailVisible" class="modal-overlay" @click.self="issueDetailVisible = false">
         <div class="modal-panel">
@@ -461,7 +548,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import MerchantLayout from '../../components/MerchantLayout.vue'
 import { getSentimentSummary, getSentimentReviews, triggerBatchAnalysis } from '../../api/sentiment'
-import { getMyMerchants } from '../../api/merchantConsole'
+import { getMyMerchants, getMerchantHighlights, generateMerchantHighlights, getMerchantHighlightEvidences } from '../../api/merchantConsole'
 import { getIssueCategoryReviews } from '../../api/reviewAnalysis'
 
 // ========== 状态 ==========
@@ -510,6 +597,183 @@ const complaintIssues = ref([])
 
 // AI 摘要
 const aiSummary = ref(null)
+
+// 亮点挖掘
+const highlights = ref([])
+const highlightsLoading = ref(false)
+const highlightsStatus = ref('')
+const highlightsAvailCount = ref(0)
+const highlightsMinCount = ref(5)
+
+async function loadHighlights() {
+  const ids = getEffectiveIds()
+  if (ids.length === 0) return
+  try {
+    // 如果是"全部店铺"，聚合所有店铺的亮点
+    if (ids.length > 1) {
+      const allHls = []
+      let totalAvail = 0, allNone = true
+      for (const id of ids) {
+        const res = await getMerchantHighlights(id)
+        if (res.success && res.data) {
+          const data = res.data
+          if (data.length === 1 && (data[0].status === 'INSUFFICIENT_DATA' || data[0].status === 'NONE')) {
+            totalAvail += data[0].availablePositiveCount || 0
+          } else {
+            allNone = false
+            allHls.push(...data.filter(h => h.status === 'ACTIVE'))
+          }
+        }
+      }
+      if (allNone && allHls.length === 0) {
+        highlightsStatus.value = 'NONE'
+        highlightsAvailCount.value = totalAvail
+        highlightsMinCount.value = 5
+        highlights.value = []
+      } else {
+        highlightsStatus.value = 'ACTIVE'
+        highlights.value = allHls
+      }
+    } else {
+      // 单个店铺
+      const res = await getMerchantHighlights(ids[0])
+      if (res.success && res.data) {
+        const data = res.data
+        if (data.length === 1 && (data[0].status === 'INSUFFICIENT_DATA' || data[0].status === 'NONE')) {
+          highlightsStatus.value = data[0].status
+          highlightsAvailCount.value = data[0].availablePositiveCount || 0
+          highlightsMinCount.value = data[0].minimumReviewCount || 5
+          highlights.value = []
+          if (data[0].status === 'NONE') {
+            showMessage('该店铺尚未生成亮点，点击"生成亮点"按钮开始', 'info')
+          }
+        } else {
+          highlightsStatus.value = 'ACTIVE'
+          highlights.value = data.filter(h => h.status === 'ACTIVE')
+        }
+      }
+    }
+  } catch (e) { console.error('加载亮点失败', e) }
+}
+
+async function generateHighlights() {
+  const ids = getEffectiveIds()
+  if (ids.length === 0) return
+  highlightsLoading.value = true
+  try {
+    let okCount = 0, failCount = 0
+    for (const id of ids) {
+      try {
+        const res = await generateMerchantHighlights(id, false)
+        if (res.success) {
+          const data = res.data
+          if (data && data.length === 1 && (data[0].status === 'INSUFFICIENT_DATA' || data[0].status === 'NONE')) {
+            failCount++
+          } else {
+            okCount++
+          }
+        } else {
+          failCount++
+        }
+      } catch (e) { failCount++ }
+    }
+    const msg = okCount > 0
+      ? `${okCount} 店亮点已更新` + (failCount > 0 ? `，${failCount} 店数据不足` : '')
+      : `${failCount} 店暂无足够正面评价`
+    showMessage(msg, okCount > 0 ? 'success' : 'info')
+    await loadHighlights()
+  } catch (e) { showMessage('亮点生成失败', 'error') }
+  finally { highlightsLoading.value = false }
+}
+
+// 亮点证据弹窗
+const hlEvidenceVisible = ref(false)
+const hlEvidenceLoading = ref(false)
+const hlEvidences = ref([])
+const currentHlTitle = ref('')
+
+async function showHighlightEvidence(hl) {
+  currentHlTitle.value = hl.title
+  hlEvidenceVisible.value = true
+  hlEvidenceLoading.value = true
+  try {
+    // 用亮点自身的 merchantId，而不是 selectedStoreId（全部店铺时 selectedStoreId=0）
+    const mId = hl.merchantId || selectedStoreId.value
+    const res = await getMerchantHighlightEvidences(mId, hl.highlightId)
+    if (res.success && res.data) {
+      hlEvidences.value = res.data
+    }
+  } catch (e) { console.error('加载亮点依据失败', e) }
+  finally { hlEvidenceLoading.value = false }
+}
+
+function getHighlightIcon(type) {
+  return { SIGNATURE_DISH: '🍽️', ENVIRONMENT: '🏠', SERVICE: '🤝', PRICE: '💰', BRAND_FEATURE: '⭐' }[type] || '✨'
+}
+function getHighlightClass(type) {
+  return { SIGNATURE_DISH: 'hl-dish', ENVIRONMENT: 'hl-env', SERVICE: 'hl-service', PRICE: 'hl-price', BRAND_FEATURE: 'hl-brand' }[type] || ''
+}
+
+// 口碑趋势（纯 SVG）
+const trendPeriod = ref('month')
+const CHART_W = 440, CHART_H = 130, CHART_LEFT = 35, CHART_RIGHT = 8, CHART_TOP = 8
+
+const trendGroups = computed(() => {
+  const groups = {}
+  reviewList.value.forEach(r => {
+    if (!r.reviewTime) return
+    const d = new Date(r.reviewTime)
+    if (isNaN(d.getTime())) return
+    const m = d.getMonth() + 1, day = d.getDate()
+    // sortKey 用于排序，label 用于显示
+    const sortKey = trendPeriod.value === 'week'
+      ? `${d.getFullYear()}-${String(m).padStart(2,'0')}-W${String(Math.ceil(day / 7)).padStart(2,'0')}`
+      : `${d.getFullYear()}-${String(m).padStart(2,'0')}`
+    const label = trendPeriod.value === 'week'
+      ? `${m}月第${Math.ceil(day / 7)}周`
+      : `${m}月`
+    if (!groups[sortKey]) groups[sortKey] = { sum: 0, count: 0, pos: 0, neg: 0, total: 0, ratings: [], label }
+    groups[sortKey].sum += (r.rating || 0)
+    groups[sortKey].count++
+    groups[sortKey].total++
+    groups[sortKey].ratings.push(r.rating || 0)
+    const s = String(r.sentiment || '').toUpperCase()
+    if (s === 'POSITIVE') groups[sortKey].pos++
+    else if (s === 'NEGATIVE') groups[sortKey].neg++
+  })
+  return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]))
+})
+
+const trendLabels = computed(() => trendGroups.value.map(e => e[1].label))
+const xStep = computed(() => trendLabels.value.length > 1 ? (CHART_W - CHART_LEFT - CHART_RIGHT) / (trendLabels.value.length - 1) : (CHART_W - CHART_LEFT - CHART_RIGHT))
+
+function yPos(v, max) { return CHART_TOP + CHART_H - (v / max * CHART_H) }
+
+const ratingPoints = computed(() => {
+  const max = 5
+  return trendGroups.value.map(([, g], i) => ({
+    x: CHART_LEFT + i * xStep.value,
+    y: yPos(g.count > 0 ? g.sum / g.count : 0, max),
+  }))
+})
+
+const posRatePoints = computed(() => {
+  return trendGroups.value.map(([, g], i) => ({
+    x: CHART_LEFT + i * xStep.value,
+    y: yPos(g.total > 0 ? g.pos / g.total * 100 : 0, 100),
+  }))
+})
+
+const negRatePoints = computed(() => {
+  return trendGroups.value.map(([, g], i) => ({
+    x: CHART_LEFT + i * xStep.value,
+    y: yPos(g.total > 0 ? g.neg / g.total * 100 : 0, 100),
+  }))
+})
+
+const ratingLine = computed(() => ratingPoints.value.map(p => `${p.x},${p.y}`).join(' '))
+const posRateLine = computed(() => posRatePoints.value.map(p => `${p.x},${p.y}`).join(' '))
+const negRateLine = computed(() => negRatePoints.value.map(p => `${p.x},${p.y}`).join(' '))
 
 // 评价列表
 const reviewList = ref([])
@@ -583,7 +847,7 @@ function clearKeywordFilter() {
 // ========== 计算属性 ==========
 const sentimentDonutSegments = computed(() => {
   let offset = 0
-  const total = 2 * Math.PI * 70
+  const total = 2 * Math.PI * 80
   return sentimentDist.value.map(item => {
     const length = (item.percentage / 100) * total
     const seg = {
@@ -632,7 +896,7 @@ function truncate(text, len) {
 }
 
 async function loadAll() {
-  await Promise.all([loadSummary(), loadReviews()])
+  await Promise.all([loadSummary(), loadReviews(), loadHighlights()])
 }
 
 // 获取当前有效的 merchantId 列表（支持"全部店铺"）
@@ -650,7 +914,7 @@ function showMessage(text, type = 'info') {
   messageText.value = text
   messageType.value = type
   clearTimeout(messageTimer)
-  messageTimer = setTimeout(() => { messageText.value = '' }, 5000)
+  messageTimer = setTimeout(() => { messageText.value = '' }, 8000)
 }
 
 async function loadSummary() {
@@ -857,6 +1121,7 @@ onMounted(async () => {
 watch([selectedStoreId, timeRange], () => {
   loadAll()
 })
+
 </script>
 
 <style scoped>
@@ -946,7 +1211,7 @@ watch([selectedStoreId, timeRange], () => {
 
 /* 情感分布甜甜圈 */
 .donut-chart-wrapper { display: flex; align-items: center; gap: 24px; }
-.donut-chart { width: 180px; height: 180px; flex-shrink: 0; }
+.donut-chart { width: 210px; height: 210px; flex-shrink: 0; }
 .donut-segment { transition: all 0.3s; }
 .donut-center-value { font-size: 22px; font-weight: 700; fill: #1f2d3d; }
 .donut-center-label { font-size: 12px; fill: #999; }
@@ -976,8 +1241,8 @@ watch([selectedStoreId, timeRange], () => {
 .dim-name { font-size: 14px; font-weight: 500; color: #1f2d3d; }
 .dim-score { font-size: 12px; color: #999; }
 .dim-bar-track {
-  position: relative; height: 28px; background: #f5f5f5;
-  border-radius: 14px; overflow: hidden; display: flex;
+  position: relative; height: 36px; background: #f5f5f5;
+  border-radius: 18px; overflow: hidden; display: flex;
 }
 .dim-bar-positive {
   height: 100%; background: linear-gradient(90deg, #52c41a, #73d13d);
@@ -1271,4 +1536,43 @@ watch([selectedStoreId, timeRange], () => {
   padding: 8px 12px; border-radius: 6px; margin-top: 8px;
 }
 .ir-evidence-label { font-weight: 600; }
+
+/* ===== 亮点挖掘 ===== */
+.highlights-card {
+  background: #fff; border-radius: 12px; padding: 24px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04); margin-bottom: 24px;
+}
+.btn-generate-highlights {
+  padding: 6px 16px; font-size: 13px; color: #fff;
+  background: linear-gradient(135deg, #722ed1, #9254de);
+  border: none; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+}
+.btn-generate-highlights:hover:not(:disabled) { opacity: 0.9; }
+.btn-generate-highlights:disabled { opacity: 0.6; cursor: not-allowed; }
+.highlight-status-warn {
+  padding: 16px; background: #fffbe6; border: 1px solid #ffe58f;
+  border-radius: 8px; font-size: 14px; color: #ad8b00; text-align: center;
+}
+.highlights-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.highlight-item {
+  display: flex; gap: 12px; padding: 16px; border-radius: 12px;
+  border: 1px solid #f0f0f0; cursor: pointer; transition: all 0.2s;
+}
+.highlight-item:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
+.hl-dish { border-left: 4px solid #ff7a45; }
+.hl-env { border-left: 4px solid #52c41a; }
+.hl-service { border-left: 4px solid #1890ff; }
+.hl-price { border-left: 4px solid #722ed1; }
+.hl-brand { border-left: 4px solid #faad14; }
+.hl-type-icon { font-size: 28px; flex-shrink: 0; }
+.hl-content { flex: 1; min-width: 0; }
+.hl-content h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: #1f2d3d; }
+.hl-content p { margin: 0 0 8px; font-size: 13px; color: #667085; line-height: 1.5; }
+.hl-meta { display: flex; gap: 12px; font-size: 12px; color: #999; }
+.hl-count { color: #ff7a45; font-weight: 600; }
+.hl-ratio { color: #52c41a; font-weight: 600; }
+
+/* ===== 趋势追踪 ===== */
+.trend-tabs { display: flex; gap: 6px; }
+.trend-svg { width: 100%; height: auto; display: block; }
 </style>
