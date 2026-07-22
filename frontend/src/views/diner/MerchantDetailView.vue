@@ -106,6 +106,86 @@
         </div>
       </section>
 
+      <!-- ========== 评价列表 & 标签筛选 ========== -->
+      <section class="review-list-section">
+        <div class="container">
+          <div class="review-list-card">
+            <h2 class="section-title">💬 用户评价</h2>
+
+            <!-- 标签筛选栏 -->
+            <div class="review-tag-bar" v-if="reviewTags.length > 0">
+              <span class="tag-bar-label">筛选：</span>
+              <button
+                :class="['tag-chip', { active: activeTag === '' }]"
+                @click="filterReviewsByTag('')"
+              >全部</button>
+              <button
+                v-for="tag in reviewTags"
+                :key="tag.tagCode"
+                :class="['tag-chip', getTagChipClass(tag), { active: activeTag === tag.tagCode }]"
+                @click="filterReviewsByTag(tag.tagCode)"
+              >
+                {{ tag.tagName || tag.tagCode }}
+                <span class="tag-chip-count">{{ tag.totalCount || tag.count || 0 }}</span>
+              </button>
+            </div>
+
+            <!-- 评价列表 -->
+            <div v-if="filteredReviews.length > 0" class="review-items">
+              <div v-for="rv in filteredReviews" :key="rv.id" class="review-item">
+                <div class="review-item-header">
+                  <span class="review-user-avatar">{{ (rv.username || '用户')[0] }}</span>
+                  <span class="review-username">{{ rv.username || '匿名用户' }}</span>
+                  <span class="review-stars">{{ '⭐'.repeat(rv.rating || 0) }}</span>
+                  <span class="review-time">{{ formatReviewTime(rv.reviewTime || rv.createdAt) }}</span>
+                </div>
+                <p class="review-item-content">{{ rv.content }}</p>
+                <!-- AI 情感标签 -->
+                <div class="review-item-tags" v-if="rv.analysis">
+                  <span :class="['review-sentiment-tag', (rv.analysis.sentiment || '').toLowerCase()]">
+                    {{ sentimentLabel(rv.analysis.sentiment) }}
+                  </span>
+                  <span v-for="tag in (rv.analysis.tags || []).slice(0,4)" :key="tag.tagCode"
+                        :class="['review-aspect-tag', (tag.sentiment || '').toLowerCase()]">
+                    {{ tag.tagName || tag.tagCode }}
+                  </span>
+                </div>
+                <!-- 商家回复 -->
+                <div v-if="rv.replyContent" class="review-reply">
+                  <span class="reply-label">商家回复：</span>{{ rv.replyContent }}
+                </div>
+              </div>
+            </div>
+            <div v-else class="review-empty">暂无符合条件的评价</div>
+
+            <!-- 举报弹窗 -->
+            <div v-if="reportDialogOpen" class="report-mask" @click.self="closeReportDialog">
+              <div class="report-dialog">
+                <h3>举报评价</h3>
+                <select v-model="reportForm.reason" class="report-select">
+                  <option value="">请选择举报原因</option>
+                  <option value="ADVERTISING">广告引流</option>
+                  <option value="FALSE_REVIEW">虚假评价</option>
+                  <option value="MALICIOUS_ATTACK">恶意攻击</option>
+                  <option value="SEXUAL_OR_VULGAR">色情低俗</option>
+                  <option value="PRIVACY_LEAK">泄露隐私</option>
+                  <option value="OTHER">其他</option>
+                </select>
+                <textarea v-model="reportForm.description" placeholder="补充说明（选填，最多500字）" maxlength="500" rows="3"></textarea>
+                <div v-if="reportError" class="review-message error">{{ reportError }}</div>
+                <div v-if="reportSuccess" class="review-message success">{{ reportSuccess }}</div>
+                <div class="report-actions">
+                  <button class="action-btn secondary" @click="closeReportDialog" :disabled="reportSubmitting">取消</button>
+                  <button class="action-btn primary" @click="submitReportAction" :disabled="!reportForm.reason || reportSubmitting">
+                    {{ reportSubmitting ? '提交中...' : '提交举报' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="review-submit-section">
         <div class="container">
           <div class="review-submit-card">
@@ -361,64 +441,6 @@
       </section>
     </div>
 
-    <!-- 举报弹窗 -->
-    <div
-      v-if="reportDialogOpen"
-      class="evidence-mask"
-      @click.self="closeReportDialog"
-    >
-      <section class="evidence-dialog report-dialog" role="dialog" aria-modal="true">
-        <header>
-          <h2>举报评价</h2>
-          <button type="button" @click="closeReportDialog">关闭</button>
-        </header>
-        <div class="report-form">
-          <div class="report-field">
-            <label class="report-label">举报原因 <span class="required">*</span></label>
-            <div class="reason-options">
-              <button
-                v-for="reason in reportReasons"
-                :key="reason.value"
-                class="reason-btn"
-                :class="{ active: reportForm.reason === reason.value }"
-                @click="reportForm.reason = reason.value"
-              >
-                {{ reason.label }}
-              </button>
-            </div>
-          </div>
-          <div class="report-field">
-            <label class="report-label">补充说明（选填）</label>
-            <textarea
-              v-model="reportForm.description"
-              class="report-textarea"
-              maxlength="500"
-              rows="4"
-              placeholder="请描述举报原因，最多500字"
-            ></textarea>
-            <span class="field-hint">{{ reportForm.description.length }}/500</span>
-          </div>
-          <div v-if="reportError" class="review-message error">{{ reportError }}</div>
-          <div v-if="reportSuccess" class="review-message success">{{ reportSuccess }}</div>
-          <div class="report-actions">
-            <button
-              class="action-btn secondary"
-              @click="closeReportDialog"
-              :disabled="reportSubmitting"
-            >
-              取消
-            </button>
-            <button
-              class="action-btn primary"
-              @click="submitReportAction"
-              :disabled="!reportForm.reason || reportSubmitting"
-            >
-              {{ reportSubmitting ? '提交中...' : '提交举报' }}
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
   </div>
 </template>
 
@@ -431,12 +453,73 @@ import {
   getMerchantReviewSummary,
   getMerchantReviewSummaryEvidences
 } from '../../api/restaurant'
+import { getMerchantReviews, getMerchantReviewTags, getReviewAnalysis } from '../../api/reviewAnalysis'
 
 const router = useRouter()
 const route = useRoute()
 const merchant = ref(null)
 const reviews = ref([])
 const dishes = ref([])
+
+// ---- 标签筛选 & 评价列表 ----
+const reviewTags = ref([])
+const activeTag = ref('')
+const filteredReviews = ref([])
+
+async function loadReviewsWithTags() {
+  const mId = merchant.value?.merchantId || merchant.value?.id
+  if (!mId) return
+  try {
+    const [revRes, tagRes] = await Promise.all([
+      getMerchantReviews(mId, { pageNum: 1, pageSize: 50 }),
+      getMerchantReviewTags(mId),
+    ])
+    if (revRes.success) {
+      const raw = revRes.data?.records || revRes.data?.value || []
+      // 为每条评价加载分析结果
+      reviews.value = await Promise.all(raw.map(async (r) => {
+        try {
+          const ar = await getReviewAnalysis(r.id)
+          if (ar.success && ar.data) return { ...r, analysis: ar.data }
+        } catch (_) { /* ignore */ }
+        return { ...r, analysis: null }
+      }))
+      applyTagFilter()
+    }
+    if (tagRes.success) reviewTags.value = tagRes.data || []
+  } catch (e) { console.error('加载评价列表失败', e) }
+}
+
+function filterReviewsByTag(tagCode) {
+  activeTag.value = tagCode
+  applyTagFilter()
+}
+
+function applyTagFilter() {
+  if (!activeTag.value) {
+    filteredReviews.value = reviews.value
+  } else {
+    filteredReviews.value = reviews.value.filter(r =>
+      r.analysis?.tags?.some(t => t.tagCode === activeTag.value)
+    )
+  }
+}
+
+function getTagChipClass(tag) {
+  if (tag.sentiment === 'POSITIVE' || (tag.positiveCount || 0) > (tag.negativeCount || 0)) return 'tag-positive'
+  if (tag.sentiment === 'NEGATIVE' || (tag.negativeCount || 0) > (tag.positiveCount || 0)) return 'tag-negative'
+  return 'tag-neutral'
+}
+
+function sentimentLabel(s) {
+  return { POSITIVE: '👍 正面', NEGATIVE: '👎 负面', NEUTRAL: '➖ 中性', MIXED: '🔄 混合' }[s] || s || ''
+}
+
+function formatReviewTime(t) {
+  if (!t) return ''
+  const d = new Date(t)
+  return d.toLocaleDateString('zh-CN')
+}
 const loading = ref(true)
 const submitting = ref(false)
 const submitError = ref('')
@@ -889,6 +972,7 @@ const handleLogout = () => {
 
 onMounted(() => {
   loadMerchant()
+  loadReviewsWithTags()
 })
 
 onBeforeUnmount(() => {
@@ -1823,4 +1907,88 @@ onBeforeUnmount(() => {
     padding: 30px 0;
   }
 }
+
+/* ===== 评价列表 & 标签筛选 ===== */
+.review-list-section { margin-top: 32px; }
+.review-list-card {
+  background: #fff; border-radius: 16px; padding: 24px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+.review-tag-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 20px; padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.tag-bar-label { font-size: 14px; color: #999; font-weight: 500; }
+.tag-chip {
+  padding: 6px 14px; border-radius: 20px; font-size: 13px;
+  border: 1px solid #e0e0e0; background: #fafafa; color: #555;
+  cursor: pointer; transition: all 0.2s;
+}
+.tag-chip:hover { border-color: #1890ff; color: #1890ff; }
+.tag-chip.active { background: #1890ff; color: #fff; border-color: #1890ff; }
+.tag-chip.tag-positive { border-color: #b7eb8f; }
+.tag-chip.tag-positive:hover, .tag-chip.tag-positive.active { background: #52c41a; color: #fff; border-color: #52c41a; }
+.tag-chip.tag-negative { border-color: #ffccc7; }
+.tag-chip.tag-negative:hover, .tag-chip.tag-negative.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
+.tag-chip-count { margin-left: 3px; opacity: 0.7; font-size: 11px; }
+
+.review-items { display: flex; flex-direction: column; gap: 16px; }
+.review-item {
+  padding: 16px; background: #fafafa; border-radius: 12px;
+  border: 1px solid #f0f0f0; transition: all 0.2s;
+}
+.review-item:hover { background: #f5f5f5; }
+.review-item-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.review-user-avatar {
+  width: 28px; height: 28px; border-radius: 50%; background: #1890ff;
+  color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center;
+}
+.review-username { font-size: 14px; font-weight: 600; color: #1f2d3d; }
+.review-stars { font-size: 12px; }
+.review-time { margin-left: auto; font-size: 12px; color: #ccc; }
+.review-item-content { font-size: 14px; color: #444; line-height: 1.7; margin: 8px 0; }
+.review-item-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.review-sentiment-tag {
+  padding: 2px 10px; border-radius: 4px; font-size: 11px; font-weight: 600;
+}
+.review-sentiment-tag.positive { color: #52c41a; background: #f6ffed; }
+.review-sentiment-tag.negative { color: #ff4d4f; background: #fff2f0; }
+.review-sentiment-tag.neutral { color: #1890ff; background: #e6f7ff; }
+.review-sentiment-tag.mixed { color: #faad14; background: #fffbe6; }
+.review-aspect-tag {
+  padding: 2px 8px; border-radius: 3px; font-size: 11px;
+  background: #f5f5f5; color: #667085;
+}
+.review-aspect-tag.positive { color: #52c41a; }
+.review-aspect-tag.negative { color: #ff4d4f; }
+.review-reply {
+  margin-top: 10px; padding: 10px 14px; background: #f6ffed;
+  border-left: 3px solid #52c41a; border-radius: 0 8px 8px 0;
+  font-size: 13px; color: #555; line-height: 1.6;
+}
+.reply-label { font-weight: 600; color: #52c41a; }
+.review-empty { text-align: center; color: #ccc; padding: 32px; font-size: 14px; }
+
+.report-mask {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.report-dialog {
+  background: #fff; border-radius: 16px; padding: 24px; width: 440px; max-width: 90vw;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.15);
+}
+.report-dialog h3 { margin: 0 0 16px; font-size: 18px; color: #1f2d3d; }
+.report-select {
+  width: 100%; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 8px;
+  font-size: 14px; color: #1f2d3d; margin-bottom: 12px; outline: none;
+}
+.report-select:focus { border-color: #1890ff; }
+.report-dialog textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 8px;
+  font-size: 14px; resize: vertical;
+}
+.report-dialog textarea:focus { border-color: #1890ff; outline: none; }
+.report-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 </style>
