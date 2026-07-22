@@ -373,6 +373,238 @@
       </div>
     </div>
 
+    <!-- 菜品管理标签页 -->
+    <div v-if="activeTab === 'dishes'" class="tab-content">
+      <div class="search-bar">
+        <div class="search-item">
+          <input
+            type="text"
+            v-model="dishSearchKeyword"
+            placeholder="搜索菜品名称、分类或描述..."
+            class="search-input"
+            @keyup.enter="loadDishes"
+          />
+        </div>
+        <div class="search-item">
+          <select v-model="dishSearchStatus" class="search-select" @change="loadDishes">
+            <option value="">全部状态</option>
+            <option value="ACTIVE">上架中</option>
+            <option value="OFF_SHELF">已下架</option>
+            <option value="ARCHIVED">已归档</option>
+          </select>
+        </div>
+        <div class="search-item">
+          <select v-model="dishSearchMerchantId" class="search-select" @change="loadDishes" :disabled="!dishMerchantListLoaded">
+            <option value="">{{ dishMerchantListLoaded ? '全部商家' : '加载中...' }}</option>
+            <option v-for="m in dishMerchantList" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
+        </div>
+        <button class="search-btn" @click="loadDishes">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="M21 21l-4.35-4.35"></path>
+          </svg>
+          <span>搜索</span>
+        </button>
+      </div>
+
+      <div class="table-container">
+        <table class="dish-table">
+          <thead>
+            <tr>
+              <th>菜品名称</th>
+              <th>分类</th>
+              <th>价格</th>
+              <th>所属商家ID</th>
+              <th>推荐</th>
+              <th>状态</th>
+              <th>更新时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="dish in dishes" :key="dish.id">
+              <td class="name-cell">{{ dish.name }}</td>
+              <td>{{ dish.category || '-' }}</td>
+              <td>{{ dish.price ? '￥' + dish.price : '-' }}</td>
+              <td>{{ dish.merchantId }}</td>
+              <td>{{ dish.recommended ? '是' : '否' }}</td>
+              <td>
+                <span :class="['status-tag', getDishStatusClass(dish.status)]">
+                  {{ getDishStatusText(dish.status) }}
+                </span>
+              </td>
+              <td>{{ formatDate(dish.updatedAt) }}</td>
+              <td class="actions-cell">
+                <button class="action-btn edit-btn" @click="openDishEditModal(dish)" title="编辑">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                  </svg>
+                </button>
+                <button class="action-btn status-btn" @click="openDishStatusModal(dish)" title="修改状态">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82V9a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                  </svg>
+                </button>
+                <button
+                  v-if="dish.status !== 'ACTIVE'"
+                  class="action-btn restore-btn"
+                  @click="restoreDish(dish)"
+                  title="恢复菜品"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="1 4 1 10 7 10"></polyline>
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                  </svg>
+                </button>
+              </td>
+            </tr>
+            <tr v-if="dishLoading">
+              <td colspan="8" class="loading-cell">
+                <div class="loading-spinner"></div>
+                <span>加载中...</span>
+              </td>
+            </tr>
+            <tr v-if="!dishLoading && dishes.length === 0">
+              <td colspan="8" class="empty-cell">暂无菜品数据</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="pagination" v-if="dishTotal > 0">
+          <button class="pagination-btn" :disabled="dishCurrentPage <= 1" @click="goToDishPage(dishCurrentPage - 1)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M15 19l-7-7 7-7"></path>
+            </svg>
+          </button>
+          <span class="pagination-info">第 {{ dishCurrentPage }} / {{ dishTotalPages }} 页</span>
+          <button class="pagination-btn" :disabled="dishCurrentPage >= dishTotalPages" @click="goToDishPage(dishCurrentPage + 1)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 5l7 7-7 7"></path>
+            </svg>
+          </button>
+          <span class="pagination-total">共 {{ dishTotal }} 条记录</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 菜品状态变更弹窗 -->
+    <div class="modal-overlay" v-if="dishShowStatusModal" @click="closeDishStatusModal">
+      <div class="modal-content status-modal" @click.stop>
+        <div class="modal-header">
+          <h2>修改菜品状态</h2>
+          <button class="close-btn" @click="closeDishStatusModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="status-info">
+            <div class="status-item">
+              <span class="status-label">菜品名称</span>
+              <span class="status-value">{{ dishStatusDish?.name }}</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">当前状态</span>
+              <span :class="['status-tag', getDishStatusClass(dishStatusDish?.status)]">
+                {{ getDishStatusText(dishStatusDish?.status) }}
+              </span>
+            </div>
+          </div>
+          <div class="form-item">
+            <label>新状态</label>
+            <select v-model="dishStatusForm.status" class="form-select">
+              <option value="ACTIVE">上架</option>
+              <option value="OFF_SHELF">下架</option>
+              <option value="ARCHIVED">归档</option>
+            </select>
+          </div>
+          <div class="form-item" style="margin-top: 12px;">
+            <label>变更原因</label>
+            <textarea v-model="dishStatusForm.reason" class="form-textarea" placeholder="请输入变更原因（选填）" rows="2"></textarea>
+          </div>
+
+          <!-- 菜品状态变更历史 -->
+          <div class="status-history-section" v-if="dishStatusHistory.length > 0">
+            <h4 class="history-title">状态变更历史</h4>
+            <div class="history-list">
+              <div v-for="record in dishStatusHistory" :key="record.id" class="history-item">
+                <div class="history-header">
+                  <span class="history-time">{{ formatDateTime(record.createdAt) }}</span>
+                </div>
+                <div class="history-detail">
+                  <span class="status-tag status-archived">{{ record.oldStatus || '创建' }}</span>
+                  <span style="margin: 0 6px; color: #909399;">→</span>
+                  <span :class="['status-tag', getDishStatusClass(record.newStatus)]">{{ record.newStatus }}</span>
+                </div>
+                <div class="history-reason" v-if="record.reason">{{ record.reason }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-cancel" @click="closeDishStatusModal">取消</button>
+          <button class="btn btn-primary" @click="submitDishStatus">确认修改</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 菜品编辑弹窗 -->
+    <div class="modal-overlay" v-if="dishShowEditModal" @click="closeDishEditModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h2>{{ dishIsEditing ? '编辑菜品' : '新增菜品' }}</h2>
+          <button class="close-btn" @click="closeDishEditModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-item">
+              <label>菜品名称 <span class="required">*</span></label>
+              <input type="text" v-model="dishFormData.name" class="form-input" placeholder="请输入菜品名称" />
+            </div>
+            <div class="form-item">
+              <label>所属商家ID <span class="required">*</span></label>
+              <input type="number" v-model="dishFormData.merchantId" class="form-input" placeholder="请输入商家ID" />
+            </div>
+            <div class="form-item">
+              <label>价格</label>
+              <input type="number" v-model="dishFormData.price" class="form-input" placeholder="请输入价格" min="0" />
+            </div>
+            <div class="form-item">
+              <label>分类</label>
+              <input type="text" v-model="dishFormData.category" class="form-input" placeholder="请输入分类" />
+            </div>
+            <div class="form-item">
+              <label>状态</label>
+              <select v-model="dishFormData.status" class="form-select">
+                <option value="ACTIVE">上架</option>
+                <option value="OFF_SHELF">下架</option>
+                <option value="ARCHIVED">归档</option>
+              </select>
+            </div>
+            <div class="form-item">
+              <label>推荐</label>
+              <select v-model="dishFormData.recommended" class="form-select">
+                <option :value="true">是</option>
+                <option :value="false">否</option>
+              </select>
+            </div>
+            <div class="form-item full-width">
+              <label>描述</label>
+              <textarea v-model="dishFormData.description" class="form-textarea" placeholder="请输入菜品描述" rows="2"></textarea>
+            </div>
+            <div class="form-item full-width">
+              <label>图片URL</label>
+              <input type="text" v-model="dishFormData.imageUrl" class="form-input" placeholder="请输入图片URL" />
+            </div>
+          </div>
+          <div class="error-message" v-if="dishErrorMessage">{{ dishErrorMessage }}</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-cancel" @click="closeDishEditModal">取消</button>
+          <button class="btn btn-primary" @click="submitDishForm">{{ dishIsEditing ? '保存修改' : '确认新增' }}</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay" v-if="showModal" @click="closeModal">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
@@ -640,12 +872,21 @@ import {
   getAdminMerchantStatusHistory,
   getAdminMerchantStatistics
 } from '../../api/adminMerchant'
+import {
+  getAdminDishes,
+  createAdminDish,
+  updateAdminDish,
+  updateAdminDishStatus,
+  restoreAdminDish,
+  getAdminDishStatusHistory
+} from '../../api/adminDish'
 
 const activeTab = ref('list')
 
 const sidebarItems = [
   { key: 'list', label: '商家列表', icon: '🏪' },
   { key: 'add', label: '新增商家', icon: '✨' },
+  { key: 'dishes', label: '菜品管理', icon: '🍽️' },
   { key: 'history', label: '变更记录', icon: '📋' },
 ]
 
@@ -707,6 +948,43 @@ const suspendedCount = ref(0)
 
 const allHistory = ref([])
 const historyLoading = ref(false)
+
+// ===== 菜品管理状态 =====
+const dishes = ref([])
+const dishLoading = ref(false)
+const dishCurrentPage = ref(1)
+const dishPageSize = ref(20)
+const dishTotal = ref(0)
+
+const dishSearchKeyword = ref('')
+const dishSearchStatus = ref('')
+const dishSearchMerchantId = ref('')
+
+const dishMerchantList = ref([])
+const dishMerchantMap = ref({})
+const dishMerchantListLoaded = ref(false)
+
+const dishTotalPages = computed(() => Math.ceil(dishTotal.value / dishPageSize.value))
+
+const dishShowStatusModal = ref(false)
+const dishStatusDish = ref(null)
+const dishStatusForm = ref({ status: '', reason: '' })
+const dishStatusHistory = ref([])
+
+const dishShowEditModal = ref(false)
+const dishIsEditing = ref(false)
+const dishErrorMessage = ref('')
+const dishFormData = ref({
+  id: null,
+  name: '',
+  merchantId: '',
+  price: '',
+  category: '',
+  status: 'ACTIVE',
+  recommended: false,
+  description: '',
+  imageUrl: ''
+})
 
 const loadMerchants = async () => {
   loading.value = true
@@ -1116,15 +1394,216 @@ const viewMerchantHistory = (merchantId) => {
   }
 }
 
+// ===== 菜品管理方法 =====
+
+const loadDishes = async () => {
+  dishLoading.value = true
+  try {
+    const params = {
+      pageNum: dishCurrentPage.value,
+      pageSize: dishPageSize.value,
+      keyword: dishSearchKeyword.value || undefined,
+      status: dishSearchStatus.value || undefined,
+      merchantId: dishSearchMerchantId.value ? Number(dishSearchMerchantId.value) : undefined
+    }
+    const response = await getAdminDishes(params)
+    if (response.success) {
+      dishes.value = response.data?.records || []
+      dishTotal.value = response.data?.total || 0
+    }
+  } catch (error) {
+    console.error('加载菜品列表失败:', error)
+  } finally {
+    dishLoading.value = false
+  }
+}
+
+const loadDishMerchantList = async () => {
+  if (dishMerchantListLoaded.value) return
+  try {
+    const response = await getAdminMerchants({ pageNum: 1, pageSize: 1000 })
+    if (response.success) {
+      const records = response.data?.records || response.data?.value || []
+      dishMerchantList.value = records
+      const map = {}
+      records.forEach(m => { map[m.id] = m.name })
+      dishMerchantMap.value = map
+      dishMerchantListLoaded.value = true
+    }
+  } catch (error) {
+    console.error('加载商家列表失败:', error)
+  }
+}
+
+const goToDishPage = (page) => {
+  if (page < 1 || page > dishTotalPages.value) return
+  dishCurrentPage.value = page
+  loadDishes()
+}
+
+const getDishStatusClass = (status) => {
+  switch (status) {
+    case 'ACTIVE': return 'status-active'
+    case 'OFF_SHELF': return 'status-disabled'
+    case 'ARCHIVED': return 'status-archived'
+    default: return ''
+  }
+}
+
+const getDishStatusText = (status) => {
+  switch (status) {
+    case 'ACTIVE': return '上架中'
+    case 'OFF_SHELF': return '已下架'
+    case 'ARCHIVED': return '已归档'
+    default: return status || '-'
+  }
+}
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return '-'
+  try {
+    return new Date(dateStr).toLocaleDateString('zh-CN')
+  } catch {
+    return dateStr
+  }
+}
+
+const openDishStatusModal = async (dish) => {
+  dishStatusDish.value = dish
+  dishStatusForm.value = { status: dish.status || 'ACTIVE', reason: '' }
+  dishStatusHistory.value = []
+  dishShowStatusModal.value = true
+
+  try {
+    const response = await getAdminDishStatusHistory(dish.id)
+    if (response.success && response.data) {
+      dishStatusHistory.value = response.data
+    }
+  } catch (error) {
+    console.error('加载状态历史失败:', error)
+  }
+}
+
+const closeDishStatusModal = () => {
+  dishShowStatusModal.value = false
+  dishStatusDish.value = null
+}
+
+const submitDishStatus = async () => {
+  if (!dishStatusDish.value) return
+  try {
+    const response = await updateAdminDishStatus(dishStatusDish.value.id, {
+      status: dishStatusForm.value.status,
+      reason: dishStatusForm.value.reason || null
+    })
+    if (response.success) {
+      closeDishStatusModal()
+      loadDishes()
+    } else {
+      alert(response.message || '修改状态失败')
+    }
+  } catch (error) {
+    console.error('修改状态失败:', error)
+  }
+}
+
+const restoreDish = async (dish) => {
+  if (!confirm(`确认恢复菜品"${dish.name}"吗？恢复后将重新上架。`)) return
+  try {
+    const response = await restoreAdminDish(dish.id, { reason: '管理员手动恢复' })
+    if (response.success) {
+      loadDishes()
+    } else {
+      alert(response.message || '恢复失败')
+    }
+  } catch (error) {
+    console.error('恢复失败:', error)
+  }
+}
+
+const openDishEditModal = (dish = null) => {
+  dishErrorMessage.value = ''
+  if (dish) {
+    dishIsEditing.value = true
+    dishFormData.value = {
+      id: dish.id,
+      name: dish.name,
+      merchantId: dish.merchantId,
+      price: dish.price || '',
+      category: dish.category || '',
+      status: dish.status || 'ACTIVE',
+      recommended: dish.recommended || false,
+      description: dish.description || '',
+      imageUrl: dish.imageUrl || ''
+    }
+  } else {
+    dishIsEditing.value = false
+    dishFormData.value = {
+      id: null, name: '', merchantId: '', price: '', category: '',
+      status: 'ACTIVE', recommended: false, description: '', imageUrl: ''
+    }
+  }
+  dishShowEditModal.value = true
+}
+
+const closeDishEditModal = () => {
+  dishShowEditModal.value = false
+}
+
+const submitDishForm = async () => {
+  dishErrorMessage.value = ''
+  if (!dishFormData.value.name.trim()) {
+    dishErrorMessage.value = '菜品名称不能为空'
+    return
+  }
+  if (!dishFormData.value.merchantId) {
+    dishErrorMessage.value = '所属商家ID不能为空'
+    return
+  }
+
+  try {
+    let response
+    const data = {
+      name: dishFormData.value.name.trim(),
+      merchantId: Number(dishFormData.value.merchantId),
+      price: dishFormData.value.price ? Number(dishFormData.value.price) : null,
+      category: dishFormData.value.category || null,
+      status: dishFormData.value.status,
+      recommended: dishFormData.value.recommended,
+      description: dishFormData.value.description || null,
+      imageUrl: dishFormData.value.imageUrl || null
+    }
+
+    if (dishIsEditing.value) {
+      response = await updateAdminDish(dishFormData.value.id, data)
+    } else {
+      response = await createAdminDish(data)
+    }
+
+    if (response.success) {
+      closeDishEditModal()
+      loadDishes()
+    } else {
+      dishErrorMessage.value = response.message || '操作失败'
+    }
+  } catch (error) {
+    dishErrorMessage.value = '网络请求失败'
+    console.error('提交失败:', error)
+  }
+}
+
 onMounted(() => {
   loadMerchants()
   loadStatistics()
 })
 
-// 切换到"变更记录"标签时自动加载
+// 切换到"变更记录"或"菜品管理"标签时自动加载
 watch(activeTab, (newTab) => {
   if (newTab === 'history') {
     loadAllHistory()
+  } else if (newTab === 'dishes') {
+    loadDishes()
+    loadDishMerchantList()
   }
 })
 </script>
@@ -1234,19 +1713,19 @@ watch(activeTab, (newTab) => {
   border: 1px solid #f0f0f0;
 }
 
-.merchant-table {
+.merchant-table, .dish-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.merchant-table thead {
+.merchant-table thead, .dish-table thead {
   background: linear-gradient(180deg, #fafafa 0%, #f5f5f5 100%);
   position: sticky;
   top: 0;
   z-index: 1;
 }
 
-.merchant-table th {
+.merchant-table th, .dish-table th {
   padding: 16px 20px;
   text-align: left;
   font-weight: 600;
@@ -1257,7 +1736,7 @@ watch(activeTab, (newTab) => {
   border-bottom: 2px solid #e8e8e8;
 }
 
-.merchant-table td {
+.merchant-table td, .dish-table td {
   padding: 16px 20px;
   text-align: left;
   font-size: 14px;
@@ -1266,7 +1745,7 @@ watch(activeTab, (newTab) => {
   transition: background-color 0.2s;
 }
 
-.merchant-table tbody tr:hover td {
+.merchant-table tbody tr:hover td, .dish-table tbody tr:hover td {
   background-color: #f8fcff;
 }
 
@@ -1975,7 +2454,7 @@ watch(activeTab, (newTab) => {
     width: 95%;
   }
   
-  .merchant-table {
+  .merchant-table, .dish-table {
     display: block;
     overflow-x: auto;
   }

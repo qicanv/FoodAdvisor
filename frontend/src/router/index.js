@@ -125,12 +125,6 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin' },
   },
   {
-    path: '/admin/dishes',
-    name: 'admin-dishes',
-    component: () => import('../views/admin/DishManagementView.vue'),
-    meta: { requiresAuth: true, role: 'admin' },
-  },
-  {
     path: '/admin/diners',
     name: 'admin-diners',
     component: () => import('../views/admin/AdminDinerView.vue'),

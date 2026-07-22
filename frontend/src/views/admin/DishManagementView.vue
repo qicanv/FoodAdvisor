@@ -37,6 +37,12 @@
             <option value="ARCHIVED">已归档</option>
           </select>
         </div>
+        <div class="search-item">
+          <select v-model="searchMerchantId" class="search-select" @change="loadDishes" :disabled="!merchantListLoaded">
+            <option value="">{{ merchantListLoaded ? '全部商家' : '加载中...' }}</option>
+            <option v-for="m in merchantList" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
+        </div>
         <button class="search-btn" @click="loadDishes">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
@@ -257,6 +263,7 @@ import {
   getAdminDishStatusHistory,
   deleteAdminDish
 } from '../../api/adminDish'
+import { getAdminMerchants } from '../../api/adminMerchant'
 
 const activeTab = ref('list')
 
@@ -272,6 +279,12 @@ const total = ref(0)
 
 const searchKeyword = ref('')
 const searchStatus = ref('')
+const searchMerchantId = ref('')
+
+// 商家列表缓存（一次性加载，供筛选/表格/表单共用）
+const merchantList = ref([])
+const merchantMap = ref({})
+const merchantListLoaded = ref(false)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
 
@@ -302,7 +315,8 @@ const loadDishes = async () => {
       pageNum: currentPage.value,
       pageSize: pageSize.value,
       keyword: searchKeyword.value || undefined,
-      status: searchStatus.value || undefined
+      status: searchStatus.value || undefined,
+      merchantId: searchMerchantId.value ? Number(searchMerchantId.value) : undefined
     }
     const response = await getAdminDishes(params)
     if (response.success) {
@@ -313,6 +327,23 @@ const loadDishes = async () => {
     console.error('加载菜品列表失败:', error)
   } finally {
     loading.value = false
+  }
+}
+
+const loadMerchantList = async () => {
+  if (merchantListLoaded.value) return
+  try {
+    const response = await getAdminMerchants({ pageNum: 1, pageSize: 1000 })
+    if (response.success) {
+      const records = response.data?.records || []
+      merchantList.value = records
+      const map = {}
+      records.forEach(m => { map[m.id] = m.name })
+      merchantMap.value = map
+      merchantListLoaded.value = true
+    }
+  } catch (error) {
+    console.error('加载商家列表失败:', error)
   }
 }
 
@@ -488,6 +519,7 @@ const submitForm = async () => {
 
 onMounted(() => {
   loadDishes()
+  loadMerchantList()
 })
 </script>
 
@@ -500,7 +532,8 @@ onMounted(() => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
 }
 
-.search-item { flex: 1; min-width: 180px; }
+.search-item:first-child { flex: 1 1 250px; }
+.search-item:not(:first-child) { flex: 0 0 150px; }
 
 .search-input {
   width: 100%; padding: 12px 16px; border: 2px solid #e8e8e8;
