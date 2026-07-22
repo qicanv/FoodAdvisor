@@ -6,13 +6,13 @@
         <div class="toolbar-left">
           <div class="store-selector">
             <label class="toolbar-label">店铺</label>
-            <select v-model="selectedStoreId" class="toolbar-select" @change="loadAll">
+            <select v-model="selectedStoreId" class="toolbar-select">
               <option v-for="s in stores" :key="s.id" :value="s.id">{{ s.name }}</option>
             </select>
           </div>
           <div class="time-filter">
             <label class="toolbar-label">时间</label>
-            <select v-model="timeRange" class="toolbar-select" @change="loadAll">
+            <select v-model="timeRange" class="toolbar-select">
               <option value="7d">近 7 天</option>
               <option value="30d">近 30 天</option>
               <option value="90d">近 90 天</option>
@@ -197,6 +197,8 @@
                 :key="kw.word"
                 class="keyword-tag positive"
                 :style="{fontSize: (14 + kw.count * 2.5) + 'px', opacity: 0.5 + kw.count / (maxPositiveKwCount * 2)}"
+                @click="filterByKeyword(kw.word)"
+                :title="'点击筛选包含「' + kw.word + '」的评价'"
               >{{ kw.word }}<small>{{ kw.count }}</small></span>
             </div>
           </div>
@@ -209,7 +211,7 @@
           </div>
           <div class="chart-body">
             <div class="issue-list">
-              <div v-for="(issue, idx) in complaintIssues" :key="issue.category" class="issue-row">
+              <div v-for="(issue, idx) in complaintIssues" :key="issue.category" class="issue-row" @click="openIssueDetail(issue)">
                 <span class="issue-rank" :style="{background: rankColor(idx)}">{{ idx + 1 }}</span>
                 <div class="issue-info">
                   <span class="issue-name">{{ issue.categoryName }}</span>
@@ -289,6 +291,7 @@
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
               <input v-model="searchKeyword" placeholder="搜索关键词..." class="filter-search" @input="onSearchInput" />
+              <button v-if="searchKeyword" class="clear-search-btn" @click="clearKeywordFilter" title="清除搜索">✕</button>
             </div>
           </div>
         </div>
@@ -409,15 +412,57 @@
           </div>
         </div>
       </div>
+
+      <!-- ========== 差评归因钻取弹窗 ========== -->
+      <div v-if="issueDetailVisible" class="modal-overlay" @click.self="issueDetailVisible = false">
+        <div class="modal-panel">
+          <div class="modal-header">
+            <h3>⚠️ 差评归因：{{ currentIssue?.categoryName }}</h3>
+            <button class="modal-close" @click="issueDetailVisible = false">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="issueReviewsLoading" class="empty-hint">加载中...</div>
+            <div v-else-if="issueReviews.length === 0" class="empty-hint">暂无相关评价</div>
+            <div v-else class="issue-review-list">
+              <div v-for="ir in issueReviews" :key="ir.reviewId" class="issue-review-item">
+                <div class="ir-header">
+                  <span :class="['rating-badge', 'r' + ir.rating]">{{ ir.rating }}分</span>
+                  <span class="ir-confidence">置信度 {{ (ir.confidence * 100).toFixed(0) }}%</span>
+                </div>
+                <p class="ir-content">{{ ir.content }}</p>
+                <p class="ir-evidence" v-if="ir.evidenceText">
+                  <span class="ir-evidence-label">问题依据：</span>"{{ ir.evidenceText }}"
+                </p>
+              </div>
+            </div>
+            <!-- 分页 -->
+            <div class="pagination" v-if="issueTotalPages > 1">
+              <button :disabled="issuePage <= 1" @click="issuePage--; loadIssueReviews()">上一页</button>
+              <span v-for="p in issueVisiblePages" :key="p"
+                    :class="['page-btn', { active: p === issuePage }]"
+                    @click="issuePage = p; loadIssueReviews()">{{ p }}</span>
+              <button :disabled="issuePage >= issueTotalPages" @click="issuePage++; loadIssueReviews()">下一页</button>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="issueDetailVisible = false">关闭</button>
+          </div>
+        </div>
+      </div>
     </div>
   </MerchantLayout>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import MerchantLayout from '../../components/MerchantLayout.vue'
 import { getSentimentSummary, getSentimentReviews, triggerBatchAnalysis } from '../../api/sentiment'
 import { getMyMerchants } from '../../api/merchantConsole'
+import { getIssueCategoryReviews } from '../../api/reviewAnalysis'
 
 // ========== 状态 ==========
 const stores = ref([{ id: 0, name: '全部店铺' }])
@@ -480,6 +525,61 @@ const totalCount = ref(0)
 const detailVisible = ref(false)
 const currentDetail = ref(null)
 
+// 差评归因钻取
+const issueDetailVisible = ref(false)
+const currentIssue = ref(null)
+const issueReviews = ref([])
+const issueReviewsLoading = ref(false)
+const issuePage = ref(1)
+const issueTotalPages = ref(1)
+const issuePageSize = 10
+const issueVisiblePages = computed(() => {
+  const pages = []
+  for (let p = Math.max(1, issuePage.value - 2); p <= Math.min(issueTotalPages.value, issuePage.value + 2); p++) pages.push(p)
+  return pages
+})
+
+async function openIssueDetail(issue) {
+  if (selectedStoreId.value === 0) {
+    showMessage('请先选择具体店铺再查看差评归因详情', 'info')
+    return
+  }
+  currentIssue.value = issue
+  issuePage.value = 1
+  issueDetailVisible.value = true
+  await loadIssueReviews()
+}
+
+async function loadIssueReviews() {
+  if (!currentIssue.value || selectedStoreId.value === 0) return
+  issueReviewsLoading.value = true
+  try {
+    const res = await getIssueCategoryReviews(selectedStoreId.value, currentIssue.value.category, {
+      pageNum: issuePage.value,
+      pageSize: issuePageSize,
+    })
+    if (res.success && res.data) {
+      issueReviews.value = res.data.records || res.data.value || []
+      issueTotalPages.value = res.data.totalPages || 1
+    }
+  } catch (e) { console.error('加载差评归因评价失败', e) }
+  finally { issueReviewsLoading.value = false }
+}
+
+// 关键词点击筛选
+function filterByKeyword(word) {
+  searchKeyword.value = word
+  page.value = 1
+  loadReviews()
+}
+
+// 清除关键词筛选
+function clearKeywordFilter() {
+  searchKeyword.value = ''
+  page.value = 1
+  loadReviews()
+}
+
 // ========== 计算属性 ==========
 const sentimentDonutSegments = computed(() => {
   let offset = 0
@@ -535,9 +635,15 @@ async function loadAll() {
   await Promise.all([loadSummary(), loadReviews()])
 }
 
+// 获取当前有效的 merchantId 列表（支持"全部店铺"）
+function getEffectiveIds() {
+  if (selectedStoreId.value > 0) return [selectedStoreId.value]
+  return stores.value.filter(s => s.id > 0).map(s => s.id)
+}
+
 // 消息提示
 const messageText = ref('')
-const messageType = ref('info') // 'info' | 'error' | 'success'
+const messageType = ref('info')
 let messageTimer = null
 
 function showMessage(text, type = 'info') {
@@ -549,86 +655,133 @@ function showMessage(text, type = 'info') {
 
 async function loadSummary() {
   try {
-    const res = await getSentimentSummary({
-      merchantId: selectedStoreId.value,
-      timeRange: timeRange.value,
-    })
-    if (res.success && res.data) {
+    const ids = getEffectiveIds()
+    if (ids.length === 0) return
+
+    // 并发请求所有店铺的汇总
+    const results = await Promise.all(ids.map(id =>
+      getSentimentSummary({ merchantId: id, timeRange: timeRange.value })
+    ))
+
+    // 合并多个店铺的数据
+    let totalR = 0, totalA = 0, posCount = 0, negCount = 0, neuCount = 0, mixCount = 0
+    let topIssue = { categoryName: '-', count: 0 }
+    const dimAgg = {}
+    const kwAgg = {}
+    const issueAgg = {}
+
+    for (const res of results) {
+      if (!res.success || !res.data) continue
       const d = res.data
-      summary.value = {
-        totalReviews: d.totalReviews || 0,
-        totalAnalyzed: d.totalAnalyzed || 0,
-        positiveRate: d.positiveRate || 0,
-        negativeRate: d.negativeRate || 0,
-        positiveTrend: d.positiveTrend || 0,
-        negativeTrend: d.negativeTrend || 0,
-        topComplaintDimension: d.topComplaintDimension || '-',
-        topComplaintCount: d.topComplaintCount || 0,
-      }
+      totalR += d.totalReviews || 0
+      totalA += d.totalAnalyzed || 0
       // 情感分布
-      if (d.sentimentDistribution) {
-        for (const item of sentimentDist.value) {
-          const match = d.sentimentDistribution[item.key]
-          item.count = match?.count || 0
-          item.percentage = match?.percentage || 0
-        }
-      }
-      // 维度数据
+      const sd = d.sentimentDistribution || {}
+      posCount += (sd.POSITIVE?.count || 0)
+      negCount += (sd.NEGATIVE?.count || 0)
+      neuCount += (sd.NEUTRAL?.count || 0)
+      mixCount += (sd.MIXED?.count || 0)
+      // 维度
       if (d.dimensions) {
-        for (const dim of dimensionData.value) {
-          const match = d.dimensions[dim.key]
-          if (match) {
-            dim.positivePct = match.positivePct || 0
-            dim.neutralPct = match.neutralPct || 0
-            dim.negativePct = match.negativePct || 0
-            dim.positiveCount = match.positiveCount || 0
-            dim.negativeCount = match.negativeCount || 0
-            dim.coverage = match.coverage || 0
-          }
+        for (const [k, v] of Object.entries(d.dimensions)) {
+          if (!dimAgg[k]) dimAgg[k] = { positiveCount: 0, negativeCount: 0, mentioned: 0 }
+          dimAgg[k].positiveCount += v.positiveCount || 0
+          dimAgg[k].negativeCount += v.negativeCount || 0
+          dimAgg[k].mentioned += (v.positiveCount + v.negativeCount) || 0
         }
       }
       // 关键词
-      if (d.positiveKeywords) {
-        positiveKeywords.value = d.positiveKeywords
-        maxPositiveKwCount.value = Math.max(1, ...d.positiveKeywords.map(k => k.count))
+      for (const kw of (d.positiveKeywords || [])) {
+        kwAgg[kw.word] = (kwAgg[kw.word] || 0) + kw.count
       }
       // 差评问题
-      if (d.complaintIssues) {
-        complaintIssues.value = d.complaintIssues
+      for (const iss of (d.complaintIssues || [])) {
+        issueAgg[iss.category] = (issueAgg[iss.category] || 0) + iss.count
+        if (!topIssue.categoryName || issueAgg[iss.category] > topIssue.count) {
+          topIssue = { categoryName: iss.categoryName, count: issueAgg[iss.category] }
+        }
       }
-      // AI 摘要
-      if (d.aiSummary) {
-        aiSummary.value = d.aiSummary
-      }
-      lastUpdateTime.value = d.updateTime || new Date().toLocaleString('zh-CN')
+    }
 
-      // 提示数据分析状态
-      if (d.totalAnalyzed === 0 && d.totalReviews > 0) {
-        showMessage(`共有 ${d.totalReviews} 条评价待分析，请点击"一键分析"按钮开始 AI 情感分析`, 'info')
+    const analyzedTotal = totalA > 0 ? totalA : 1
+    summary.value = {
+      totalReviews: totalR,
+      totalAnalyzed: totalA,
+      positiveRate: Math.round(posCount * 1000 / analyzedTotal) / 10,
+      negativeRate: Math.round(negCount * 1000 / analyzedTotal) / 10,
+      positiveTrend: 0, negativeTrend: 0,
+      topComplaintDimension: topIssue.categoryName,
+      topComplaintCount: topIssue.count,
+    }
+
+    sentimentDist.value[0].count = posCount; sentimentDist.value[0].percentage = Math.round(posCount * 1000 / analyzedTotal) / 10
+    sentimentDist.value[1].count = negCount; sentimentDist.value[1].percentage = Math.round(negCount * 1000 / analyzedTotal) / 10
+    sentimentDist.value[2].count = neuCount; sentimentDist.value[2].percentage = Math.round(neuCount * 1000 / analyzedTotal) / 10
+    sentimentDist.value[3].count = mixCount; sentimentDist.value[3].percentage = Math.round(mixCount * 1000 / analyzedTotal) / 10
+
+    for (const dim of dimensionData.value) {
+      const agg = dimAgg[dim.key]
+      if (agg && agg.mentioned > 0) {
+        dim.positivePct = Math.round(agg.positiveCount * 1000 / agg.mentioned) / 10
+        dim.neutralPct = 0
+        dim.negativePct = Math.round(agg.negativeCount * 1000 / agg.mentioned) / 10
+        dim.positiveCount = agg.positiveCount
+        dim.negativeCount = agg.negativeCount
+        dim.coverage = Math.round(agg.mentioned * 1000 / totalR) / 10
       }
+    }
+
+    const kwSorted = Object.entries(kwAgg).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    positiveKeywords.value = kwSorted.map(([w, c]) => ({ word: w, count: c }))
+    maxPositiveKwCount.value = Math.max(1, ...kwSorted.map(e => e[1]))
+
+    const issueSorted = Object.entries(issueAgg).sort((a, b) => b[1] - a[1])
+    complaintIssues.value = issueSorted.map(([cat, cnt]) => ({
+      category: cat,
+      categoryName: cat,
+      count: cnt,
+      percentage: Math.round(cnt * 1000 / analyzedTotal) / 10,
+    }))
+
+    lastUpdateTime.value = new Date().toLocaleString('zh-CN')
+    if (totalA === 0 && totalR > 0) {
+      showMessage(`共有 ${totalR} 条评价待分析，请点击"一键分析"按钮开始 AI 情感分析`, 'info')
     }
   } catch (e) {
     console.error('加载汇总数据失败', e)
-    showMessage('加载汇总数据失败，请确认后端服务正常运行', 'error')
   }
 }
 
 async function loadReviews() {
   try {
-    const res = await getSentimentReviews({
-      merchantId: selectedStoreId.value,
-      timeRange: timeRange.value,
-      sentiment: filterSentiment.value,
-      dimension: filterDimension.value,
-      keyword: searchKeyword.value,
-      page: page.value,
-      pageSize: pageSize.value,
-    })
-    if (res.success && res.data) {
-      reviewList.value = res.data.records || []
-      totalPages.value = res.data.totalPages || 1
-      totalCount.value = res.data.totalCount || 0
+    const ids = getEffectiveIds()
+    if (ids.length === 0) return
+
+    // 并发请求所有店铺
+    const results = await Promise.all(ids.map(id =>
+      getSentimentReviews({
+        merchantId: id,
+        timeRange: timeRange.value,
+        sentiment: filterSentiment.value || undefined,
+        dimension: filterDimension.value || undefined,
+        keyword: searchKeyword.value || undefined,
+        page: 1,
+        pageSize: 200,
+      })
+    ))
+
+    // 合并结果
+    let allItems = []
+    for (const res of results) {
+      if (res.success && res.data) {
+        allItems.push(...(res.data.records || []))
+      }
     }
+    // 前分页
+    totalCount.value = allItems.length
+    totalPages.value = Math.max(1, Math.ceil(allItems.length / pageSize.value))
+    const start = (page.value - 1) * pageSize.value
+    reviewList.value = allItems.slice(start, start + pageSize.value)
   } catch (e) {
     console.error('加载评论列表失败', e)
   }
@@ -637,27 +790,33 @@ async function loadReviews() {
 async function triggerAnalysis() {
   if (analyzing.value) return
   analyzing.value = true
-  showMessage('', '') // 清除旧消息
+  showMessage('', '')
   try {
-    const res = await triggerBatchAnalysis({
-      merchantId: selectedStoreId.value,
-      timeRange: timeRange.value,
-    })
-    if (res.success) {
-      const d = res.data
-      const msg = d.message
-        || (d.analyzedCount > 0
-          ? `分析完成！成功分析 ${d.analyzedCount} 条评价`
-          : '所有评价已分析完成')
-      showMessage(msg, 'success')
-      lastUpdateTime.value = new Date().toLocaleString('zh-CN')
-      await loadAll()
-    } else {
-      showMessage(res.message || '批量分析请求失败，请确认 AI 服务已启动', 'error')
+    const ids = getEffectiveIds()
+    if (ids.length === 0) return
+    let totalOk = 0, totalFail = 0
+    for (const id of ids) {
+      const res = await triggerBatchAnalysis({
+        merchantId: id,
+        timeRange: timeRange.value,
+      })
+      if (res.success) {
+        const d = res.data
+        totalOk += d.analyzedCount || 0
+        totalFail += d.failCount || 0
+      } else {
+        totalFail++
+      }
     }
+    const msg = totalOk > 0
+      ? `分析完成！成功 ${totalOk} 条，失败 ${totalFail} 条`
+      : '所有评价已分析完成'
+    showMessage(msg, totalOk > 0 ? 'success' : 'info')
+    lastUpdateTime.value = new Date().toLocaleString('zh-CN')
+    await loadAll()
   } catch (e) {
     console.error('批量分析失败', e)
-    showMessage('批量分析失败：无法连接到 AI 服务，请确认 ai-service 已启动且 internal-token 配置正确', 'error')
+    showMessage('批量分析失败：无法连接到 AI 服务', 'error')
   } finally {
     analyzing.value = false
   }
@@ -688,11 +847,14 @@ async function loadStores() {
 
 onMounted(async () => {
   await loadStores()
-  // 默认选中第一个真实店铺
-  const realStores = stores.value.filter(s => s.id !== 0)
-  if (realStores.length > 0 && selectedStoreId.value === 0) {
-    selectedStoreId.value = realStores[0].id
+  if (stores.value.length > 0 && selectedStoreId.value === 0) {
+    selectedStoreId.value = stores.value[0].id
   }
+  loadAll()
+})
+
+// 监听店铺/时间切换，自动刷新
+watch([selectedStoreId, timeRange], () => {
   loadAll()
 })
 </script>
@@ -1079,4 +1241,34 @@ onMounted(async () => {
   .list-filters { flex-wrap: wrap; }
   .donut-chart-wrapper { flex-direction: column; }
 }
+
+/* 关键词点击样式 */
+.keyword-tag.positive { cursor: pointer; }
+.keyword-tag.positive:hover { transform: scale(1.15); color: #389e0d; }
+
+/* 差评归因行可点击 */
+.issue-row { cursor: pointer; transition: background 0.15s; border-radius: 6px; padding: 4px 8px; margin: 0 -8px; }
+.issue-row:hover { background: #fff2f0; }
+
+/* 清除搜索 */
+.clear-search-btn {
+  padding: 2px 7px; background: #ff4d4f; color: #fff; border: none;
+  border-radius: 50%; font-size: 11px; cursor: pointer; line-height: 1.4;
+}
+.clear-search-btn:hover { background: #ff7875; }
+
+/* 差评归因钻取列表 */
+.issue-review-list { display: flex; flex-direction: column; gap: 12px; }
+.issue-review-item {
+  padding: 14px; background: #fafafa; border-radius: 8px;
+  border-left: 3px solid #ff4d4f;
+}
+.ir-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ir-confidence { font-size: 12px; color: #999; }
+.ir-content { font-size: 14px; color: #444; line-height: 1.6; margin: 8px 0; }
+.ir-evidence {
+  font-size: 13px; color: #ff4d4f; background: #fff2f0;
+  padding: 8px 12px; border-radius: 6px; margin-top: 8px;
+}
+.ir-evidence-label { font-weight: 600; }
 </style>
