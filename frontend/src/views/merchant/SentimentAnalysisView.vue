@@ -433,6 +433,82 @@
                 <span>时间：{{ currentDetail.reviewTime || '-' }}</span>
               </div>
             </div>
+
+            <!-- 评价辅助回复 -->
+            <div class="detail-reply-section">
+              <div class="detail-label">💬 评价辅助回复</div>
+
+              <!-- 错误提示 -->
+              <div v-if="replyError" class="reply-error-banner">
+                <span>{{ replyError }}</span>
+                <button class="reply-error-close" @click="replyError = ''">✕</button>
+              </div>
+
+              <!-- 已发布状态 -->
+              <div v-if="replyDraft && replyDraft.status === 'PUBLISHED'" class="reply-card reply-published">
+                <div class="reply-card-header">
+                  <span class="reply-status-badge published">✅ 已发布</span>
+                  <span class="reply-strategy-hint">{{ replyDraft.strategy === 'POSITIVE' ? '👍 好评策略' : '🔧 差评策略' }}</span>
+                </div>
+                <p class="reply-content-text">{{ getEffectiveContent(replyDraft) }}</p>
+                <div class="reply-card-meta" v-if="replyDraft.publishedAt">
+                  发布时间：{{ new Date(replyDraft.publishedAt).toLocaleString('zh-CN') }}
+                </div>
+              </div>
+
+              <!-- 编辑模式 -->
+              <div v-else-if="replyEditing" class="reply-card reply-editing">
+                <div class="reply-card-header">
+                  <span class="reply-edit-mode-label">编辑回复内容</span>
+                  <span class="reply-strategy-hint">{{ replyDraft?.strategy === 'POSITIVE' ? '👍 好评策略' : '🔧 差评策略' }}</span>
+                </div>
+                <textarea
+                  v-model="replyEditText"
+                  class="reply-edit-textarea"
+                  rows="6"
+                  maxlength="500"
+                  placeholder="编辑回复内容..."
+                ></textarea>
+                <div class="reply-edit-actions">
+                  <span class="reply-char-count">{{ replyEditText.length }}/500</span>
+                  <button class="btn-secondary" @click="handleCancelEdit" :disabled="replyLoading">取消</button>
+                  <button class="btn-primary-sm" @click="handleSaveEdit" :disabled="replyLoading">
+                    {{ replyLoading ? '保存中...' : '保存修改' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- 草稿展示模式 -->
+              <div v-else-if="replyDraft && replyDraft.status === 'DRAFT'" class="reply-card reply-draft">
+                <div class="reply-card-header">
+                  <span class="reply-status-badge draft">📝 草稿</span>
+                  <span class="reply-strategy-hint">{{ replyDraft.strategy === 'POSITIVE' ? '👍 好评策略' : '🔧 差评策略' }}</span>
+                </div>
+                <p class="reply-content-text">{{ getEffectiveContent(replyDraft) }}</p>
+                <div class="reply-card-meta" v-if="replyDraft.generatedAt">
+                  生成时间：{{ new Date(replyDraft.generatedAt).toLocaleString('zh-CN') }}
+                </div>
+                <div class="reply-draft-actions">
+                  <button class="btn-danger-text" @click="handleDiscardDraft" :disabled="replyLoading">丢弃</button>
+                  <button class="btn-secondary" @click="handleStartEdit" :disabled="replyLoading">编辑</button>
+                  <button class="btn-publish" @click="handlePublishDraft" :disabled="replyPublishing">
+                    {{ replyPublishing ? '发布中...' : '发布回复' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- 无草稿：生成按钮 -->
+              <div v-else class="reply-card reply-generate">
+                <p class="reply-generate-hint">根据评价内容自动生成回复建议。好评将表达感谢并回应具体优点，差评将道歉并提供改进承诺。</p>
+                <button class="btn-generate-reply" @click="handleGenerateReply" :disabled="replyLoading">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                  </svg>
+                  {{ replyLoading ? 'AI 正在生成回复建议...' : '生成回复建议' }}
+                </button>
+              </div>
+            </div>
+
             <div class="detail-analysis">
               <div class="detail-label">🔍 AI 分析结果</div>
               <div class="detail-sentiment-row">
@@ -550,6 +626,13 @@ import MerchantLayout from '../../components/MerchantLayout.vue'
 import { getSentimentSummary, getSentimentReviews, triggerBatchAnalysis } from '../../api/sentiment'
 import { getMyMerchants, getMerchantHighlights, generateMerchantHighlights, getMerchantHighlightEvidences } from '../../api/merchantConsole'
 import { getIssueCategoryReviews } from '../../api/reviewAnalysis'
+import {
+  generateReplyDraft,
+  editReplyDraft,
+  publishReplyDraft,
+  getReplyDraft,
+  discardReplyDraft,
+} from '../../api/reviewReply'
 
 // ========== 状态 ==========
 const stores = ref([{ id: 0, name: '全部店铺' }])
@@ -788,6 +871,14 @@ const totalCount = ref(0)
 // 详情弹窗
 const detailVisible = ref(false)
 const currentDetail = ref(null)
+
+// ==================== 辅助回复 ====================
+const replyDraft = ref(null)
+const replyLoading = ref(false)
+const replyEditing = ref(false)
+const replyEditText = ref('')
+const replyPublishing = ref(false)
+const replyError = ref('')
 
 // 差评归因钻取
 const issueDetailVisible = ref(false)
@@ -1089,7 +1180,20 @@ async function triggerAnalysis() {
 function openDetail(rv) {
   currentDetail.value = rv
   detailVisible.value = true
+  fetchReplyDraft(rv.reviewId || rv.id)
 }
+
+// Reset reply state when detail closes
+watch(detailVisible, (val) => {
+  if (!val) {
+    replyDraft.value = null
+    replyLoading.value = false
+    replyEditing.value = false
+    replyEditText.value = ''
+    replyPublishing.value = false
+    replyError.value = ''
+  }
+})
 
 let searchTimer = null
 function onSearchInput() {
@@ -1098,6 +1202,133 @@ function onSearchInput() {
     page.value = 1
     loadReviews()
   }, 400)
+}
+
+// ==================== 辅助回复方法 ====================
+
+function getEffectiveContent(draft) {
+  if (!draft) return ''
+  return draft.editedContent || draft.generatedContent || ''
+}
+
+async function fetchReplyDraft(reviewId) {
+  if (!reviewId) return
+  replyDraft.value = null
+  replyError.value = ''
+  try {
+    const res = await getReplyDraft(reviewId)
+    if (res.success && res.data) {
+      replyDraft.value = res.data
+    }
+  } catch (e) { /* 没有草稿是正常的 */ }
+}
+
+async function handleGenerateReply() {
+  const reviewId = currentDetail.value?.reviewId || currentDetail.value?.id
+  if (!reviewId) return
+  replyLoading.value = true
+  replyError.value = ''
+  try {
+    const res = await generateReplyDraft(reviewId)
+    if (res.success && res.data) {
+      if (res.data.status === 'FAILED') {
+        replyError.value = res.data.errorMessage || 'AI 回复生成失败，请稍后重试'
+        replyDraft.value = null
+        showMessage(replyError.value, 'error')
+      } else {
+        replyDraft.value = res.data
+        showMessage('AI 回复建议已生成', 'success')
+      }
+    } else {
+      replyError.value = res.message || '生成回复失败'
+      showMessage(replyError.value, 'error')
+    }
+  } catch (e) {
+    replyError.value = '网络请求失败，请检查服务状态后重试'
+    showMessage(replyError.value, 'error')
+  } finally {
+    replyLoading.value = false
+  }
+}
+
+function handleStartEdit() {
+  replyEditText.value = getEffectiveContent(replyDraft.value)
+  replyEditing.value = true
+  replyError.value = ''
+}
+
+function handleCancelEdit() {
+  replyEditing.value = false
+  replyEditText.value = ''
+}
+
+async function handleSaveEdit() {
+  const reviewId = currentDetail.value?.reviewId || currentDetail.value?.id
+  if (!reviewId || !replyEditText.value.trim()) {
+    showMessage('回复内容不能为空', 'info')
+    return
+  }
+  replyLoading.value = true
+  try {
+    const res = await editReplyDraft(reviewId, replyEditText.value.trim())
+    if (res.success && res.data) {
+      replyDraft.value = res.data
+      replyEditing.value = false
+      replyEditText.value = ''
+      showMessage('草稿已保存', 'success')
+    } else {
+      showMessage(res.message || '保存失败', 'error')
+    }
+  } catch (e) {
+    showMessage('网络请求失败', 'error')
+  } finally {
+    replyLoading.value = false
+  }
+}
+
+async function handlePublishDraft() {
+  const reviewId = currentDetail.value?.reviewId || currentDetail.value?.id
+  if (!reviewId) return
+  replyPublishing.value = true
+  replyError.value = ''
+  try {
+    const res = await publishReplyDraft(reviewId)
+    if (res.success && res.data) {
+      replyDraft.value = { ...replyDraft.value, status: 'PUBLISHED' }
+      showMessage('回复已发布成功', 'success')
+    } else {
+      replyError.value = res.message || '发布失败'
+      showMessage(replyError.value, 'error')
+    }
+  } catch (e) {
+    replyError.value = '发布请求失败'
+    showMessage(replyError.value, 'error')
+  } finally {
+    replyPublishing.value = false
+  }
+}
+
+async function handleDiscardDraft() {
+  const reviewId = currentDetail.value?.reviewId || currentDetail.value?.id
+  if (!reviewId) return
+  if (!confirm('确定要丢弃此回复草稿吗？丢弃后可重新生成。')) return
+  replyLoading.value = true
+  try {
+    const res = await discardReplyDraft(reviewId)
+    if (res.success) {
+      replyDraft.value = null
+      replyEditing.value = false
+      replyEditText.value = ''
+      replyError.value = ''
+      showMessage('草稿已丢弃', 'success')
+    } else {
+      showMessage(res.message || '丢弃失败', 'error')
+    }
+  } catch (e) {
+    showMessage('网络请求失败', 'error')
+  } finally {
+    replyLoading.value = false
+  }
 }
 
 async function loadStores() {
@@ -1575,4 +1806,101 @@ watch([selectedStoreId, timeRange], () => {
 /* ===== 趋势追踪 ===== */
 .trend-tabs { display: flex; gap: 6px; }
 .trend-svg { width: 100%; height: auto; display: block; }
+
+/* ===== 辅助回复 ===== */
+.detail-reply-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 10px;
+  border: 1px solid #f0f0f0;
+}
+.reply-error-banner {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; background: #fff2f0; border: 1px solid #ffccc7;
+  border-radius: 6px; margin-bottom: 12px; font-size: 13px; color: #cf1322;
+}
+.reply-error-close {
+  padding: 2px 8px; background: none; border: none; cursor: pointer;
+  font-size: 14px; color: #cf1322; opacity: 0.6;
+}
+.reply-error-close:hover { opacity: 1; }
+
+.reply-card {
+  padding: 14px 16px; border-radius: 8px; margin-top: 8px;
+}
+.reply-card.reply-published { background: #f6ffed; border: 1px solid #b7eb8f; border-left: 4px solid #52c41a; }
+.reply-card.reply-draft { background: #fffbe6; border: 1px solid #ffe58f; }
+.reply-card.reply-editing { background: #fff; border: 1px solid #d9d9d9; }
+.reply-card.reply-generate { text-align: center; padding: 20px 16px; background: #fff; border: 1px dashed #d9d9d9; }
+
+.reply-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.reply-status-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 4px;
+  font-size: 12px; font-weight: 600;
+}
+.reply-status-badge.published { color: #52c41a; background: #f6ffed; }
+.reply-status-badge.draft { color: #d48806; background: #fffbe6; }
+.reply-strategy-hint { font-size: 12px; color: #999; }
+.reply-edit-mode-label { font-weight: 600; font-size: 13px; color: #1f2d3d; }
+
+.reply-content-text {
+  font-size: 14px; color: #333; line-height: 1.7;
+  white-space: pre-wrap; margin: 0 0 10px;
+}
+.reply-card-meta { font-size: 12px; color: #999; margin-top: 4px; }
+
+.reply-draft-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f0;
+}
+.reply-edit-actions {
+  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  margin-top: 12px;
+}
+.reply-char-count { font-size: 12px; color: #999; margin-right: auto; }
+
+.reply-edit-textarea {
+  width: 100%; padding: 10px 14px; border: 1px solid #d9d9d9;
+  border-radius: 6px; font-size: 14px; line-height: 1.6;
+  color: #1f2d3d; resize: vertical; font-family: inherit;
+  box-sizing: border-box;
+}
+.reply-edit-textarea:focus { outline: none; border-color: #52c41a; box-shadow: 0 0 0 2px rgba(82,196,26,0.1); }
+
+.reply-generate-hint {
+  font-size: 13px; color: #999; margin: 0 0 16px; line-height: 1.6;
+}
+
+.btn-primary-sm {
+  padding: 8px 18px; font-size: 13px; font-weight: 500; color: #fff;
+  background: linear-gradient(135deg, #52c41a, #73d13d); border: none;
+  border-radius: 6px; cursor: pointer; transition: all 0.2s;
+}
+.btn-primary-sm:hover:not(:disabled) { opacity: 0.9; }
+.btn-primary-sm:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-danger-text {
+  padding: 8px 16px; font-size: 13px; color: #ff4d4f; background: none;
+  border: 1px solid #ffccc7; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+}
+.btn-danger-text:hover:not(:disabled) { background: #fff2f0; }
+.btn-danger-text:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-publish {
+  padding: 8px 18px; font-size: 13px; font-weight: 500; color: #fff;
+  background: linear-gradient(135deg, #52c41a, #73d13d); border: none;
+  border-radius: 6px; cursor: pointer; transition: all 0.2s;
+}
+.btn-publish:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+.btn-publish:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-generate-reply {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 24px; font-size: 14px; font-weight: 500; color: #fff;
+  background: linear-gradient(135deg, #1890ff, #40a9ff); border: none;
+  border-radius: 8px; cursor: pointer; transition: all 0.2s;
+}
+.btn-generate-reply:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+.btn-generate-reply:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>

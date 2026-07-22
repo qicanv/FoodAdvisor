@@ -176,6 +176,97 @@
             </div>
           </div>
 
+          <!-- 评价辅助回复 -->
+          <div class="detail-section">
+            <h4>💬 评价辅助回复</h4>
+
+            <!-- 错误提示 -->
+            <el-alert
+              v-if="replyError"
+              type="error"
+              :title="replyError"
+              :closable="true"
+              show-icon
+              @close="replyError = ''"
+              style="margin-bottom: 12px"
+            />
+
+            <!-- 已发布状态 -->
+            <div v-if="replyDraft && replyDraft.status === 'PUBLISHED'" class="result-card reply-published-card">
+              <div class="reply-published-header">
+                <el-tag type="success" size="small" effect="dark">✅ 已发布</el-tag>
+                <span class="reply-strategy-tag">
+                  {{ replyDraft.strategy === 'POSITIVE' ? '👍 好评策略' : '🔧 差评策略' }}
+                </span>
+              </div>
+              <p class="reply-content-text">{{ getEffectiveContent(replyDraft) }}</p>
+              <div class="reply-meta-row" v-if="replyDraft.publishedAt">
+                <span class="reply-meta-label">发布时间：</span>
+                <span>{{ new Date(replyDraft.publishedAt).toLocaleString('zh-CN') }}</span>
+              </div>
+            </div>
+
+            <!-- 编辑模式 -->
+            <div v-else-if="replyEditing" class="result-card reply-edit-card">
+              <div class="reply-edit-header">
+                <span class="reply-edit-label">编辑回复内容</span>
+                <span class="reply-strategy-tag">
+                  {{ replyDraft?.strategy === 'POSITIVE' ? '👍 好评策略' : '🔧 差评策略' }}
+                </span>
+              </div>
+              <el-input
+                v-model="replyEditText"
+                type="textarea"
+                :rows="6"
+                maxlength="500"
+                show-word-limit
+                placeholder="编辑回复内容..."
+              />
+              <div class="reply-edit-actions">
+                <el-button @click="handleCancelEdit" :disabled="replyLoading">取消</el-button>
+                <el-button type="primary" @click="handleSaveEdit" :loading="replyLoading">保存修改</el-button>
+              </div>
+            </div>
+
+            <!-- 草稿展示模式 -->
+            <div v-else-if="replyDraft && replyDraft.status === 'DRAFT'" class="result-card reply-draft-card">
+              <div class="reply-draft-header">
+                <el-tag type="warning" size="small" effect="dark">📝 草稿</el-tag>
+                <span class="reply-strategy-tag">
+                  {{ replyDraft.strategy === 'POSITIVE' ? '👍 好评策略' : '🔧 差评策略' }}
+                </span>
+              </div>
+              <p class="reply-content-text">{{ getEffectiveContent(replyDraft) }}</p>
+              <div class="reply-meta-row" v-if="replyDraft.generatedAt">
+                <span class="reply-meta-label">生成时间：</span>
+                <span>{{ new Date(replyDraft.generatedAt).toLocaleString('zh-CN') }}</span>
+              </div>
+              <div class="reply-draft-actions">
+                <el-button type="danger" plain size="small" @click="handleDiscardDraft" :disabled="replyLoading">丢弃</el-button>
+                <el-button plain size="small" @click="handleStartEdit" :disabled="replyLoading">编辑</el-button>
+                <el-button type="success" size="small" @click="handlePublishDraft" :loading="replyPublishing">发布回复</el-button>
+              </div>
+            </div>
+
+            <!-- 无草稿：生成按钮 -->
+            <div v-else class="result-card reply-generate-card">
+              <p class="reply-generate-hint">
+                根据评价内容自动生成回复建议。好评将表达感谢并回应具体优点，差评将道歉并提供改进承诺。
+              </p>
+              <el-button
+                type="primary"
+                :loading="replyLoading"
+                @click="handleGenerateReply"
+                class="reply-generate-btn"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                {{ replyLoading ? 'AI 正在生成回复建议...' : '生成回复建议' }}
+              </el-button>
+            </div>
+          </div>
+
           <!-- AI分析结果 -->
           <div class="detail-section" v-if="selectedReview.analysis">
             <h4>🤖 AI分析结果</h4>
@@ -298,7 +389,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import MerchantLayout from '../../components/MerchantLayout.vue'
 import {
   getMerchantReviews,
@@ -308,6 +399,13 @@ import {
   getMerchantReviewTags,
   getMerchantIssueStats,
 } from '../../api/reviewAnalysis'
+import {
+  generateReplyDraft,
+  editReplyDraft,
+  publishReplyDraft,
+  getReplyDraft,
+  discardReplyDraft,
+} from '../../api/reviewReply'
 
 // ==================== 侧边栏 ====================
 const activeTab = ref('reviews')
@@ -333,6 +431,14 @@ const analyzingId = ref(null)
 const batchLoading = ref(false)
 const tagStats = ref([])
 const selectedTag = ref('')
+
+// ==================== 辅助回复 ====================
+const replyDraft = ref(null)        // 当前草稿
+const replyLoading = ref(false)     // 生成中
+const replyEditing = ref(false)     // 编辑模式
+const replyEditText = ref('')       // 编辑中的文本
+const replyPublishing = ref(false)  // 发布中
+const replyError = ref('')          // 错误信息
 
 const positiveCount = computed(() =>
   reviews.value.filter(r => r.analysis && r.analysis.sentiment === 'POSITIVE').length
@@ -400,7 +506,20 @@ const selectedReview = ref(null)
 const onReviewClick = (row) => {
   selectedReview.value = row
   detailVisible.value = true
+  fetchReplyDraft(row.id)
 }
+
+// Reset reply state when dialog closes
+watch(detailVisible, (val) => {
+  if (!val) {
+    replyDraft.value = null
+    replyLoading.value = false
+    replyEditing.value = false
+    replyEditText.value = ''
+    replyPublishing.value = false
+    replyError.value = ''
+  }
+})
 
 const handleAnalyze = async (row) => {
   analyzingId.value = row.id
@@ -443,6 +562,139 @@ const handleBatchAnalyze = async () => {
     ElMessage.error('批量分析请求失败')
   } finally {
     batchLoading.value = false
+  }
+}
+
+// ==================== 辅助回复方法 ====================
+
+const getEffectiveContent = (draft) => {
+  if (!draft) return ''
+  return draft.editedContent || draft.generatedContent || ''
+}
+
+const fetchReplyDraft = async (reviewId) => {
+  replyDraft.value = null
+  replyError.value = ''
+  try {
+    const res = await getReplyDraft(reviewId)
+    if (res.success && res.data) {
+      replyDraft.value = res.data
+    }
+  } catch (e) {
+    // No draft exists — normal, ignore
+  }
+}
+
+const handleGenerateReply = async () => {
+  if (!selectedReview.value) return
+  replyLoading.value = true
+  replyError.value = ''
+  try {
+    const res = await generateReplyDraft(selectedReview.value.id)
+    if (res.success && res.data) {
+      if (res.data.status === 'FAILED') {
+        // 根据验收准则7：模型调用失败时显示明确提示且不覆盖已有草稿
+        replyError.value = res.data.errorMessage || 'AI 回复生成失败，请稍后重试'
+        replyDraft.value = null
+        ElMessage.error(replyError.value)
+      } else {
+        replyDraft.value = res.data
+        ElMessage.success('AI 回复建议已生成')
+      }
+    } else {
+      replyError.value = res.message || '生成回复失败'
+      ElMessage.error(replyError.value)
+    }
+  } catch (e) {
+    replyError.value = '网络请求失败，请检查服务状态后重试'
+    ElMessage.error(replyError.value)
+  } finally {
+    replyLoading.value = false
+  }
+}
+
+const handleStartEdit = () => {
+  replyEditText.value = getEffectiveContent(replyDraft.value)
+  replyEditing.value = true
+  replyError.value = ''
+}
+
+const handleCancelEdit = () => {
+  replyEditing.value = false
+  replyEditText.value = ''
+}
+
+const handleSaveEdit = async () => {
+  if (!selectedReview.value || !replyEditText.value.trim()) {
+    ElMessage.warning('回复内容不能为空')
+    return
+  }
+  replyLoading.value = true
+  try {
+    const res = await editReplyDraft(selectedReview.value.id, replyEditText.value.trim())
+    if (res.success && res.data) {
+      replyDraft.value = res.data
+      replyEditing.value = false
+      replyEditText.value = ''
+      ElMessage.success('草稿已保存')
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error('网络请求失败')
+  } finally {
+    replyLoading.value = false
+  }
+}
+
+const handlePublishDraft = async () => {
+  if (!selectedReview.value) return
+  replyPublishing.value = true
+  replyError.value = ''
+  try {
+    const res = await publishReplyDraft(selectedReview.value.id)
+    if (res.success && res.data) {
+      replyDraft.value = { ...replyDraft.value, status: 'PUBLISHED' }
+      ElMessage.success('回复已发布成功')
+    } else {
+      replyError.value = res.message || '发布失败'
+      ElMessage.error(replyError.value)
+    }
+  } catch (e) {
+    replyError.value = '发布请求失败'
+    ElMessage.error(replyError.value)
+  } finally {
+    replyPublishing.value = false
+  }
+}
+
+const handleDiscardDraft = async () => {
+  if (!selectedReview.value) return
+  try {
+    await ElMessageBox.confirm('确定要丢弃此回复草稿吗？丢弃后可重新生成。', '确认丢弃', {
+      confirmButtonText: '确定丢弃',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return // 用户取消
+  }
+  replyLoading.value = true
+  try {
+    const res = await discardReplyDraft(selectedReview.value.id)
+    if (res.success) {
+      replyDraft.value = null
+      replyEditing.value = false
+      replyEditText.value = ''
+      replyError.value = ''
+      ElMessage.success('草稿已丢弃')
+    } else {
+      ElMessage.error(res.message || '丢弃失败')
+    }
+  } catch (e) {
+    ElMessage.error('网络请求失败')
+  } finally {
+    replyLoading.value = false
   }
 }
 
@@ -748,4 +1000,68 @@ onMounted(() => {
 
 :deep(.row-positive) { border-left: 3px solid #52c41a; }
 :deep(.row-negative) { border-left: 3px solid #ff4d4f; }
+
+/* ==================== 辅助回复样式 ==================== */
+
+.reply-published-card {
+  border-left: 4px solid #52c41a;
+}
+.reply-published-header,
+.reply-draft-header,
+.reply-edit-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.reply-strategy-tag {
+  font-size: 12px;
+  color: #888;
+}
+.reply-content-text {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  margin: 0 0 12px;
+}
+.reply-meta-row {
+  font-size: 12px;
+  color: #999;
+}
+.reply-meta-label {
+  color: #667085;
+}
+.reply-draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #eef0f4;
+}
+.reply-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.reply-edit-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: #1f2d3d;
+}
+.reply-generate-card {
+  text-align: center;
+  padding: 24px 16px;
+}
+.reply-generate-hint {
+  font-size: 13px;
+  color: #888;
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+.reply-generate-btn {
+  min-width: 200px;
+}
 </style>

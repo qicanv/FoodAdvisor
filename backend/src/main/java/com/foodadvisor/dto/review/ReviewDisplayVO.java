@@ -27,6 +27,12 @@ public class ReviewDisplayVO {
      */
     private ReviewFollowUpVO followUp;
 
+    /**
+     * 商家对该评价的回复。
+     * 如果商家已回复则为 ReviewReplyVO，否则为 null。
+     */
+    private ReviewReplyVO merchantReply;
+
     public static ReviewDisplayVO from(Review review) {
         ReviewDisplayVO vo = new ReviewDisplayVO();
         vo.setId(review.getId());

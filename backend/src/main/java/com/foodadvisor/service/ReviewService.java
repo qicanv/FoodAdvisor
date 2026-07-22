@@ -204,6 +204,23 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 vo.setFollowUp(followUpVO);
             }
 
+            // 查询商家回复
+            ReviewReply reply = replyMapper.selectOne(
+                    new LambdaQueryWrapper<ReviewReply>()
+                            .eq(ReviewReply::getReviewId, review.getId())
+                            .eq(ReviewReply::getStatus, "VISIBLE")
+            );
+            if (reply != null) {
+                ReviewReplyVO replyVO = new ReviewReplyVO();
+                replyVO.setId(reply.getId());
+                replyVO.setReviewId(reply.getReviewId());
+                replyVO.setMerchantId(reply.getMerchantId());
+                replyVO.setReplyContent(reply.getReplyContent());
+                replyVO.setReplyTime(reply.getReplyTime());
+                replyVO.setStatus(reply.getStatus());
+                vo.setMerchantReply(replyVO);
+            }
+
             displayVOs.add(vo);
         }
 
