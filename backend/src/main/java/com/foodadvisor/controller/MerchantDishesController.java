@@ -37,6 +37,7 @@ public class MerchantDishesController {
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             ContentStatusService contentStatusService
+            ObjectMapper objectMapper
     ) {
         this.dishMapper = dishMapper;
         this.jdbcTemplate = jdbcTemplate;
@@ -220,6 +221,9 @@ public class MerchantDishesController {
                     userId, reason
             );
         }
+
+        dish.setStatus(newStatus);
+        dishMapper.updateById(dish);
 
         log.info("商户 userId={} 修改菜品 dishId={} 状态为 {}", userId, dishId, newStatus);
         return ApiResponse.success("菜品状态已更新", dish);

@@ -84,6 +84,42 @@ public class RecommendationEvaluationRunService {
         this.objectMapper = objectMapper;
     }
 
+
+    /**
+     * 查询指定测试集的历史评测运行。
+     */
+    public List<RecommendationEvalRunResponse> listRuns(
+            Long datasetId,
+            String status
+    ) {
+        getDatasetOrThrow(datasetId);
+
+        LambdaQueryWrapper<RecommendationEvalRun> wrapper =
+                new LambdaQueryWrapper<RecommendationEvalRun>()
+                        .eq(
+                                RecommendationEvalRun::getDatasetId,
+                                datasetId
+                        )
+                        .orderByDesc(
+                                RecommendationEvalRun::getCreatedAt
+                        )
+                        .orderByDesc(
+                                RecommendationEvalRun::getId
+                        );
+
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(
+                    RecommendationEvalRun::getStatus,
+                    status.trim().toUpperCase(Locale.ROOT)
+            );
+        }
+
+        return runMapper.selectList(wrapper)
+                .stream()
+                .map(this::toRunResponse)
+                .toList();
+    }
+
     /**
      * 同步执行一次标准测试集评测。
      */

@@ -88,7 +88,7 @@
               <td>{{ merchant.category }}</td>
               <td>{{ merchant.cuisine || '-' }}</td>
               <td class="address-cell">{{ merchant.address }}</td>
-              <td>{{ merchant.averagePrice ? '¥' + merchant.averagePrice : '-' }}</td>
+              <td>{{ merchant.averagePrice ? '￥' + merchant.averagePrice : '-' }}</td>
               <td>{{ merchant.rating || '0' }}</td>
               <td>
                 <span :class="['status-tag', getPlatformStatusClass(merchant.platformStatus)]">

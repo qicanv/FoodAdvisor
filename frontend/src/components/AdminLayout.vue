@@ -1,9 +1,9 @@
 <template>
   <div class="admin-layout">
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
       <div class="logo-section">
         <img src="../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
-        <div class="logo-text">
+        <div class="logo-text" v-show="!sidebarCollapsed">
           <span class="brand-name">食尚参谋</span>
           <span class="brand-subtitle">管理后台</span>
         </div>
@@ -11,7 +11,7 @@
       
       <nav class="sidebar-nav">
         <div class="nav-group">
-          <span class="nav-group-title">系统管理</span>
+          <span class="nav-group-title" v-show="!sidebarCollapsed">系统管理</span>
           <router-link 
             v-for="item in navItems" 
             :key="item.path"
@@ -33,16 +33,24 @@
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M17 16l4-4-4-4"></path>
           </svg>
-          <span>退出登录</span>
+          <span>{{ sidebarCollapsed ? '' : '退出登录' }}</span>
         </button>
       </div>
     </aside>
 
     <main class="main-content">
       <header class="top-header">
-        <div class="header-info">
-          <h1>{{ title }}</h1>
-          <p>{{ subtitle }}</p>
+        <div class="header-left">
+          <button class="sidebar-toggle" @click="toggleSidebar">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 6h16M4 12h16M4 18h16" v-if="!sidebarCollapsed" />
+              <path d="M6 18L18 6M6 6l12 12" v-else />
+            </svg>
+          </button>
+          <div class="header-info">
+            <h1>{{ title }}</h1>
+            <p>{{ subtitle }}</p>
+          </div>
         </div>
         <div class="header-user">
           <div class="user-avatar">
@@ -85,6 +93,12 @@ defineProps({
   }
 })
 
+const sidebarCollapsed = ref(false)
+
+const toggleSidebar = () => {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
 const currentPath = computed(() => route.path)
 
 const userInfo = computed(() => {
@@ -99,12 +113,29 @@ const allNavItems = [
   { path: '/admin/merchant-statistics', label: '商家统计', iconViewBox: '0 0 24 24', iconPath: 'M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z' },
   { path: '/admin/regional-hotspots', label: '区域热点', iconViewBox: '0 0 24 24', iconPath: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z' },
   { path: '/admin/behavior-analysis', label: '行为分析', iconViewBox: '0 0 24 24', iconPath: 'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm9-2a9 9 0 1 0-9 9M9 10H3v2h6v-2M15 10h6v2h-6v-2M9 16H3v2h6v-2M15 16h6v2h-6v-2' },
+  {
+    path: '/admin/recommendation-evaluations',
+    label: '推荐评测',
+    allowedRoles: ['ADMIN', 'OPERATOR'],
+    iconViewBox: '0 0 24 24',
+    iconPath:
+      'M9 2h6 M10 2v5l-5 9a4 4 0 0 0 3.5 6h7a4 4 0 0 0 3.5-6l-5-9V2 M8 14h8',
+  },
   { path: '/admin/restaurants', label: '商家管理', iconViewBox: '0 0 24 24', iconPath: 'M8 21l1-17a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4l1 17' },
   { path: '/admin/dishes', label: '菜品管理', iconViewBox: '0 0 24 24', iconPath: 'M18 20V10M12 20V4M6 20v-6' },
   { path: '/admin/diners', label: '食客管理', iconViewBox: '0 0 24 24', iconPath: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M17 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0' },
   { path: '/admin/topics', label: '专题管理', iconViewBox: '0 0 24 24', iconPath: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6M16 13H8M16 17H8M10 9H8' },
   { path: '/admin/moderation', label: '内容审核', iconViewBox: '0 0 24 24', iconPath: 'M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm0 18a3 3 0 0 0-3 3v2a3 3 0 0 0 6 0v-2a3 3 0 0 0-3-3z' },
   { path: '/admin/model-configs', label: '模型配置', iconViewBox: '0 0 24 24', iconPath: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M9 12l2 2 4-4' },
+    {
+    path: '/admin/prompts',
+    label: '提示词管理',
+    allowedRoles: ['ADMIN'],
+    iconViewBox: '0 0 24 24',
+    iconPath:
+      'M4 4h16v16H4z M8 8h8 M8 12h8 M8 16h5',
+  },
+  { path: '/admin/ai-monitor', label: 'AI监控', iconViewBox: '0 0 24 24', iconPath: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z M12 14l4-4' },
   { path: '/admin/logs', label: '审计日志', iconViewBox: '0 0 24 24', iconPath: 'M4 4h16v16H4z M8 9h8 M8 13h8 M8 17h5' },
   { path: '/admin/ai-traces', label: 'AI 请求追踪', allowedRoles: ['ADMIN', 'OPERATOR'], iconViewBox: '0 0 24 24', iconPath: 'M12 3a9 9 0 1 0 9 9 M12 7v5l3 2 M19 3v5h-5' },
   { path: '/admin/reports', label: '举报审核', allowedRoles: ['ADMIN', 'OPERATOR'], iconViewBox: '0 0 24 24', iconPath: 'M3 6h18 M3 12h18 M3 18h18 M8 6v12 M16 6v12' },
@@ -141,6 +172,12 @@ const handleLogout = () => {
   top: 0;
   bottom: 0;
   z-index: 100;
+  overflow: hidden;
+  transition: width 0.3s ease;
+}
+
+.sidebar.collapsed {
+  width: 64px;
 }
 
 .logo-section {
@@ -149,6 +186,7 @@ const handleLogout = () => {
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  justify-content: center;
 }
 
 .logo-img {
@@ -176,6 +214,27 @@ const handleLogout = () => {
 .sidebar-nav {
   flex: 1;
   padding: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .nav-group-title {
@@ -197,6 +256,12 @@ const handleLogout = () => {
   border-radius: 8px;
   transition: all 0.2s;
   margin-bottom: 4px;
+  justify-content: flex-start;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 12px 8px;
 }
 
 .nav-item:hover {
@@ -238,6 +303,11 @@ const handleLogout = () => {
   flex: 1;
   margin-left: 260px;
   min-height: 100vh;
+  transition: margin-left 0.3s ease;
+}
+
+.sidebar.collapsed + .main-content {
+  margin-left: 64px;
 }
 
 .top-header {
@@ -250,6 +320,28 @@ const handleLogout = () => {
   position: sticky;
   top: 0;
   z-index: 50;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sidebar-toggle {
+  padding: 8px;
+  background: #f5f7fa;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  color: #667085;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sidebar-toggle:hover {
+  background: #eef2f7;
+  border-color: #1890ff;
+  color: #1890ff;
 }
 
 .header-info h1 {
@@ -299,11 +391,16 @@ const handleLogout = () => {
 
 @media (max-width: 1200px) {
   .main-content {
-    margin-left: 0;
+    margin-left: 0 !important;
   }
   
   .sidebar {
-    display: none;
+    transform: translateX(-100%);
+  }
+  
+  .sidebar.collapsed {
+    transform: translateX(0);
+    width: 64px;
   }
   
   .content-wrapper.has-sidebar {

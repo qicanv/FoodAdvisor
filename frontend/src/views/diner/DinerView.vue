@@ -91,42 +91,6 @@
             </form>
           </div>
         </div>
-        
-        <div class="features-section">
-          <div class="features-grid">
-            <div class="feature-item">
-              <div class="feature-icon diner-icon">
-                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                </svg>
-              </div>
-              <h3>探店对话</h3>
-              <p>与AI助手对话，获取个性化餐厅推荐</p>
-            </div>
-            
-            <div class="feature-item">
-              <div class="feature-icon diner-icon">
-                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-              </div>
-              <h3>餐厅搜索</h3>
-              <p>搜索附近餐厅，查看详细信息</p>
-            </div>
-            
-            <div class="feature-item">
-              <div class="feature-icon diner-icon">
-                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ffffff" stroke-width="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                  <path d="M9 12l2 2 4-4"></path>
-                </svg>
-              </div>
-              <h3>评价查看</h3>
-              <p>查看真实用户评价，做出明智选择</p>
-            </div>
-          </div>
-        </div>
       </div>
     </main>
   </div>
@@ -615,55 +579,6 @@ const handleLogout = () => {
   margin-bottom: 12px;
 }
 
-.features-section {
-  width: 100%;
-  max-width: 900px;
-  margin-top: 48px;
-}
-
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
-.feature-item {
-  background: rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(10px);
-  border-radius: 16px;
-  padding: 24px;
-  text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.feature-icon {
-  margin-bottom: 12px;
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.diner-icon {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.feature-item h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #ffffff;
-  margin-bottom: 6px;
-}
-
-.feature-item p {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
-}
-
 @media (max-width: 768px) {
   .auth-content {
     padding: 32px 24px;
@@ -675,10 +590,7 @@ const handleLogout = () => {
   
   .features-grid {
     grid-template-columns: 1fr;
-  }
-  
-  .features-section {
-    margin-top: 32px;
+    gap: 12px;
   }
 }
 

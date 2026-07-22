@@ -82,6 +82,16 @@ class AnalyzeRequest(BaseModel):
     reviewVersion: int = Field(default=1, ge=1, description="评价版本号")
     content: str = Field(..., min_length=1, description="评价原文内容")
     modelVersion: Optional[str] = Field(default=None)
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+        description="Spring Boot 解析出的运行时系统提示词",
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="本次请求使用的提示词版本标签",
+    )
 
 
 class AnalyzeResponse(BaseModel):
@@ -110,6 +120,14 @@ class BatchAnalyzeRequest(BaseModel):
     """批量分析请求"""
     reviews: List[AnalyzeRequest] = Field(..., max_length=100)
     modelVersion: Optional[str] = Field(default=None)
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+    )
 
 
 class BatchAnalyzeResponse(BaseModel):
@@ -148,6 +166,16 @@ class ReviewSummaryRequest(BaseModel):
     version: int = Field(default=1, ge=1)
     reviews: List[SummaryReviewItem] = Field(default_factory=list)
     minimumReviewCount: int = Field(default=5, ge=1)
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+        description="运行时系统提示词",
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="运行时提示词版本",
+    )
 
 
 class SummaryPoint(BaseModel):
@@ -276,6 +304,16 @@ class GenerateReplyRequest(BaseModel):
     content: str = Field(..., min_length=1, description="评价正文内容")
     strategy: ReplyStrategyEnum = Field(..., description="回复策略：POSITIVE 或 NEGATIVE")
     rating: int = Field(default=3, ge=1, le=5, description="评价评分（1-5）")
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+        description="运行时系统提示词",
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="运行时提示词版本",
+    )
 
 
 class GenerateReplyResponse(BaseModel):
@@ -327,6 +365,16 @@ class CompetitorComparisonRequest(BaseModel):
         ..., min_length=2, max_length=4,
         description="包含本店在内的商家数据列表，第一个必须是本店，总数为2~4家"
     )
+    systemPrompt: Optional[str] = Field(
+        default=None,
+        max_length=50000,
+        description="运行时系统提示词",
+    )
+    promptVersion: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="运行时提示词版本",
+    )
 
 
 class CompetitorSingleComparisonResult(BaseModel):
@@ -356,3 +404,136 @@ class CompetitorComparisonResponse(BaseModel):
     promptVersion: Optional[str] = Field(default="competitor-comparison:v1")
     businessTraceId: Optional[str] = Field(default=None, description="AI 调用追踪ID")
     errorMessage: Optional[str] = Field(default=None)
+
+
+# ============================================
+# 评论摘要忠实性测试（EPIC-01 Story 8）
+# 核心功能：用 LLM-as-Judge 验证摘要中的每个要点是否忠实于原始评价
+# 验证逻辑：对于摘要中的每个声明（要点），将声明文本 + 支撑评价原文
+#           送入独立的评判模型，判断声明是否被评价内容所蕴含（Entailment）
+# ============================================
+
+class FaithfulnessVerdictEnum(str, Enum):
+    """
+    忠实性判定结果枚举
+
+    - FAITHFUL:    声明可以被引用的评价原文充分支撑，没有编造或歪曲
+    - UNFAITHFUL:  声明与引用评价原文矛盾，或包含评价中不存在的信息
+    - UNCERTAIN:   引用评价部分支撑声明，但不足以完全确认（如信息模糊）
+    """
+    FAITHFUL = "FAITHFUL"
+    UNFAITHFUL = "UNFAITHFUL"
+    UNCERTAIN = "UNCERTAIN"
+
+
+class FaithfulnessReviewItem(BaseModel):
+    """
+    送入忠实性测试的单条评价原文
+
+    与 SummaryReviewItem 类似但去掉了 rating 的强制要求，
+    因为忠实性测试只需要内容 + ID 即可完成回溯验证
+    """
+    reviewId: int = Field(description="评价ID，用于与摘要中的 reviewIds 对应")
+    content: str = Field(..., min_length=1, description="评价原文内容")
+    rating: Optional[int] = Field(default=None, ge=1, le=5, description="评分（可选，辅助判断）")
+
+
+class FaithfulnessTestRequest(BaseModel):
+    """
+    评论摘要忠实性测试请求
+
+    由 Spring Boot 传入已生成的摘要结果和原始评价原文列表，
+    AI 服务对每个摘要要点逐一做忠实性验证
+
+    设计要点：
+    - summary: 已经生成的 ReviewSummaryResponse（商家口碑摘要）
+    - reviews: 参与生成该摘要的原始评价列表（带原文内容）
+    - 服务端根据 summary 中的 reviewIds 自动匹配 reviews 中的原文作为证据
+    """
+    requestId: Optional[str] = Field(default=None, description="请求追踪ID")
+    merchantId: int = Field(description="商家ID，用于日志追溯")
+    summary: ReviewSummaryResponse = Field(description="已生成的商家口碑摘要结果")
+    reviews: List[FaithfulnessReviewItem] = Field(
+        default_factory=list,
+        min_length=1,
+        description="参与摘要生成的原始评价列表（必须包含原文内容）"
+    )
+
+
+class FaithfulnessClaimResult(BaseModel):
+    """
+    单个声明（要点）的忠实性验证结果
+
+    每个字段都是在回答"这个声明是否忠实地反映了评价原文"这一问题
+    """
+    claimType: str = Field(
+        description="声明类型：advantage / disadvantage / recommendedDish / "
+                    "environmentSummary / serviceSummary / recentChange / summaryText"
+    )
+    claimText: str = Field(description="声明的文本内容，如'菜品口味好'")
+    verdict: FaithfulnessVerdictEnum = Field(
+        description="忠实性判定：FAITHFUL / UNFAITHFUL / UNCERTAIN"
+    )
+    confidence: float = Field(
+        ge=0, le=1,
+        description="判定置信度（0~1），由评判模型给出"
+    )
+    reasoning: str = Field(
+        description="判定理由：为什么该声明是忠实的/不忠实的/不确定的，"
+                    "需要引用评价原文中的具体语句作为论据"
+    )
+    citedReviewIds: List[int] = Field(
+        default_factory=list,
+        description="摘要中引用的支撑评价ID列表"
+    )
+    actualMatchingCount: int = Field(
+        default=0,
+        description="实际匹配到的有效评价数量（reviewIds 中能在输入中找到原文的个数）"
+    )
+
+
+class FaithfulnessTestResponse(BaseModel):
+    """
+    评论摘要忠实性测试响应
+
+    返回摘要中每个声明的忠实性判定及整体忠实性评分
+
+    各字段含义：
+    - overallScore: 整体忠实性得分（FAITHFUL 占比），0~1
+    - claimResults: 每个声明的详细验证结果
+    - totalClaims: 被测试的声明总数
+    - faithfulCount / unfaithfulCount / uncertainCount: 各类判定计数
+    - 附带摘要文本用于前端直接渲染结果对照
+    """
+    merchantId: int = Field(description="商家ID")
+    testStatus: str = Field(
+        default="SUCCESS",
+        description="测试执行状态：SUCCESS / PARTIAL（部分声明验证失败）/ FAILED"
+    )
+    overallScore: float = Field(
+        ge=0, le=1,
+        description="整体忠实性得分，即 FAITHFUL 声明占总声明数的比例"
+    )
+    totalClaims: int = Field(default=0, description="被验证的声明总数")
+    faithfulCount: int = Field(default=0, description="忠实声明的数量")
+    unfaithfulCount: int = Field(default=0, description="不忠实声明的数量")
+    uncertainCount: int = Field(default=0, description="不确定声明的数量")
+    claimResults: List[FaithfulnessClaimResult] = Field(
+        default_factory=list,
+        description="每个声明的详细忠实性验证结果"
+    )
+    summaryText: Optional[str] = Field(
+        default=None,
+        description="原始摘要的总体口碑概述文本（供前端对照展示）"
+    )
+    modelName: Optional[str] = Field(
+        default=None,
+        description="用于忠实性评判的模型名称"
+    )
+    modelVersion: Optional[str] = Field(default=None)
+    promptVersion: Optional[str] = Field(default="faithfulness-test:v1")
+    businessTraceId: Optional[str] = Field(
+        default=None,
+        description="AI 调用追踪ID，用于排查问题"
+    )
+    errorMessage: Optional[str] = Field(default=None, description="测试过程中的错误信息")

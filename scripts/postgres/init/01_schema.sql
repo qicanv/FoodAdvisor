@@ -19,6 +19,7 @@ $canonical_preflight$;
 \ir 01_identity_and_merchant.inc
 \ir 01_core_schema.inc
 \ir 01_model_config.inc
+\ir 01_prompt_management.inc
 \ir 01_review_images.inc
 \ir 01_review_communication.inc
 \ir 01_reply_draft.inc

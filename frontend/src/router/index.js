@@ -84,6 +84,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'merchant' },
   },
   {
+    path: '/merchant/stores',
+    name: 'merchant-stores',
+    component: () => import('../views/merchant/MerchantStoresView.vue'),
+    meta: { requiresAuth: true, role: 'merchant' },
+  },
+  {
     path: '/merchant/dishes',
     name: 'merchant-dishes',
     component: () => import('../views/merchant/MerchantDishesView.vue'),
@@ -92,7 +98,13 @@ const routes = [
   {
     path: '/merchant/statistics',
     name: 'merchant-statistics',
-    component: () => import('../views/merchant/MerchantHomeView.vue'),
+    component: () => import('../views/merchant/MerchantStatisticsView.vue'),
+    meta: { requiresAuth: true, role: 'merchant' },
+  },
+  {
+    path: '/merchant/sentiment',
+    name: 'merchant-sentiment',
+    component: () => import('../views/merchant/SentimentAnalysisView.vue'),
     meta: { requiresAuth: true, role: 'merchant' },
   },
   {
@@ -134,6 +146,23 @@ const routes = [
     path: '/admin/model-configs',
     name: 'model-configs',
     component: () => import('../views/admin/ModelConfigView.vue'),
+    meta: { requiresAuth: true, role: 'admin' },
+  },
+    {
+    path: '/admin/prompts',
+    name: 'admin-prompts',
+    component: () =>
+      import('../views/admin/PromptManagementView.vue'),
+    meta: {
+      requiresAuth: true,
+      role: 'admin',
+      allowedRoles: ['ADMIN'],
+    },
+  },
+  {
+    path: '/admin/ai-monitor',
+    name: 'admin-ai-monitor',
+    component: () => import('../views/admin/AiMonitorView.vue'),
     meta: { requiresAuth: true, role: 'admin' },
   },
   {
@@ -189,6 +218,19 @@ const routes = [
     name: 'admin-behavior-analysis',
     component: () => import('../views/admin/BehaviorAnalysisView.vue'),
     meta: { requiresAuth: true, role: 'admin' },
+  },
+  {
+    path: '/admin/recommendation-evaluations',
+    name: 'admin-recommendation-evaluations',
+    component: () =>
+      import(
+        '../views/admin/RecommendationEvaluationView.vue'
+      ),
+    meta: {
+      requiresAuth: true,
+      role: 'admin',
+      allowedRoles: ['ADMIN', 'OPERATOR'],
+    },
   },
 ]
 
