@@ -16,7 +16,7 @@ spring:
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6380}
+      port: ${REDIS_PORT:6379}
       database: 0
       timeout: 3000ms
 
@@ -27,7 +27,9 @@ foodadvisor:
   business-time:
     zone-id: ${BUSINESS_TIME_ZONE_ID:Asia/Shanghai}
   crypto:
-    model-key-secret: ${MODEL_KEY_SECRET:}
+    model-key-secret: ${MODEL_CONFIG_ENCRYPTION_KEY:${MODEL_KEY_SECRET:}}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
   upload:
     review-image-dir: ${REVIEW_IMAGE_UPLOAD_DIR:uploads/reviews}
   hot-words:
@@ -60,7 +62,7 @@ mybatis-plus:
 # AI 服务地址（FastAPI）
 ai-service:
   base-url: ${AI_SERVICE_BASE_URL:http://localhost:${AI_SERVICE_PORT:8000}}
-  internal-token: ${INTERNAL_API_TOKEN:test-token-for-pytest}
+  internal-token: ${INTERNAL_API_TOKEN:}
   connect-timeout: 5000
   read-timeout: 60000
 
