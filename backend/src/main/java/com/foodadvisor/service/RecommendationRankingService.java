@@ -15,6 +15,7 @@ import com.foodadvisor.dto.recommendation.RecommendationRankRequest;
 import com.foodadvisor.dto.recommendation.RecommendationRankResponse;
 import com.foodadvisor.dto.recommendation.RecommendationBasisVO;
 import com.foodadvisor.dto.recommendation.RecommendationWeights;
+import com.foodadvisor.dto.recommendation.SemanticMatchResult;
 import com.foodadvisor.entity.ChatSession;
 import com.foodadvisor.entity.ChatSessionState;
 import com.foodadvisor.entity.Merchant;
@@ -331,6 +332,11 @@ public class RecommendationRankingService {
         Map<Long, List<MerchantBusinessHours>> businessHours =
                 loadBusinessHours(candidates, constraints);
 
+        String semanticQuery = request.getQuery() != null
+                && !request.getQuery().isBlank()
+                ? request.getQuery().trim()
+                : null;
+
         List<RecommendationItemVO> results =
                 calculateResults(
                         candidates,
@@ -339,7 +345,8 @@ public class RecommendationRankingService {
                         request.getUserLatitude(),
                         request.getUserLongitude(),
                         businessHours,
-                        context
+                        context,
+                        semanticQuery
                 );
 
         applyDishKeywordFilter(
@@ -759,10 +766,11 @@ public class RecommendationRankingService {
             BigDecimal userLatitude,
             BigDecimal userLongitude,
             Map<Long, List<MerchantBusinessHours>> businessHours,
-            AiTraceContext context
+            AiTraceContext context,
+            String originalQuery
     ) {
-        Map<Long, BigDecimal> semanticScores =
-                performSemanticSearch(candidates, constraints, context);
+        Map<Long, SemanticMatchResult> semanticMatches =
+                performSemanticSearch(candidates, originalQuery, context);
 
         List<RecommendationItemVO> results =
                 new ArrayList<>();
@@ -782,7 +790,7 @@ public class RecommendationRankingService {
                     weights,
                     userLatitude,
                     userLongitude,
-                    semanticScores
+                    semanticMatches
             ).ifPresent(result -> {
                 matchScoreCalculator.addBusinessHoursEvidence(
                         result,
@@ -795,13 +803,24 @@ public class RecommendationRankingService {
         return results;
     }
 
-    private Map<Long, BigDecimal> performSemanticSearch(
+    /**
+     * 三路分源语义检索 + 加权聚合。
+     *
+     * 将用户的原始自然语言查询在 MERCHANT_INTRO、MENU、REVIEW
+     * 三个来源上分别做向量检索，然后按 merchantId 聚合，
+     * 得到每个商家的加权语义分和可信度。
+     *
+     * @param candidates   候选商家列表
+     * @param originalQuery 用户原始自然语言查询，为 null 时语义检索不启用
+     * @param context      追踪上下文
+     * @return merchantId → SemanticMatchResult
+     */
+    private Map<Long, SemanticMatchResult> performSemanticSearch(
             List<Merchant> candidates,
-            ConstraintState constraints,
+            String originalQuery,
             AiTraceContext context
     ) {
-        String query = buildSemanticQuery(constraints);
-        if (query.isEmpty()) {
+        if (originalQuery == null || originalQuery.isBlank()) {
             return Map.of();
         }
 
@@ -809,80 +828,197 @@ public class RecommendationRankingService {
                 .map(Merchant::getId)
                 .toList();
 
-        try {
-            JsonNode response = aiClientService.semanticSearch(
-                    query,
-                    merchantIds,
-                    List.of("REVIEW", "MERCHANT_INTRO", "MENU"),
-                    context
-            );
+        // ---- 三路检索 ----
+        JsonNode introHits  = safeSearch(originalQuery, merchantIds,
+                List.of("MERCHANT_INTRO"), 5, context);
+        JsonNode menuHits   = safeSearch(originalQuery, merchantIds,
+                List.of("MENU"), 5, context);
+        JsonNode reviewHits = safeSearch(originalQuery, merchantIds,
+                List.of("REVIEW"), 10, context);
 
-            return parseSemanticScores(response);
-        } catch (Exception exception) {
-            return Map.of();
+        // 统计各路的可用状态
+        boolean introAvailable  = hasResults(introHits);
+        boolean menuAvailable   = hasResults(menuHits);
+        boolean reviewAvailable = hasResults(reviewHits);
+
+        int availableCount = (introAvailable ? 1 : 0)
+                + (menuAvailable ? 1 : 0)
+                + (reviewAvailable ? 1 : 0);
+
+        if (availableCount == 0) {
+            return Map.of(); // 三路均失败 → 语义检索降级
         }
+
+        // 如果有路失败，重新分配权重
+        BigDecimal[] weights = redistributeWeights(
+                introAvailable, menuAvailable, reviewAvailable);
+
+        // ---- 聚合 ----
+        Map<Long, SemanticMatchResult> results = new java.util.LinkedHashMap<>();
+
+        // 从各路的 hits 中提取最高分
+        Map<Long, BigDecimal> introMax  = extractMaxScores(introHits);
+        Map<Long, BigDecimal> menuMax   = extractMaxScores(menuHits);
+        Map<Long, BigDecimal> reviewMax = extractMaxScores(reviewHits);
+
+        // 从各路的 hits 中提取最佳 evidence
+        Map<Long, List<SemanticMatchResult.SemanticEvidenceItem>> introEvidence =
+                extractTopEvidence(introHits, 2);
+        Map<Long, List<SemanticMatchResult.SemanticEvidenceItem>> menuEvidence =
+                extractTopEvidence(menuHits, 2);
+        Map<Long, List<SemanticMatchResult.SemanticEvidenceItem>> reviewEvidence =
+                extractTopEvidence(reviewHits, 3);
+
+        // 遍历所有候选商家，聚合分路分数
+        for (Merchant merchant : candidates) {
+            Long mId = merchant.getId();
+            SemanticMatchResult result = new SemanticMatchResult();
+            result.setMerchantId(mId);
+            result.setIntroScore(introMax.get(mId));
+            result.setMenuScore(menuMax.get(mId));
+            result.setReviewScore(reviewMax.get(mId));
+
+            // 汇总 evidence
+            List<SemanticMatchResult.SemanticEvidenceItem> evidence =
+                    new ArrayList<>();
+            if (introEvidence.containsKey(mId)) {
+                evidence.addAll(introEvidence.get(mId));
+            }
+            if (menuEvidence.containsKey(mId)) {
+                evidence.addAll(menuEvidence.get(mId));
+            }
+            if (reviewEvidence.containsKey(mId)) {
+                evidence.addAll(reviewEvidence.get(mId));
+            }
+            result.setEvidenceItems(evidence);
+
+            // 至少有一路命中才保留
+            if (result.getIntroScore() == null
+                    && result.getMenuScore() == null
+                    && result.getReviewScore() == null) {
+                continue;
+            }
+
+            if (availableCount < 3) {
+                result.recomputeWithWeights(
+                        weights[0], weights[1], weights[2]);
+            } else {
+                result.compute();
+            }
+
+            results.put(mId, result);
+        }
+
+        return results;
     }
 
-    private String buildSemanticQuery(ConstraintState constraints) {
-        StringBuilder query = new StringBuilder();
-
-        if (hasValues(constraints.getScenes())) {
-            query.append(String.join("、", constraints.getScenes()));
-        }
-
-        if (hasValues(constraints.getEnvironmentRequirements())) {
-            if (!query.isEmpty()) {
-                query.append(" ");
-            }
-            query.append(String.join("、",
-                    constraints.getEnvironmentRequirements()));
-        }
-
-        if (hasValues(constraints.getCuisines())) {
-            if (!query.isEmpty()) {
-                query.append(" ");
-            }
-            query.append(String.join("、", constraints.getCuisines()));
-        }
-
-        if (hasValues(constraints.getTastePreferences())) {
-            if (!query.isEmpty()) {
-                query.append(" ");
-            }
-            query.append(String.join("、",
-                    constraints.getTastePreferences()));
-        }
-
-        return query.toString().trim();
-    }
-
-    private Map<Long, BigDecimal> parseSemanticScores(
-            JsonNode response
+    /**
+     * 安全调用语义检索，失败返回空 JSON。
+     */
+    private JsonNode safeSearch(
+            String query,
+            List<Long> merchantIds,
+            List<String> sourceTypes,
+            int topK,
+            AiTraceContext context
     ) {
+        try {
+            return aiClientService.semanticSearch(
+                    query, merchantIds, sourceTypes, topK, context);
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    /**
+     * 检查语义检索响应是否包含有效结果。
+     */
+    private boolean hasResults(JsonNode response) {
+        if (response == null) return false;
+        JsonNode results = response.path("data").path("results");
+        return results.isArray() && !results.isEmpty();
+    }
+
+    /**
+     * 当部分来源不可用时，重新分配权重。
+     *
+     * @return [introWeight, menuWeight, reviewWeight]
+     */
+    private BigDecimal[] redistributeWeights(
+            boolean introAvailable,
+            boolean menuAvailable,
+            boolean reviewAvailable
+    ) {
+        BigDecimal total = BigDecimal.ZERO;
+        if (introAvailable)  total = total.add(SemanticMatchResult.INTRO_WEIGHT);
+        if (menuAvailable)   total = total.add(SemanticMatchResult.MENU_WEIGHT);
+        if (reviewAvailable) total = total.add(SemanticMatchResult.REVIEW_WEIGHT);
+
+        if (total.compareTo(BigDecimal.ZERO) == 0) {
+            return new BigDecimal[] { BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO };
+        }
+
+        return new BigDecimal[] {
+                introAvailable
+                        ? SemanticMatchResult.INTRO_WEIGHT.divide(total, 6, java.math.RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO,
+                menuAvailable
+                        ? SemanticMatchResult.MENU_WEIGHT.divide(total, 6, java.math.RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO,
+                reviewAvailable
+                        ? SemanticMatchResult.REVIEW_WEIGHT.divide(total, 6, java.math.RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO,
+        };
+    }
+
+    /**
+     * 从检索结果中提取每个 merchant 的最高相似度分数。
+     */
+    private Map<Long, BigDecimal> extractMaxScores(JsonNode response) {
         Map<Long, BigDecimal> scores = new java.util.HashMap<>();
+        if (response == null) return scores;
 
         JsonNode results = response.path("data").path("results");
-        if (!results.isArray()) {
-            return scores;
-        }
+        if (!results.isArray()) return scores;
 
         for (JsonNode hit : results) {
             long merchantId = hit.path("merchantId").asLong();
-            BigDecimal score = new BigDecimal(
-                    hit.path("score").asDouble()
-            );
-
-            scores.merge(
-                    merchantId,
-                    score,
+            BigDecimal score = new BigDecimal(hit.path("score").asDouble());
+            scores.merge(merchantId, score,
                     (existing, incoming) ->
-                            existing.compareTo(incoming) >= 0
-                                    ? existing
-                                    : incoming
-            );
+                            existing.compareTo(incoming) >= 0 ? existing : incoming);
         }
-
         return scores;
+    }
+
+    /**
+     * 从检索结果中提取每个 merchant 的前 N 条 evidence。
+     */
+    private Map<Long, List<SemanticMatchResult.SemanticEvidenceItem>>
+            extractTopEvidence(JsonNode response, int maxPerMerchant) {
+        Map<Long, List<SemanticMatchResult.SemanticEvidenceItem>> evidence =
+                new java.util.LinkedHashMap<>();
+        if (response == null) return evidence;
+
+        JsonNode results = response.path("data").path("results");
+        if (!results.isArray()) return evidence;
+
+        for (JsonNode hit : results) {
+            long merchantId = hit.path("merchantId").asLong();
+            List<SemanticMatchResult.SemanticEvidenceItem> items =
+                    evidence.computeIfAbsent(merchantId, k -> new ArrayList<>());
+            if (items.size() >= maxPerMerchant) continue;
+
+            SemanticMatchResult.SemanticEvidenceItem item =
+                    new SemanticMatchResult.SemanticEvidenceItem();
+            item.setSourceType(hit.path("sourceType").asText(""));
+            item.setSourceId(hit.path("sourceId").asLong(0));
+            String text = hit.path("text").asText("");
+            item.setText(text.length() > 150 ? text.substring(0, 150) : text);
+            item.setScore(new BigDecimal(hit.path("score").asDouble(0)));
+            items.add(item);
+        }
+        return evidence;
     }
 
 private void applyDishKeywordFilter(

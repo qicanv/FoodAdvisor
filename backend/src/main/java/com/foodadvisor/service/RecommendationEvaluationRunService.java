@@ -953,7 +953,7 @@ public class RecommendationEvaluationRunService {
                             weights,
                             userLatitude,
                             userLongitude,
-                            Map.of()
+                            null  // 评估模式不使用语义检索
                     );
 
             if (result.isEmpty()) {

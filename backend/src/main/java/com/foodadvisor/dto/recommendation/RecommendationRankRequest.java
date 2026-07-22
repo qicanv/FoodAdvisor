@@ -25,6 +25,14 @@ public class RecommendationRankRequest {
     private Long userId;
 
     /**
+     * 用户原始自然语言查询文本。
+     *
+     * 不为空时，语义检索直接使用此文本而非从结构化字段拼接。
+     * 为空时回退到旧的 buildSemanticQuery 行为。
+     */
+    private String query;
+
+    /**
      * 用户纬度，可选。
      * 不提供位置时，距离项不参与实际距离计算。
      */
