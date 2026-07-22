@@ -351,13 +351,33 @@ public class AIClientService {
             List<String> sourceTypes,
             AiTraceContext context
     ) {
+        return semanticSearch(query, merchantIds, sourceTypes, 20, context);
+    }
+
+    /**
+     * 语义检索 — 支持指定 topK。
+     *
+     * @param query       用户原始查询文本
+     * @param merchantIds 限定候选商家 ID，null 表示不限定
+     * @param sourceTypes 限定来源类型，null 表示全部
+     * @param topK        返回结果数量
+     * @param context     追踪上下文
+     * @return 检索结果 JSON
+     */
+    public JsonNode semanticSearch(
+            String query,
+            List<Long> merchantIds,
+            List<String> sourceTypes,
+            int topK,
+            AiTraceContext context
+    ) {
         String url = aiServiceBaseUrl + "/internal/search/semantic";
         Map<String, Object> filters = new java.util.LinkedHashMap<>();
         if (merchantIds != null && !merchantIds.isEmpty()) filters.put("merchantIds", merchantIds);
         if (sourceTypes != null && !sourceTypes.isEmpty()) filters.put("sourceTypes", sourceTypes);
         Map<String, Object> request = new java.util.LinkedHashMap<>();
         request.put("query", query);
-        request.put("topK", 20);
+        request.put("topK", topK);
         request.put("filters", filters);
         request.put("requestId", context.requestId());
         JsonNode result = post(url, request, "SEMANTIC_SEARCH", context, "KNOWLEDGE_RETRIEVAL");

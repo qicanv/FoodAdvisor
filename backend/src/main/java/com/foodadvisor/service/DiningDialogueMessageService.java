@@ -489,6 +489,7 @@ public class DiningDialogueMessageService {
         rankRequest.setUserLongitude(
                 request.getUserLongitude()
         );
+        rankRequest.setQuery(request.getContent());
 
         RecommendationRankResponse recommendation =
                 traceService == null
