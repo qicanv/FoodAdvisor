@@ -86,6 +86,21 @@ public class RecommendationItemVO {
             new ArrayList<>();
 
     /**
+     * 语义匹配置信度 (0~1)。
+     *
+     * 基于来源多样性、命中数量和加权分数综合计算。
+     * 低于 0.3 时前端可展示"匹配可信度较低"提示。
+     */
+    private BigDecimal semanticConfidence;
+
+    /**
+     * 语义匹配依据文本列表。
+     *
+     * 来自各路上匹配分数最高的 chunk 片段，格式为 "[来源] 文本"。
+     */
+    private List<String> semanticEvidence = new ArrayList<>();
+
+    /**
      * 仅引用数据库和规则计算结果生成的推荐理由。
      */
     private String reason;

@@ -7,6 +7,7 @@ import com.foodadvisor.dto.recommendation.RecommendationItemVO;
 import com.foodadvisor.dto.recommendation.MatchedDishVO;
 import com.foodadvisor.dto.recommendation.RecommendationScoreItemVO;
 import com.foodadvisor.dto.recommendation.RecommendationWeights;
+import com.foodadvisor.dto.recommendation.SemanticMatchResult;
 import com.foodadvisor.entity.Merchant;
 import org.springframework.stereotype.Component;
 
@@ -62,7 +63,7 @@ public class MatchScoreCalculator {
             RecommendationWeights weights,
             BigDecimal userLatitude,
             BigDecimal userLongitude,
-            java.util.Map<Long, BigDecimal> semanticScores
+            java.util.Map<Long, SemanticMatchResult> semanticMatches
     ) {
         ConstraintState safeConstraints =
                 constraints == null
@@ -214,8 +215,7 @@ public class MatchScoreCalculator {
         FactorResult semanticResult =
                 calculateSemanticFactor(
                         merchant,
-                        constraints,
-                        semanticScores,
+                        semanticMatches,
                         matchedConditions,
                         riskNotes
                 );
@@ -229,6 +229,23 @@ public class MatchScoreCalculator {
                         semanticResult.explanation()
                 )
         );
+
+        // 将语义置信度和依据写入结果
+        if (semanticMatches != null) {
+            SemanticMatchResult match = semanticMatches.get(merchant.getId());
+            if (match != null) {
+                result.setSemanticConfidence(match.getConfidence());
+                List<String> evidenceTexts = new ArrayList<>();
+                for (SemanticMatchResult.SemanticEvidenceItem item
+                        : match.getEvidenceItems()) {
+                    if (item.getText() != null && !item.getText().isBlank()) {
+                        evidenceTexts.add("[" + sourceLabel(item.getSourceType())
+                                + "] " + item.getText());
+                    }
+                }
+                result.setSemanticEvidence(evidenceTexts);
+            }
+        }
 
         /*
          * 优先保留菜系、价格、评分、距离、环境等用户需求匹配项。
@@ -905,23 +922,22 @@ public class MatchScoreCalculator {
 
     private FactorResult calculateSemanticFactor(
             Merchant merchant,
-            ConstraintState constraints,
-            Map<Long, BigDecimal> semanticScores,
+            Map<Long, SemanticMatchResult> semanticMatches,
             List<String> matchedConditions,
             List<String> riskNotes
     ) {
         // 语义检索不可用或未触发时降级为中性
-        if (semanticScores == null || semanticScores.isEmpty()) {
+        if (semanticMatches == null || semanticMatches.isEmpty()) {
             return new FactorResult(
                     HALF,
                     "语义检索未启用，使用中性系数0.5"
             );
         }
 
-        BigDecimal semanticScore =
-                semanticScores.get(merchant.getId());
+        SemanticMatchResult match =
+                semanticMatches.get(merchant.getId());
 
-        if (semanticScore == null) {
+        if (match == null || match.getWeightedScore() == null) {
             riskNotes.add("该商家未在语义检索结果中出现");
             return new FactorResult(
                     ZERO,
@@ -929,9 +945,22 @@ public class MatchScoreCalculator {
             );
         }
 
-        BigDecimal factor = clampFactor(semanticScore);
+        BigDecimal factor = clampFactor(match.getWeightedScore());
 
-        if (factor.compareTo(new BigDecimal("0.7")) >= 0) {
+        // 根据可信度追加匹配条件或风险提示
+        BigDecimal confidence = match.getConfidence();
+        int diversity = match.getSourceDiversity();
+
+        if (factor.compareTo(new BigDecimal("0.7")) >= 0
+                && confidence != null
+                && confidence.compareTo(new BigDecimal("0.6")) >= 0) {
+            matchedConditions.add(
+                    "语义匹配度高（"
+                            + formatPercentage(factor)
+                            + "，来源覆盖"
+                            + diversity + "/3种）"
+            );
+        } else if (factor.compareTo(new BigDecimal("0.7")) >= 0) {
             matchedConditions.add(
                     "语义匹配度高（"
                             + formatPercentage(factor)
@@ -944,11 +973,30 @@ public class MatchScoreCalculator {
             );
         }
 
-        return new FactorResult(
-                factor,
-                "语义检索匹配系数为"
-                        + formatPercentage(factor)
-        );
+        // 低可信度风险提示
+        if (confidence != null
+                && confidence.compareTo(new BigDecimal("0.3")) < 0) {
+            riskNotes.add("语义匹配置信度较低，建议结合其他条件判断");
+        }
+
+        StringBuilder explanation = new StringBuilder()
+                .append("三路加权语义系数为")
+                .append(formatPercentage(factor));
+        if (diversity > 0) {
+            explanation.append("，覆盖")
+                    .append(diversity)
+                    .append("/3种来源");
+        }
+        return new FactorResult(factor, explanation.toString());
+    }
+
+    private static String sourceLabel(String sourceType) {
+        return switch (sourceType) {
+            case "MERCHANT_INTRO" -> "商家介绍";
+            case "MENU" -> "菜品";
+            case "REVIEW" -> "评价";
+            default -> sourceType;
+        };
     }
 
     private BigDecimal addScoreItem(
