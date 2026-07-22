@@ -24,30 +24,65 @@ def auth_headers(token: str = "test-token") -> dict[str, str]:
     }
 
 
-def request_body(content: object = "四个人，人均八十，想吃川菜，三公里以内，环境安静") -> dict:
+def runtime_model() -> dict:
+    return {
+        "provider": "OPENAI_COMPATIBLE",
+        "modelName": "mock-model",
+        "baseUrl": "https://model.example.com/v1",
+        "apiKey": "plain-runtime-secret",
+        "timeoutMs": 12345,
+        "temperature": 0.25,
+        "maxOutputTokens": 1500,
+    }
+
+
+def request_body(
+    content: object = (
+        "四个人，人均八十，想吃川菜，"
+        "三公里以内，环境安静"
+    ),
+) -> dict:
     return {
         "sessionId": 10,
         "messageId": 100,
         "content": content,
-        "currentConstraints": {"partySize": 2},
+        "currentConstraints": {
+            "partySize": 2,
+        },
+        "runtimeModel": runtime_model(),
     }
 
 
-def mock_model(monkeypatch, result: dict, configured: bool = True) -> None:
+def mock_model(
+    monkeypatch,
+    result: dict,
+    configured: bool = True,
+) -> dict:
+    captured: dict = {
+        "init": [],
+        "chat": [],
+    }
+
+    class FakeLLMService:
+        def __init__(self, **kwargs):
+            captured["init"].append(kwargs)
+            self.model = kwargs.get("model")
+            self.provider = kwargs.get("provider")
+
+        def is_configured(self) -> bool:
+            return configured
+
+        async def chat_json(self, *args, **kwargs):
+            captured["chat"].append(kwargs)
+            return result
+
     monkeypatch.setattr(
-        service_module.llm_service,
-        "is_configured",
-        lambda: configured,
+        service_module,
+        "LLMService",
+        FakeLLMService,
     )
 
-    async def chat_json(*args, **kwargs):
-        return result
-
-    monkeypatch.setattr(
-        service_module.llm_service,
-        "chat_json",
-        chat_json,
-    )
+    return captured
 
 
 def success_result(**overrides) -> dict:
@@ -103,42 +138,43 @@ def test_dialogue_extract_rejects_null_content():
     assert response.json()["error"]["code"] == "INVALID_REQUEST"
 
 
-def test_dialogue_extract_rejects_empty_content(monkeypatch):
-    called = {"value": False}
+@pytest.mark.parametrize(
+    "content",
+    ["", "   "],
+)
+def test_dialogue_extract_rejects_blank_content(
+    monkeypatch,
+    content,
+):
+    called = {
+        "value": False,
+    }
 
-    async def chat_json(*args, **kwargs):
-        called["value"] = True
-        return success_result()
+    class FailIfCreated:
+        def __init__(self, **kwargs):
+            called["value"] = True
 
-    monkeypatch.setattr(service_module.llm_service, "chat_json", chat_json)
+    monkeypatch.setattr(
+        service_module,
+        "LLMService",
+        FailIfCreated,
+    )
 
-    response = post_extract(request_body(""))
-
-    assert response.status_code == 422
-    body = response.json()
-    assert body["error"]["code"] == "INVALID_REQUEST"
-    assert "content" in str(body["error"]["details"])
-    assert "content must not be blank" in str(body["error"]["details"])
-    assert "ValueError(" not in response.text
-    assert called["value"] is False
-
-
-def test_dialogue_extract_rejects_blank_content(monkeypatch):
-    called = {"value": False}
-
-    async def chat_json(*args, **kwargs):
-        called["value"] = True
-        return success_result()
-
-    monkeypatch.setattr(service_module.llm_service, "chat_json", chat_json)
-
-    response = post_extract(request_body("   "))
+    response = post_extract(
+        request_body(content)
+    )
 
     assert response.status_code == 422
+
     body = response.json()
+
     assert body["error"]["code"] == "INVALID_REQUEST"
-    assert "content" in str(body["error"]["details"])
-    assert "content must not be blank" in str(body["error"]["details"])
+    assert "content" in str(
+        body["error"]["details"]
+    )
+    assert "content must not be blank" in str(
+        body["error"]["details"]
+    )
     assert "ValueError(" not in response.text
     assert called["value"] is False
 
@@ -210,12 +246,6 @@ def test_dialogue_accepts_business_target_time_and_model_metadata(monkeypatch):
             }
         ),
     )
-    monkeypatch.setattr(service_module.llm_service, "model", "mock-model")
-    monkeypatch.setattr(
-        service_module.llm_service,
-        "provider",
-        "OPENAI_COMPATIBLE",
-    )
 
     body = post_extract(request_body("晚上十点后还营业")).json()
 
@@ -284,6 +314,53 @@ def test_dialogue_detects_cleared_constraints(monkeypatch):
     assert body["clearedFields"] == ["environmentRequirements"]
 
 
+def test_dialogue_uses_request_runtime_model(
+    monkeypatch,
+):
+    captured = mock_model(
+        monkeypatch,
+        success_result(),
+    )
+
+    response = post_extract(
+        request_body()
+    )
+
+    assert response.status_code == 200
+
+    assert captured["init"] == [
+        {
+            "api_key": "plain-runtime-secret",
+            "base_url": (
+                "https://model.example.com/v1"
+            ),
+            "model": "mock-model",
+            "provider": "OPENAI_COMPATIBLE",
+            "request_timeout_seconds": 12.345,
+        }
+    ]
+
+    assert captured["chat"][0]["temperature"] == 0.25
+    assert captured["chat"][0]["max_tokens"] == 1500
+
+    assert (
+        "plain-runtime-secret"
+        not in response.text
+    )
+
+
+def test_dialogue_requires_runtime_model():
+    body = request_body()
+    body.pop("runtimeModel")
+
+    response = post_extract(body)
+
+    assert response.status_code == 422
+    assert (
+        response.json()["error"]["code"]
+        == "INVALID_REQUEST"
+    )
+
 def test_dialogue_does_not_invent_missing_fields(monkeypatch):
     mock_model(
         monkeypatch,
@@ -296,23 +373,29 @@ def test_dialogue_does_not_invent_missing_fields(monkeypatch):
     assert body["extractedConstraints"]["cuisines"] == []
 
 
-def test_dialogue_rejects_invalid_model_json(monkeypatch):
+def test_dialogue_rejects_invalid_model_json(
+    monkeypatch,
+):
+    class InvalidJsonLLMService:
+        def __init__(self, **kwargs):
+            self.model = kwargs.get("model")
+            self.provider = kwargs.get("provider")
+
+        def is_configured(self) -> bool:
+            return True
+
+        async def chat_json(self, *args, **kwargs):
+            raise ValueError("not json")
+
     monkeypatch.setattr(
-        service_module.llm_service,
-        "is_configured",
-        lambda: True,
+        service_module,
+        "LLMService",
+        InvalidJsonLLMService,
     )
 
-    async def invalid_json(*args, **kwargs):
-        raise ValueError("not json")
-
-    monkeypatch.setattr(
-        service_module.llm_service,
-        "chat_json",
-        invalid_json,
+    response = post_extract(
+        request_body()
     )
-
-    response = post_extract(request_body())
 
     assert response.status_code == 502
 

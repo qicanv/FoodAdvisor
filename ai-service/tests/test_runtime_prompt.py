@@ -107,45 +107,69 @@ async def test_review_summary_uses_runtime_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_dialogue_extraction_uses_runtime_prompt(monkeypatch):
+async def test_dialogue_extraction_uses_runtime_prompt(
+    monkeypatch,
+):
     captured = {}
 
-    async def fake_chat_json(**kwargs):
-        captured.update(kwargs)
-        return {
-            "intent": "MERCHANT_RECOMMENDATION",
-            "extractedConstraints": {
-                "cuisines": ["川菜"],
-            },
-            "clearedFields": [],
-            "confidence": 0.9,
-        }
+    class FakeLLMService:
+        def __init__(self, **kwargs):
+            self.model = kwargs.get("model")
+            self.provider = kwargs.get("provider")
+
+        def is_configured(self) -> bool:
+            return True
+
+        async def chat_json(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "intent": "MERCHANT_RECOMMENDATION",
+                "extractedConstraints": {
+                    "cuisines": ["川菜"],
+                },
+                "clearedFields": [],
+                "confidence": 0.9,
+            }
 
     monkeypatch.setattr(
-        dialogue_module.llm_service,
-        "is_configured",
-        lambda: True,
-    )
-    monkeypatch.setattr(
-        dialogue_module.llm_service,
-        "chat_json",
-        fake_chat_json,
+        dialogue_module,
+        "LLMService",
+        FakeLLMService,
     )
 
     request = DialogueExtractRequest(
         sessionId=1,
         messageId=2,
         content="想吃川菜",
+        runtimeModel={
+            "provider": "OPENAI_COMPATIBLE",
+            "modelName": "runtime-model",
+            "baseUrl": "https://model.example.com/v1",
+            "apiKey": "runtime-secret",
+            "timeoutMs": 30000,
+            "temperature": 0.1,
+            "maxOutputTokens": 1200,
+        },
         systemPrompt="自定义需求提取提示词",
         promptVersion="constraint-custom:v4",
     )
 
-    response = await dialogue_module.dialogue_extraction_service.extract(
-        request
+    response = (
+        await dialogue_module
+        .dialogue_extraction_service
+        .extract(request)
     )
 
-    assert captured["system_prompt"] == "自定义需求提取提示词"
-    assert response.promptVersion == "constraint-custom:v4"
+    assert (
+        captured["system_prompt"]
+        == "自定义需求提取提示词"
+    )
+    assert (
+        response.promptVersion
+        == "constraint-custom:v4"
+    )
+    assert response.modelName == "runtime-model"
+    assert response.provider == "OPENAI_COMPATIBLE"
 
 
 @pytest.mark.asyncio

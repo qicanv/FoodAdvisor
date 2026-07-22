@@ -2,7 +2,7 @@ from enum import Enum
 from math import isfinite
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 ALLOWED_FIELDS = {
@@ -108,6 +108,74 @@ class ConstraintStateModel(BaseModel):
         return value
 
 
+class RuntimeModelConfigModel(BaseModel):
+    """Spring Boot 为本次 AI 调用提供的运行时模型配置。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    modelName: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+    baseUrl: str = Field(
+        min_length=1,
+        max_length=2048,
+    )
+    apiKey: SecretStr = Field(
+        min_length=1,
+        max_length=4096,
+    )
+    timeoutMs: int = Field(
+        gt=0,
+        le=300000,
+    )
+    temperature: float = Field(
+        ge=0,
+        le=2,
+    )
+    maxOutputTokens: int = Field(
+        gt=0,
+        le=100000,
+    )
+
+    @field_validator(
+        "provider",
+        "modelName",
+        "baseUrl",
+    )
+    @classmethod
+    def required_text_not_blank(
+        cls,
+        value: str,
+    ) -> str:
+        trimmed = value.strip()
+
+        if not trimmed:
+            raise ValueError(
+                "runtime model text field must not be blank"
+            )
+
+        return trimmed
+
+    @field_validator("baseUrl")
+    @classmethod
+    def base_url_must_use_http(
+        cls,
+        value: str,
+    ) -> str:
+        if not value.startswith(
+            ("http://", "https://")
+        ):
+            raise ValueError(
+                "baseUrl must use http or https"
+            )
+
+        return value.rstrip("/")
+
 class DialogueExtractRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -117,6 +185,7 @@ class DialogueExtractRequest(BaseModel):
     currentConstraints: ConstraintStateModel = Field(
         default_factory=ConstraintStateModel
     )
+    runtimeModel: RuntimeModelConfigModel
     systemPrompt: Optional[str] = Field(
         default=None,
         max_length=50000,

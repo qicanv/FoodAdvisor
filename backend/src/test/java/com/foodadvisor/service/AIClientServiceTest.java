@@ -3,6 +3,9 @@ package com.foodadvisor.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.foodadvisor.dto.prompt.ResolvedPrompt;
+import com.foodadvisor.dto.ai.DialogueExtractAiRequest;
+import com.foodadvisor.dto.ai.RuntimeModelConfig;
+import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.enums.PromptScene;
 import com.foodadvisor.entity.AiCallLog;
 import com.foodadvisor.entity.AuditLog;
@@ -20,6 +23,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -30,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
@@ -60,6 +65,9 @@ class AIClientServiceTest {
     @Mock
     private PromptManagementService promptManagementService;
 
+    @Mock
+    private RuntimeModelConfigResolver runtimeModelConfigResolver;
+
     private AIClientService aiClientService;
     private MockRestServiceServer server;
     private ObjectMapper objectMapper;
@@ -75,7 +83,8 @@ class AIClientServiceTest {
                 auditLogService,
                 new SensitiveLogSanitizer(),
                 null,
-                promptManagementService
+                promptManagementService,
+                runtimeModelConfigResolver
         );
         ReflectionTestUtils.setField(
                 aiClientService,
@@ -437,6 +446,99 @@ class AIClientServiceTest {
                 "POSITIVE",
                 result.get("sentiment").asText()
         );
+
+        server.verify();
+    }
+
+    @Test
+    void shouldAttachRuntimeModelToDialogueRequestWithoutLoggingSecret()
+            throws Exception {
+        when(
+                runtimeModelConfigResolver
+                        .resolveStoreRecommendation()
+        ).thenReturn(
+                new RuntimeModelConfig(
+                        "OPENAI_COMPATIBLE",
+                        "runtime-model",
+                        "https://model.example.com/v1",
+                        "plain-runtime-secret",
+                        30000,
+                        new BigDecimal("0.25"),
+                        1500
+                )
+        );
+
+        server.expect(once(), requestTo(
+                        "http://ai-service/internal/dialogue/extract"
+                ))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(allOf(
+                        containsString("\"runtimeModel\""),
+                        containsString(
+                                "\"provider\":\"OPENAI_COMPATIBLE\""
+                        ),
+                        containsString(
+                                "\"modelName\":\"runtime-model\""
+                        ),
+                        containsString(
+                                "\"baseUrl\":\"https://model.example.com/v1\""
+                        ),
+                        containsString(
+                                "\"apiKey\":\"plain-runtime-secret\""
+                        ),
+                        containsString("\"timeoutMs\":30000"),
+                        containsString("\"temperature\":0.25"),
+                        containsString("\"maxOutputTokens\":1500")
+                )))
+                .andRespond(withSuccess(
+                        """
+                        {
+                          "intent": "MERCHANT_RECOMMENDATION",
+                          "extractedConstraints": {},
+                          "clearedFields": [],
+                          "confidence": 0.9,
+                          "extractor": "AI_MODEL",
+                          "degraded": false,
+                          "modelName": "runtime-model",
+                          "provider": "OPENAI_COMPATIBLE",
+                          "promptVersion": "constraint-custom:v4"
+                        }
+                        """,
+                        MediaType.APPLICATION_JSON
+                ));
+
+        DialogueExtractAiRequest request =
+                new DialogueExtractAiRequest();
+        request.setSessionId(1L);
+        request.setMessageId(2L);
+        request.setContent("想吃川菜");
+        request.setCurrentConstraints(
+                new ConstraintState()
+        );
+
+        aiClientService.extractDialogueConstraints(
+                request
+        );
+
+        AiCallLog aiLog = capturedAiLog();
+        AuditLog auditLog = capturedAuditLog();
+
+        assertAll(
+                () -> assertFalse(
+                        aiLog.getRequestSummary()
+                                .contains("plain-runtime-secret")
+                ),
+                () -> assertNull(
+                        aiLog.getErrorMessage()
+                ),
+                () -> assertFalse(
+                        auditLog.getMetadata()
+                                .contains("plain-runtime-secret")
+                )
+        );
+
+        verify(runtimeModelConfigResolver)
+                .resolveStoreRecommendation();
 
         server.verify();
     }

@@ -13,13 +13,51 @@ from app.core.config import settings
 class LLMService:
     """通用大模型调用服务。"""
 
-    def __init__(self) -> None:
-        self.api_key = settings.llm_api_key
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        provider: str | None = None,
+        request_timeout_seconds: float | None = None,
+    ) -> None:
+        self.api_key = (
+            api_key
+            if api_key is not None
+            else settings.llm_api_key
+        )
+
+        selected_base_url = (
+            base_url
+            if base_url is not None
+            else settings.llm_base_url
+        )
         self.base_url = (
-            settings.llm_base_url or "https://api.deepseek.com"
+            selected_base_url
+            or "https://api.deepseek.com"
         ).rstrip("/")
-        self.model = settings.llm_model or "deepseek-v4-pro"
-        self.provider = settings.llm_provider
+
+        self.model = (
+            model
+            if model is not None
+            else settings.llm_model
+        ) or "deepseek-v4-pro"
+
+        self.provider = (
+            provider
+            if provider is not None
+            else settings.llm_provider
+        )
+
+        selected_timeout = (
+            request_timeout_seconds
+            if request_timeout_seconds is not None
+            else settings.request_timeout_seconds
+        )
+        self.request_timeout_seconds = float(
+            selected_timeout
+        )
 
     def is_configured(self) -> bool:
         """检查大模型必要配置是否完整。"""
@@ -89,7 +127,7 @@ class LLMService:
         }
 
         async with httpx.AsyncClient(
-            timeout=float(settings.request_timeout_seconds)
+                timeout=self.request_timeout_seconds
         ) as client:
             response = await client.post(
                 url,
