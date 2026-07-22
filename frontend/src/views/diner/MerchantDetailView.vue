@@ -321,6 +321,9 @@
                 </div>
               </div>
               <p class="review-content">{{ review.content }}</p>
+              <div v-if="review.merchantReply" class="review-reply">
+                <span class="reply-label">🏪 商家回复：</span>{{ review.merchantReply.replyContent }}
+              </div>
               <div class="review-actions">
                 <button
                   v-if="isLoggedIn && review.userId !== currentUserId"
@@ -714,7 +717,8 @@ const loadMerchant = async () => {
         avatar: getUserAvatar(review.userId || 0),
         date: formatDate(review.publishedAt || review.createdAt),
         rating: review.rating,
-        content: review.content
+        content: review.content,
+        merchantReply: review.merchantReply,
       })) : []
     }
     

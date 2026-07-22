@@ -432,15 +432,22 @@ public class ReviewReplyDraftService extends ServiceImpl<ReviewReplyDraftMapper,
     // ============================================================
 
     /**
-     * 获取某条评价的当前草稿（如果有）。
+     * 获取某条评价的当前草稿或已发布回复（如果有）。
      *
-     * 前端可以在商家查看评价时调用，判断是否需要展示已有的草稿。
+     * 前端在商家查看评价时调用，判断是否需要展示已有的草稿或已发布回复。
+     * 查找优先级：DRAFT > PUBLISHED（取最新一条）
      *
      * @param reviewId 评价 ID
-     * @return 草稿 VO，如果没有活跃草稿则返回 null
+     * @return 草稿 VO，如果没有则返回 null
      */
     public ReviewReplyDraftVO getDraft(Long reviewId) {
-        ReviewReplyDraft draft = findActiveDraft(reviewId);
+        ReviewReplyDraft draft = this.getOne(
+                new LambdaQueryWrapper<ReviewReplyDraft>()
+                        .eq(ReviewReplyDraft::getReviewId, reviewId)
+                        .in(ReviewReplyDraft::getStatus, "DRAFT", "PUBLISHED")
+                        .orderByDesc(ReviewReplyDraft::getGeneratedAt)
+                        .last("LIMIT 1")
+        );
         return ReviewReplyDraftVO.from(draft);
     }
 
