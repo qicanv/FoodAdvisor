@@ -25,13 +25,16 @@ public class OpenSearchSyncService {
 
     private final OpenSearchSyncTaskMapper mapper;
     private final AIClientService aiClientService;
+    private final KnowledgeEnrichmentService knowledgeEnrichmentService;
 
     public OpenSearchSyncService(
             OpenSearchSyncTaskMapper mapper,
-            AIClientService aiClientService
+            AIClientService aiClientService,
+            KnowledgeEnrichmentService knowledgeEnrichmentService
     ) {
         this.mapper = mapper;
         this.aiClientService = aiClientService;
+        this.knowledgeEnrichmentService = knowledgeEnrichmentService;
     }
 
     /**
@@ -184,10 +187,23 @@ public class OpenSearchSyncService {
                         List.of(task.getSourceId())
                 );
             } else if (OpenSearchSyncTask.OP_UPSERT.equals(task.getOperationType())) {
-                // 启用/恢复操作：内容恢复后，需要重新 upsert 知识文档
-                // 由调用方在状态变更时重新提交内容到 upsert 流程
-                log.info("UPSERT 操作: sourceType={}, sourceId={}，需由业务层重新提交内容",
-                        task.getSourceType(), task.getSourceId());
+                // UPSERT：根据来源类型构造增强文本并同步
+                Long sourceId = task.getSourceId();
+                switch (task.getSourceType()) {
+                    case "MERCHANT" -> {
+                        knowledgeEnrichmentService.syncMerchantIntro(sourceId);
+                        knowledgeEnrichmentService.syncMerchantMenu(sourceId);
+                        knowledgeEnrichmentService.syncMerchantReviews(sourceId);
+                    }
+                    case "MERCHANT_INTRO" ->
+                            knowledgeEnrichmentService.syncMerchantIntro(sourceId);
+                    case "MENU" ->
+                            knowledgeEnrichmentService.syncMerchantMenu(sourceId);
+                    case "REVIEW" ->
+                            log.info("单条评价同步暂不支持，需提供 merchantId");
+                    default ->
+                            log.warn("未知同步来源类型: {}", task.getSourceType());
+                }
             }
 
             markSuccess(task.getId());

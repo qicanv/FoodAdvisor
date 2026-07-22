@@ -9,6 +9,7 @@ import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.security.AdminAccessGuard;
 import com.foodadvisor.service.ContentStatusService;
+import com.foodadvisor.service.KnowledgeEnrichmentService;
 import com.foodadvisor.service.OpenSearchSyncService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -29,17 +30,20 @@ public class AdminMerchantController {
     private final AdminAccessGuard adminAccessGuard;
     private final ContentStatusService contentStatusService;
     private final OpenSearchSyncService openSearchSyncService;
+    private final KnowledgeEnrichmentService knowledgeEnrichmentService;
 
     public AdminMerchantController(
             MerchantMapper merchantMapper,
             AdminAccessGuard adminAccessGuard,
             ContentStatusService contentStatusService,
-            OpenSearchSyncService openSearchSyncService
+            OpenSearchSyncService openSearchSyncService,
+            KnowledgeEnrichmentService knowledgeEnrichmentService
     ) {
         this.merchantMapper = merchantMapper;
         this.adminAccessGuard = adminAccessGuard;
         this.contentStatusService = contentStatusService;
         this.openSearchSyncService = openSearchSyncService;
+        this.knowledgeEnrichmentService = knowledgeEnrichmentService;
     }
 
     @GetMapping
@@ -181,6 +185,11 @@ public class AdminMerchantController {
                 null, merchant.getPlatformStatus(),
                 userId, "商家创建"
         );
+
+        // 异步触发知识入库（增强文本 → OpenSearch）
+        if ("ACTIVE".equals(merchant.getPlatformStatus())) {
+            triggerKnowledgeSync(merchant.getId());
+        }
 
         return ApiResponse.success(merchant);
     }
@@ -438,6 +447,23 @@ public class AdminMerchantController {
             log.error("创建同步任务失败: merchantId={}, newStatus={}, error={}",
                     merchantId, newStatus, e.getMessage(), e);
         }
+    }
+
+    /**
+     * 立即触发商家知识同步（增强文本 → 清洗切分 → 向量化 → OpenSearch）。
+     * 耗时较长（需调用 Embedding 模型），适合在后台线程中执行。
+     */
+    private void triggerKnowledgeSync(Long merchantId) {
+        new Thread(() -> {
+            try {
+                Map<String, Integer> result =
+                        knowledgeEnrichmentService.syncMerchantAll(merchantId);
+                log.info("商家知识同步完成: merchantId={}, result={}", merchantId, result);
+            } catch (Exception e) {
+                log.error("商家知识同步失败: merchantId={}, error={}",
+                        merchantId, e.getMessage(), e);
+            }
+        }, "knowledge-sync-" + merchantId).start();
     }
 
     private List<String> validateMerchant(Merchant merchant) {
