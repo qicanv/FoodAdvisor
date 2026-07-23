@@ -53,11 +53,13 @@ public class OperationsDashboardService {
         Map<String, Object> metrics = new LinkedHashMap<>();
 
         metrics.put("activeUsers", getActiveUsers(startTime, endTime));
+        metrics.put("totalUsers", getTotalUsers());
         metrics.put("storeConsultations", getStoreConsultations(startTime, endTime));
         metrics.put("semanticSearches", getSemanticSearches(startTime, endTime));
         metrics.put("recommendationClicks", getRecommendationClicks(startTime, endTime));
         metrics.put("merchantCount", getMerchantCount());
         metrics.put("reviewCount", getReviewCount(startTime, endTime));
+        metrics.put("totalReviews", getTotalReviews());
         metrics.put("aiCallCount", getAiCallCount(startTime, endTime));
         metrics.put("merchantActions", getMerchantActions(startTime, endTime));
 
@@ -165,6 +167,22 @@ public class OperationsDashboardService {
     private Long getMerchantCount() {
         try {
             return merchantMapper.selectCount(null);
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    private Long getTotalUsers() {
+        try {
+            return userMapper.countTotalUsers();
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    private Long getTotalReviews() {
+        try {
+            return reviewMapper.countTotalReviews();
         } catch (Exception e) {
             return 0L;
         }

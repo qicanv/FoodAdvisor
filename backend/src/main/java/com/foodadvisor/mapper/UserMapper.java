@@ -12,4 +12,7 @@ import java.time.OffsetDateTime;
 public interface UserMapper extends BaseMapper<User> {
     @Select("SELECT COUNT(DISTINCT id) FROM users WHERE updated_at >= #{startTime} AND updated_at <= #{endTime}")
     Long countActiveUsers(@Param("startTime") OffsetDateTime startTime, @Param("endTime") OffsetDateTime endTime);
+
+    @Select("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL")
+    Long countTotalUsers();
 }

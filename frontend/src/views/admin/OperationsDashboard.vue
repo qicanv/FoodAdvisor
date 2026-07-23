@@ -232,25 +232,25 @@ const labels = ref([])
 const metricList = computed(() => {
   if (!overview.value?.metrics) {
     return [
-      { key: 'activeUsers', label: '活跃用户数', value: 0, unit: '人', iconPath: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 1 8 0', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-blue' },
-      { key: 'storeConsultations', label: '探店咨询次数', value: 0, unit: '次', iconPath: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-green' },
-      { key: 'semanticSearches', label: '语义搜索次数', value: 0, unit: '次', iconPath: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-orange' },
-      { key: 'recommendationClicks', label: '推荐点击次数', value: 0, unit: '次', iconPath: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-purple' },
-      { key: 'merchantCount', label: '商家数量', value: 0, unit: '家', iconPath: 'M8 21l1-17a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4l1 17', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-blue' },
-      { key: 'reviewCount', label: '评价数量', value: 0, unit: '条', iconPath: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-orange' },
+      { key: 'totalUsers', label: '用户总数', value: 0, unit: '人', iconPath: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 1 8 0', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-blue' },
+      { key: 'totalReviews', label: '评论总数', value: 0, unit: '条', iconPath: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-orange' },
+      { key: 'merchantCount', label: '商家数量', value: 0, unit: '家', iconPath: 'M8 21l1-17a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4l1 17', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-green' },
       { key: 'aiCallCount', label: '大模型调用次数', value: 0, unit: '次', iconPath: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-purple' },
+      { key: 'storeConsultations', label: '探店咨询次数', value: 0, unit: '次', iconPath: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-cyan' },
+      { key: 'semanticSearches', label: '语义搜索次数', value: 0, unit: '次', iconPath: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-teal' },
+      { key: 'recommendationClicks', label: '推荐点击次数', value: 0, unit: '次', iconPath: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-indigo' },
     ]
   }
 
   const m = overview.value.metrics
   return [
-    { key: 'activeUsers', label: '活跃用户数', value: m.activeUsers || 0, unit: '人', iconPath: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 1 8 0', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-blue' },
-    { key: 'storeConsultations', label: '探店咨询次数', value: m.storeConsultations || 0, unit: '次', iconPath: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-green' },
-    { key: 'semanticSearches', label: '语义搜索次数', value: m.semanticSearches || 0, unit: '次', iconPath: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-orange' },
-    { key: 'recommendationClicks', label: '推荐点击次数', value: m.recommendationClicks || 0, unit: '次', iconPath: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-purple' },
-    { key: 'merchantCount', label: '商家数量', value: m.merchantCount || 0, unit: '家', iconPath: 'M8 21l1-17a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4l1 17', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-blue' },
-    { key: 'reviewCount', label: '评价数量', value: m.reviewCount || 0, unit: '条', iconPath: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-orange' },
+    { key: 'totalUsers', label: '用户总数', value: m.totalUsers || 0, unit: '人', iconPath: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 7a4 4 0 1 1 8 0', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-blue' },
+    { key: 'totalReviews', label: '评论总数', value: m.totalReviews || 0, unit: '条', iconPath: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-orange' },
+    { key: 'merchantCount', label: '商家数量', value: m.merchantCount || 0, unit: '家', iconPath: 'M8 21l1-17a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4l1 17', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-green' },
     { key: 'aiCallCount', label: '大模型调用次数', value: m.aiCallCount || 0, unit: '次', iconPath: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-purple' },
+    { key: 'storeConsultations', label: '探店咨询次数', value: m.storeConsultations || 0, unit: '次', iconPath: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-cyan' },
+    { key: 'semanticSearches', label: '语义搜索次数', value: m.semanticSearches || 0, unit: '次', iconPath: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-teal' },
+    { key: 'recommendationClicks', label: '推荐点击次数', value: m.recommendationClicks || 0, unit: '次', iconPath: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', iconViewBox: '0 0 24 24', iconClass: 'metric-icon-indigo' },
   ]
 })
 
@@ -491,6 +491,21 @@ onMounted(() => {
 .metric-icon-purple {
   color: #722ed1;
   background: rgba(114, 46, 209, 0.1);
+}
+
+.metric-icon-cyan {
+  color: #13c2c2;
+  background: rgba(19, 194, 194, 0.1);
+}
+
+.metric-icon-teal {
+  color: #20c997;
+  background: rgba(32, 201, 151, 0.1);
+}
+
+.metric-icon-indigo {
+  color: #536dfe;
+  background: rgba(83, 109, 254, 0.1);
 }
 
 .metric-info {
