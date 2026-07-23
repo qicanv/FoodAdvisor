@@ -44,7 +44,7 @@ class SearchResultItem(BaseModel):
 class SearchData(BaseModel):
     """检索结果数据体"""
     searchMode: str = Field(
-        default="VECTOR", description="检索模式：VECTOR / RERANKED / KEYWORD_FALLBACK"
+        default="VECTOR", description="检索模式：VECTOR / RERANKED"
     )
     results: list[SearchResultItem] = Field(default_factory=list)
 

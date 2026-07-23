@@ -363,6 +363,14 @@ public class DiningDialogueMessageService {
             );
         }
 
+        request.setQuery(
+                restoreOriginalQuery(
+                        sessionId,
+                        request.getUserId(),
+                        assistantMessage
+                )
+        );
+
         RecommendationRankResponse recommendation =
                 traceService == null
                         ? recommendationRankingService.adjustAndRank(sessionId, request)
@@ -1632,6 +1640,69 @@ public class DiningDialogueMessageService {
                 )
         );
         return response;
+    }
+
+    private String restoreOriginalQuery(
+            Long sessionId,
+            Long userId,
+            ChatMessage assistantMessage
+    ) {
+        Map<String, Object> metadata =
+                parseMetadata(assistantMessage);
+
+        Long recommendationId =
+                asLong(metadata.get("recommendationId"));
+
+        if (recommendationId == null) {
+            return null;
+        }
+
+        Recommendation recommendation =
+                recommendationMapper.selectOne(
+                        new LambdaQueryWrapper<Recommendation>()
+                                .eq(
+                                        Recommendation::getId,
+                                        recommendationId
+                                )
+                                .eq(
+                                        Recommendation::getSessionId,
+                                        sessionId
+                                )
+                                .eq(
+                                        Recommendation::getUserId,
+                                        userId
+                                )
+                );
+
+        if (recommendation == null
+                || recommendation.getUserMessageId() == null) {
+            return null;
+        }
+
+        ChatMessage userMessage =
+                chatMessageMapper.selectOne(
+                        new LambdaQueryWrapper<ChatMessage>()
+                                .eq(
+                                        ChatMessage::getId,
+                                        recommendation.getUserMessageId()
+                                )
+                                .eq(
+                                        ChatMessage::getSessionId,
+                                        sessionId
+                                )
+                                .eq(
+                                        ChatMessage::getRole,
+                                        ROLE_USER
+                                )
+                );
+
+        if (userMessage == null
+                || userMessage.getContent() == null
+                || userMessage.getContent().isBlank()) {
+            return null;
+        }
+
+        return userMessage.getContent();
     }
 
     private Map<String, Object> parseMetadata(
