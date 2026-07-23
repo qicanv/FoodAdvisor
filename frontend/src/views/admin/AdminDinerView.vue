@@ -373,9 +373,6 @@
 import { ref, computed, onMounted } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
 
-const STORAGE_KEY = 'foodadvisor_diners'
-const STORAGE_VERSION = '2.0'
-
 const searchKeyword = ref('')
 const statusFilter = ref('')
 const showAddModal = ref(false)
@@ -386,100 +383,11 @@ const selectedDiner = ref(null)
 const confirmAction = ref(null)
 const confirmTitle = ref('')
 const confirmMessage = ref('')
+const total = ref(0)
+const currentPage = ref(1)
+const loading = ref(false)
 
-const generateMockDiners = () => {
-  const now = new Date()
-  const formatDate = (date) => {
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
-  const diners = []
-  const usernames = ['foodie001', 'reviewking', 'hungrycat', 'dinnerlover', 'foodcritic', 'tasteexplorer', 'gourmetgirl', 'foodhunter', 'yummyfan', 'eatwell']
-  const nicknames = ['美食达人小王', '评价小王子', '馋嘴猫', '晚餐爱好者', '美食评论家', '味蕾探险家', '美食女孩', '吃货猎人', '美味粉丝', '吃得好']
-  
-  for (let i = 1; i <= 10; i++) {
-    const daysAgo = Math.floor(Math.random() * 180)
-    const registerDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000)
-    const lastLoginDays = Math.floor(Math.random() * 7)
-    const lastLoginDate = new Date(now.getTime() - lastLoginDays * 24 * 60 * 60 * 1000)
-    
-    const reviewCount = Math.floor(Math.random() * 100)
-    const ratingDist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
-    for (let j = 0; j < reviewCount; j++) {
-      ratingDist[Math.ceil(Math.random() * 5)]++
-    }
-    
-    const activities = []
-    const activityTypes = ['review', 'like', 'follow', 'search', 'view']
-    const activityContents = {
-      review: ['发布了评价', '发表了新评论', '分享了用餐体验'],
-      like: ['点赞了一条评价', '喜欢了一个餐厅'],
-      follow: ['关注了新商家', '订阅了店铺'],
-      search: ['搜索了美食', '查找了餐厅'],
-      view: ['浏览了餐厅详情', '查看了评价']
-    }
-    
-    for (let j = 0; j < Math.floor(Math.random() * 5) + 2; j++) {
-      const type = activityTypes[Math.floor(Math.random() * activityTypes.length)]
-      activities.push({
-        type,
-        content: `${nicknames[i - 1]}${activityContents[type][Math.floor(Math.random() * activityContents[type].length)]}`,
-        time: formatDate(new Date(now.getTime() - j * 24 * 60 * 60 * 1000 - Math.floor(Math.random() * 24 * 60 * 60 * 1000)))
-      })
-    }
-    
-    diners.push({
-      id: i,
-      username: usernames[i - 1],
-      nickname: nicknames[i - 1],
-      phone: `13${Math.floor(Math.random() * 10)}${String(Math.floor(Math.random() * 100000000)).padStart(8, '0')}`,
-      email: `${usernames[i - 1]}@example.com`,
-      role: 'USER',
-      status: i <= 6 ? 'ACTIVE' : (i <= 8 ? 'DISABLED' : 'LOCKED'),
-      createdAt: formatDate(registerDate),
-      updatedAt: formatDate(new Date(now.getTime() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000)),
-      lastLoginTime: lastLoginDays === 0 ? '今天' : formatDate(lastLoginDate),
-      reviewCount,
-      avgRating: (Math.random() * 2 + 3).toFixed(1),
-      likeCount: Math.floor(Math.random() * 500),
-      followCount: Math.floor(Math.random() * 50),
-      ratingDistribution: ratingDist,
-      recentActivities: activities
-    })
-  }
-  
-  return diners
-}
-
-const loadFromStorage = () => {
-  const saved = localStorage.getItem(STORAGE_KEY)
-  const version = localStorage.getItem(`${STORAGE_KEY}_version`)
-  
-  if (saved && version === STORAGE_VERSION) {
-    try {
-      return JSON.parse(saved)
-    } catch {
-      return generateMockDiners()
-    }
-  } else {
-    const diners = generateMockDiners()
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(diners))
-    localStorage.setItem(`${STORAGE_KEY}_version`, STORAGE_VERSION)
-    return diners
-  }
-}
-
-const saveToStorage = (data) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-}
-
-const diners = ref(loadFromStorage())
+const diners = ref([])
 
 const formData = ref({
   id: null,
@@ -491,9 +399,64 @@ const formData = ref({
 })
 
 const activeCount = computed(() => diners.value.filter(d => d.status === 'ACTIVE').length)
-const reviewCount = computed(() => diners.value.reduce((sum, d) => sum + d.reviewCount, 0))
+const reviewCount = computed(() => diners.value.reduce((sum, d) => (d.reviewCount || 0), 0))
 
-const loadDiners = () => {
+const loadDiners = async () => {
+  loading.value = true
+  try {
+    const params = new URLSearchParams()
+    params.append('pageNum', currentPage.value)
+    params.append('pageSize', 10)
+    params.append('role', 'USER')
+    if (statusFilter.value) params.append('status', statusFilter.value)
+    if (searchKeyword.value) params.append('keyword', searchKeyword.value)
+
+    const response = await fetch(`/api/admin/users?${params}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token') || localStorage.getItem('accessToken')}`
+      }
+    })
+    const data = await response.json()
+
+    if (data.code === 'SUCCESS' && data.data) {
+      diners.value = data.data.records || []
+      total.value = data.data.total || 0
+    } else {
+      diners.value = []
+      total.value = 0
+      if (data.code === 'UNAUTHORIZED') {
+        openConfirmModal('登录过期', '请重新登录后重试', null)
+      }
+    }
+  } catch (error) {
+    console.error('加载食客列表失败:', error)
+    diners.value = []
+    total.value = 0
+    openConfirmModal('加载失败', '加载食客列表时发生错误', null)
+  } finally {
+    loading.value = false
+  }
+}
+
+const viewDiner = async (diner) => {
+  try {
+    const response = await fetch(`/api/admin/users/${diner.id}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token') || localStorage.getItem('accessToken')}`
+      }
+    })
+    const data = await response.json()
+
+    if (data.code === 'SUCCESS' && data.data) {
+      selectedDiner.value = data.data
+    } else {
+      selectedDiner.value = diner
+    }
+  } catch (error) {
+    console.error('加载食客详情失败:', error)
+    selectedDiner.value = diner
+  }
+  showDetailModal.value = true
 }
 
 const getStatusText = (status) => {
@@ -539,11 +502,6 @@ const getRatingCount = (rating) => {
   return selectedDiner.value.ratingDistribution[rating] || 0
 }
 
-const viewDiner = (diner) => {
-  selectedDiner.value = diner
-  showDetailModal.value = true
-}
-
 const editDiner = (diner) => {
   isEditing.value = true
   formData.value = { ...diner }
@@ -551,7 +509,7 @@ const editDiner = (diner) => {
   showDetailModal.value = false
 }
 
-const toggleStatus = (diner) => {
+const toggleStatus = async (diner) => {
   if (!diner) return
   const newStatus = diner.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE'
   const actionText = diner.status === 'ACTIVE' ? '暂停' : '激活'
@@ -561,13 +519,32 @@ const toggleStatus = (diner) => {
   openConfirmModal(
     title,
     `${icon} 确定要${actionText}食客「${diner.nickname}」的账号吗？`,
-    () => {
-      diner.status = newStatus
-      saveToStorage(diners.value)
-      if (showDetailModal.value) {
-        selectedDiner.value = { ...selectedDiner.value }
+    async () => {
+      try {
+        const response = await fetch(`/api/admin/users/${diner.id}/status`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token') || localStorage.getItem('accessToken')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status: newStatus })
+        })
+        const data = await response.json()
+        if (data.code === 'SUCCESS') {
+          diner.status = newStatus
+          if (showDetailModal.value && selectedDiner.value) {
+            selectedDiner.value.status = newStatus
+          }
+          loadDiners()
+        } else {
+          openConfirmModal('操作失败', data.message || '操作失败', null)
+        }
+      } catch (error) {
+        console.error('修改状态失败:', error)
+        openConfirmModal('操作失败', '修改状态时发生错误', null)
+      } finally {
+        closeConfirmModal()
       }
-      closeConfirmModal()
     }
   )
 }
@@ -583,7 +560,7 @@ const closeModal = () => {
   formData.value = { id: null, username: '', nickname: '', phone: '', email: '', status: 'ACTIVE' }
 }
 
-const saveDiner = () => {
+const saveDiner = async () => {
   const errors = []
   
   if (!formData.value.username) {
@@ -607,37 +584,50 @@ const saveDiner = () => {
     return
   }
   
-  if (isEditing.value) {
-    const index = diners.value.findIndex(d => d.id === formData.value.id)
-    if (index !== -1) {
-      diners.value[index] = { 
-        ...diners.value[index],
-        ...formData.value,
-        updatedAt: new Date().toLocaleString('zh-CN')
+  try {
+    if (isEditing.value) {
+      const response = await fetch(`/api/admin/users/${formData.value.id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || localStorage.getItem('accessToken')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status: formData.value.status })
+      })
+      const data = await response.json()
+      if (data.code !== 'SUCCESS') {
+        openConfirmModal('操作失败', data.message || '保存失败', null)
+        return
+      }
+    } else {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          username: formData.value.username,
+          password: 'Demo@123456',
+          confirmPassword: 'Demo@123456',
+          nickname: formData.value.nickname,
+          email: formData.value.email,
+          phone: formData.value.phone,
+          role: 'USER'
+        })
+      })
+      const data = await response.json()
+      if (data.code !== 'SUCCESS') {
+        openConfirmModal('操作失败', data.message || '创建失败', null)
+        return
       }
     }
-  } else {
-    const newId = Math.max(...diners.value.map(d => d.id), 0) + 1
-    const now = new Date()
-    const nowStr = now.toLocaleString('zh-CN')
-    diners.value.unshift({
-      ...formData.value,
-      id: newId,
-      role: 'USER',
-      createdAt: nowStr,
-      updatedAt: nowStr,
-      lastLoginTime: '-',
-      reviewCount: 0,
-      avgRating: '0.0',
-      likeCount: 0,
-      followCount: 0,
-      ratingDistribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
-      recentActivities: []
-    })
+    
+    loadDiners()
+    closeModal()
+  } catch (error) {
+    console.error('保存食客失败:', error)
+    openConfirmModal('操作失败', '保存食客时发生错误', null)
   }
-  
-  saveToStorage(diners.value)
-  closeModal()
 }
 
 onMounted(() => {

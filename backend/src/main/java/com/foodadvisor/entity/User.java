@@ -23,6 +23,11 @@ public class User {
     /** ACTIVE / DISABLED / LOCKED */
     private String status;
 
+    private Integer failedLoginCount;
+    private OffsetDateTime lockedUntil;
+    private OffsetDateTime lastLoginAt;
+    private OffsetDateTime passwordChangedAt;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

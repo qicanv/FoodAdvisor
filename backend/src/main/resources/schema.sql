@@ -190,3 +190,58 @@ CREATE TABLE IF NOT EXISTS ai_trace_retrieval_sources (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT ck_ai_trace_sources_rank CHECK (rank_no IS NULL OR rank_no > 0)
 );
+
+-- ==================== 食客统计相关表 ====================
+
+CREATE TABLE IF NOT EXISTS user_follows (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    merchant_id BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_user_follows UNIQUE (user_id, merchant_id)
+);
+
+CREATE TABLE IF NOT EXISTS review_likes (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    review_id BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_review_likes UNIQUE (user_id, review_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_activities (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    activity_type VARCHAR(50) NOT NULL,
+    target_type VARCHAR(50),
+    target_id BIGINT,
+    content TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_activities_user ON user_activities (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_activities_type ON user_activities (activity_type);
+CREATE INDEX IF NOT EXISTS idx_user_follows_user ON user_follows (user_id);
+CREATE INDEX IF NOT EXISTS idx_review_likes_user ON review_likes (user_id);
+
+-- ==================== 食客统计种子数据 ====================
+
+INSERT INTO user_follows (user_id, merchant_id) VALUES (2, 1) ON CONFLICT DO NOTHING;
+INSERT INTO user_follows (user_id, merchant_id) VALUES (2, 2) ON CONFLICT DO NOTHING;
+INSERT INTO user_follows (user_id, merchant_id) VALUES (2, 3) ON CONFLICT DO NOTHING;
+INSERT INTO user_follows (user_id, merchant_id) VALUES (3, 1) ON CONFLICT DO NOTHING;
+INSERT INTO user_follows (user_id, merchant_id) VALUES (3, 4) ON CONFLICT DO NOTHING;
+INSERT INTO user_follows (user_id, merchant_id) VALUES (4, 2) ON CONFLICT DO NOTHING;
+INSERT INTO user_follows (user_id, merchant_id) VALUES (4, 5) ON CONFLICT DO NOTHING;
+INSERT INTO user_follows (user_id, merchant_id) VALUES (5, 3) ON CONFLICT DO NOTHING;
+
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (2, 'REVIEW', 'MERCHANT', 1, '发布了评价') ON CONFLICT DO NOTHING;
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (2, 'FOLLOW', 'MERCHANT', 2, '关注了商家') ON CONFLICT DO NOTHING;
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (2, 'LIKE', 'REVIEW', 1, '点赞了评价') ON CONFLICT DO NOTHING;
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (2, 'REVIEW', 'MERCHANT', 2, '发布了评价') ON CONFLICT DO NOTHING;
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (2, 'SEARCH', NULL, NULL, '搜索了火锅') ON CONFLICT DO NOTHING;
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (3, 'REVIEW', 'MERCHANT', 1, '发布了评价') ON CONFLICT DO NOTHING;
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (3, 'FOLLOW', 'MERCHANT', 4, '关注了商家') ON CONFLICT DO NOTHING;
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (3, 'LIKE', 'REVIEW', 2, '点赞了评价') ON CONFLICT DO NOTHING;
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (4, 'REVIEW', 'MERCHANT', 2, '发布了评价') ON CONFLICT DO NOTHING;
+INSERT INTO user_activities (user_id, activity_type, target_type, target_id, content) VALUES (4, 'FOLLOW', 'MERCHANT', 5, '关注了商家') ON CONFLICT DO NOTHING;
