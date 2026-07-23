@@ -19,7 +19,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # ---- 配置 ----
 PG_HOST = os.getenv("PG_HOST", "localhost")
-PG_PORT = int(os.getenv("PG_PORT", "5432"))
+PG_PORT = int(os.getenv("PG_PORT", "5433"))
 PG_DB = os.getenv("PG_DATABASE", "foodadvisor")
 PG_USER = os.getenv("POSTGRES_USER", "postgres")
 PG_PASS = os.getenv("POSTGRES_PASSWORD", "")

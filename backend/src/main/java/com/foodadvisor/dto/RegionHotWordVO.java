@@ -90,6 +90,37 @@ public class RegionHotWordVO {
     }
 
     /**
+     * 热词关联的评价简要信息（点击热词查看原始评价）。
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class HotWordReviewBrief {
+
+        /** 评价 ID */
+        private Long reviewId;
+
+        /** 评价内容摘要（截取前 200 字） */
+        private String content;
+
+        /** 评价评分 1-5 */
+        private Integer rating;
+
+        /** 评价时间 */
+        private String reviewTime;
+
+        /** 商家 ID */
+        private Long merchantId;
+
+        /** 商家名称 */
+        private String merchantName;
+
+        /** 数据来源：AI_TAG / KEYWORD_EXTRACT */
+        private String sourceType;
+    }
+
+    /**
      * 区域简要信息（用于区域列表接口）
      */
     @Data

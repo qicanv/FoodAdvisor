@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.foodadvisor.dto.RegionHotWordVO;
 import com.foodadvisor.dto.RegionHotWordVO.HotWordMerchantBrief;
+import com.foodadvisor.dto.RegionHotWordVO.HotWordReviewBrief;
 import com.foodadvisor.dto.RegionHotWordVO.RegionBriefVO;
 import com.foodadvisor.entity.RegionHotWord;
 import com.foodadvisor.mapper.RegionHotWordMapper;
@@ -116,17 +117,104 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
             wrapper.eq(RegionHotWord::getPeriodType, "WEEKLY");
         }
 
-        wrapper.orderByDesc(RegionHotWord::getHeatScore);
-
         Page<RegionHotWord> entityPage = Page.of(pageNum, pageSize);
         regionHotWordMapper.selectPage(entityPage, wrapper);
 
-        // 转换为 VO
-        Page<RegionHotWordVO> voPage = new Page<>(pageNum, pageSize, entityPage.getTotal());
-        voPage.setRecords(entityPage.getRecords().stream()
+        // 转换为 VO，并用实时 UNION 查询修正 mentionCount
+        List<RegionHotWordVO> voList = entityPage.getRecords().stream()
                 .map(this::toVO)
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList());
+
+        if (!voList.isEmpty()) {
+            Map<Long, Integer> liveCounts = batchLiveMentionCounts(voList);
+            for (RegionHotWordVO vo : voList) {
+                Integer live = liveCounts.get(vo.getId());
+                if (live != null) {
+                    vo.setMentionCount(live);
+                }
+            }
+            // 按实时提及次数降序重新排列
+            voList.sort((a, b) -> Integer.compare(
+                    b.getMentionCount() != null ? b.getMentionCount() : 0,
+                    a.getMentionCount() != null ? a.getMentionCount() : 0));
+        }
+
+        Page<RegionHotWordVO> voPage = new Page<>(pageNum, pageSize, entityPage.getTotal());
+        voPage.setRecords(voList);
         return voPage;
+    }
+
+    /**
+     * 批量计算热词的实时提及次数（去重评价数），与关联商家下钻使用完全相同的 UNION 逻辑。
+     */
+    private Map<Long, Integer> batchLiveMentionCounts(List<RegionHotWordVO> words) {
+        if (words.isEmpty()) return Collections.emptyMap();
+
+        String sql = """
+                WITH tag_reviews AS (
+                    SELECT
+                        hw.id AS hw_id,
+                        rv.id AS review_id
+                    FROM region_hot_words hw
+                    JOIN review_tag_relations rtr ON true
+                    JOIN review_tags rt ON rtr.tag_id = rt.id AND rt.status = 'ACTIVE'
+                    JOIN reviews rv ON rtr.review_id = rv.id
+                        AND rtr.review_version <= rv.current_version
+                        AND rv.status = 'PUBLISHED'
+                    JOIN merchants m ON rv.merchant_id = m.id
+                        AND m.platform_status = 'ACTIVE'
+                        AND m.operation_status = 'OPERATING'
+                    WHERE rt.name = hw.word
+                      AND m.region_code = hw.region_code
+                      AND rv.created_at >= hw.period_start
+                      AND rv.created_at <  (hw.period_end + INTERVAL '1 day')
+                      AND hw.id = ANY(?)
+                ),
+                kw_reviews AS (
+                    SELECT
+                        hw.id AS hw_id,
+                        rv.id AS review_id
+                    FROM region_hot_words hw
+                    JOIN review_analysis ra ON true
+                    JOIN reviews rv ON ra.review_id = rv.id
+                        AND ra.review_version <= rv.current_version
+                        AND rv.status = 'PUBLISHED'
+                    JOIN merchants m ON rv.merchant_id = m.id
+                        AND m.platform_status = 'ACTIVE'
+                        AND m.operation_status = 'OPERATING'
+                    CROSS JOIN LATERAL jsonb_array_elements_text(ra.keywords) AS jt(word)
+                    WHERE jt.word = hw.word
+                      AND ra.status = 'SUCCESS'
+                      AND ra.keywords IS NOT NULL
+                      AND jsonb_array_length(ra.keywords) > 0
+                      AND m.region_code = hw.region_code
+                      AND rv.created_at >= hw.period_start
+                      AND rv.created_at <  (hw.period_end + INTERVAL '1 day')
+                      AND hw.id = ANY(?)
+                ),
+                combined AS (
+                    SELECT hw_id, review_id FROM tag_reviews
+                    UNION
+                    SELECT hw_id, review_id FROM kw_reviews
+                )
+                SELECT hw_id, COUNT(DISTINCT review_id) AS cnt
+                FROM combined
+                GROUP BY hw_id
+                """;
+
+        Long[] ids = words.stream().map(RegionHotWordVO::getId).toArray(Long[]::new);
+        Map<Long, Integer> result = new LinkedHashMap<>();
+
+        jdbcTemplate.query(sql,
+                ps -> {
+                    ps.setArray(1, ps.getConnection().createArrayOf("bigint", ids));
+                    ps.setArray(2, ps.getConnection().createArrayOf("bigint", ids));
+                },
+                (rs) -> {
+                    result.put(rs.getLong("hw_id"), rs.getInt("cnt"));
+                });
+
+        return result;
     }
 
     /**
@@ -158,11 +246,14 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
     }
 
     /**
-     * 查询某热词关联的商家列表（点击热词查看关联商家）。
+     * 查询某热词关联的商家列表（第一层下钻）。
+     *
+     * 同时从标签和关键词两个数据源查询，按商家聚合提及次数。
+     * 条件与 aggregateFromTags / aggregateFromKeywords 完全一致。
      *
      * @param hotWordId 热词 ID
      * @param limit     最多返回的商家数
-     * @return 商家简要信息列表
+     * @return 商家及其提及次数列表
      */
     public List<HotWordMerchantBrief> getAssociatedMerchants(Long hotWordId, int limit) {
         RegionHotWord hotWord = regionHotWordMapper.selectById(hotWordId);
@@ -170,40 +261,177 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
             return Collections.emptyList();
         }
 
-        // 从 review_tag_relations -> reviews -> merchants 查询该热词关联的商家
+        LocalDate periodStart = hotWord.getPeriodStart();
+        LocalDate periodEnd = hotWord.getPeriodEnd();
+        String word = hotWord.getWord();
+        String regionCode = hotWord.getRegionCode();
+
         String sql = """
+                WITH tag_data AS (
+                    SELECT rv.merchant_id, rv.id AS review_id
+                    FROM review_tag_relations rtr
+                    JOIN review_tags rt ON rtr.tag_id = rt.id AND rt.status = 'ACTIVE'
+                    JOIN reviews rv ON rtr.review_id = rv.id
+                        AND rtr.review_version <= rv.current_version
+                        AND rv.status = 'PUBLISHED'
+                    JOIN merchants m ON rv.merchant_id = m.id
+                        AND m.platform_status = 'ACTIVE'
+                        AND m.operation_status = 'OPERATING'
+                    WHERE rt.name = ?
+                      AND m.region_code = ?
+                      AND rv.created_at >= ?
+                      AND rv.created_at <  (?::DATE + INTERVAL '1 day')
+                ),
+                kw_data AS (
+                    SELECT rv.merchant_id, rv.id AS review_id
+                    FROM review_analysis ra
+                    JOIN reviews rv ON ra.review_id = rv.id
+                        AND ra.review_version <= rv.current_version
+                        AND rv.status = 'PUBLISHED'
+                    JOIN merchants m ON rv.merchant_id = m.id
+                        AND m.platform_status = 'ACTIVE'
+                        AND m.operation_status = 'OPERATING'
+                    WHERE ra.status = 'SUCCESS'
+                      AND ra.keywords IS NOT NULL
+                      AND jsonb_array_length(ra.keywords) > 0
+                      AND ?::text IN (SELECT jsonb_array_elements_text(ra.keywords))
+                      AND m.region_code = ?
+                      AND rv.created_at >= ?
+                      AND rv.created_at <  (?::DATE + INTERVAL '1 day')
+                ),
+                merged AS (
+                    SELECT merchant_id, review_id FROM tag_data
+                    UNION
+                    SELECT merchant_id, review_id FROM kw_data
+                )
                 SELECT
                     m.id AS merchant_id,
                     m.name AS merchant_name,
                     m.category AS merchant_category,
-                    COUNT(DISTINCT rtr.review_id) AS mention_count
-                FROM review_tag_relations rtr
-                JOIN review_tags rt ON rtr.tag_id = rt.id
-                JOIN reviews rv ON rtr.review_id = rv.id
-                    AND rtr.review_version <= rv.current_version
-                    AND rv.status = 'PUBLISHED'
-                JOIN merchants m ON rv.merchant_id = m.id
-                WHERE rt.name = ?
-                  AND m.region_code = ?
-                  AND rv.created_at >= ?
+                    COUNT(DISTINCT merged.review_id) AS mention_count
+                FROM merged
+                JOIN merchants m ON merged.merchant_id = m.id
                 GROUP BY m.id, m.name, m.category
                 ORDER BY mention_count DESC
                 LIMIT ?
                 """;
 
-        LocalDate periodStart = hotWord.getPeriodStart();
         return jdbcTemplate.query(sql,
                 ps -> {
-                    ps.setString(1, hotWord.getWord());
-                    ps.setString(2, hotWord.getRegionCode());
+                    ps.setString(1, word);       // tag: rt.name
+                    ps.setString(2, regionCode);
                     ps.setObject(3, periodStart);
-                    ps.setInt(4, limit);
+                    ps.setObject(4, periodEnd);
+                    ps.setString(5, word);       // kw: keyword match
+                    ps.setString(6, regionCode);
+                    ps.setObject(7, periodStart);
+                    ps.setObject(8, periodEnd);
+                    ps.setInt(9, limit);
                 },
                 (rs, rowNum) -> HotWordMerchantBrief.builder()
                         .merchantId(rs.getLong("merchant_id"))
                         .merchantName(rs.getString("merchant_name"))
                         .category(rs.getString("merchant_category"))
                         .mentionCount(rs.getInt("mention_count"))
+                        .build());
+    }
+
+    /**
+     * 查询某热词在某商家下的具体评价（第二层下钻）。
+     *
+     * @param hotWordId  热词 ID
+     * @param merchantId 商家 ID
+     * @param limit      最多返回的评价数
+     * @return 评价列表
+     */
+    public List<HotWordReviewBrief> getMerchantReviews(Long hotWordId, Long merchantId, int limit) {
+        RegionHotWord hotWord = regionHotWordMapper.selectById(hotWordId);
+        if (hotWord == null) {
+            return Collections.emptyList();
+        }
+
+        LocalDate periodStart = hotWord.getPeriodStart();
+        LocalDate periodEnd = hotWord.getPeriodEnd();
+        String word = hotWord.getWord();
+        String regionCode = hotWord.getRegionCode();
+
+        // 不在 UNION 中包含 source_type，避免同一评价因来源不同而出现两次
+        String sql = """
+                WITH tag_reviews AS (
+                    SELECT
+                        rv.id AS review_id,
+                        LEFT(rv.content, 200) AS content,
+                        rv.rating,
+                        TO_CHAR(rv.review_time, 'YYYY-MM-DD HH24:MI') AS review_time,
+                        m.id AS merchant_id,
+                        m.name AS merchant_name
+                    FROM review_tag_relations rtr
+                    JOIN review_tags rt ON rtr.tag_id = rt.id AND rt.status = 'ACTIVE'
+                    JOIN reviews rv ON rtr.review_id = rv.id
+                        AND rtr.review_version <= rv.current_version
+                        AND rv.status = 'PUBLISHED'
+                    JOIN merchants m ON rv.merchant_id = m.id
+                        AND m.platform_status = 'ACTIVE'
+                        AND m.operation_status = 'OPERATING'
+                    WHERE rt.name = ?
+                      AND m.region_code = ?
+                      AND rv.merchant_id = ?
+                      AND rv.created_at >= ?
+                      AND rv.created_at <  (?::DATE + INTERVAL '1 day')
+                ),
+                kw_reviews AS (
+                    SELECT
+                        rv.id AS review_id,
+                        LEFT(rv.content, 200) AS content,
+                        rv.rating,
+                        TO_CHAR(rv.review_time, 'YYYY-MM-DD HH24:MI') AS review_time,
+                        m.id AS merchant_id,
+                        m.name AS merchant_name
+                    FROM review_analysis ra
+                    JOIN reviews rv ON ra.review_id = rv.id
+                        AND ra.review_version <= rv.current_version
+                        AND rv.status = 'PUBLISHED'
+                    JOIN merchants m ON rv.merchant_id = m.id
+                        AND m.platform_status = 'ACTIVE'
+                        AND m.operation_status = 'OPERATING'
+                    WHERE ra.status = 'SUCCESS'
+                      AND ra.keywords IS NOT NULL
+                      AND jsonb_array_length(ra.keywords) > 0
+                      AND ?::text IN (SELECT jsonb_array_elements_text(ra.keywords))
+                      AND m.region_code = ?
+                      AND rv.merchant_id = ?
+                      AND rv.created_at >= ?
+                      AND rv.created_at <  (?::DATE + INTERVAL '1 day')
+                )
+                SELECT * FROM tag_reviews
+                UNION
+                SELECT * FROM kw_reviews
+                ORDER BY review_time DESC
+                LIMIT ?
+                """;
+
+        return jdbcTemplate.query(sql,
+                ps -> {
+                    ps.setString(1, word);       // tag: rt.name
+                    ps.setString(2, regionCode);
+                    ps.setLong(3, merchantId);
+                    ps.setObject(4, periodStart);
+                    ps.setObject(5, periodEnd);
+                    ps.setString(6, word);       // kw: keyword match
+                    ps.setString(7, regionCode);
+                    ps.setLong(8, merchantId);
+                    ps.setObject(9, periodStart);
+                    ps.setObject(10, periodEnd);
+                    ps.setInt(11, limit);
+                },
+                (rs, rowNum) -> HotWordReviewBrief.builder()
+                        .reviewId(rs.getLong("review_id"))
+                        .content(rs.getString("content"))
+                        .rating(rs.getInt("rating"))
+                        .reviewTime(rs.getString("review_time"))
+                        .merchantId(rs.getLong("merchant_id"))
+                        .merchantName(rs.getString("merchant_name"))
+                        .sourceType(null)
                         .build());
     }
 
@@ -262,73 +490,105 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
      */
     public int generateForRegion(String regionCode, String periodType,
                                   LocalDate startDate, LocalDate endDate, int version) {
-        // 1. 聚合 AI 标签数据
-        List<WordStat> tagStats = aggregateFromTags(regionCode, startDate, endDate);
-        // 2. 聚合关键词数据
-        List<WordStat> keywordStats = aggregateFromKeywords(regionCode, startDate, endDate);
-        // 3. 合并
-        Map<String, WordStat> merged = mergeWordStats(tagStats, keywordStats);
-        // 4. 过滤停用词
-        merged = filterStopWords(merged);
-        // 5. 计算热度并写入数据库
-        List<RegionHotWord> hotWords = buildHotWordEntities(
-                merged, regionCode, periodType, startDate, endDate, version);
-
-        if (!hotWords.isEmpty()) {
-            // 逐条插入，跳过重复键（由唯一约束 uk_region_hot_word_period 保护）
-            for (RegionHotWord hw : hotWords) {
-                try {
-                    regionHotWordMapper.insert(hw);
-                } catch (Exception e) {
-                    // 重复键或约束违反 → 跳过，不影响其他热词
-                    log.debug("插入热词失败(跳过): word={}, error={}", hw.getWord(), e.getMessage());
-                }
-            }
-        }
-
-        return hotWords.size();
-    }
-
-    // ==================== 数据聚合 ====================
-
-    /**
-     * 从 review_tag_relations 表中聚合标签数据。
-     *
-     * 关联链路：reviews -> review_tag_relations -> review_tags -> merchants
-     * 统计每个标签（tag.name）在指定区域内的出现次数和相关评价/商家数。
-     */
-    private List<WordStat> aggregateFromTags(String regionCode, LocalDate startDate, LocalDate endDate) {
+        // 一条 SQL 完成标签+关键词的 UNION 聚合，保证所有计数（提及次数、商家数）
+        // 与下钻查询完全一致，不再需要 Java 侧合并
         String sql = """
+                WITH tag_rows AS (
+                    SELECT
+                        rt.name AS word,
+                        rt.category AS tag_category,
+                        rtr.sentiment,
+                        rv.id AS review_id,
+                        rv.merchant_id
+                    FROM review_tag_relations rtr
+                    JOIN review_tags rt ON rtr.tag_id = rt.id AND rt.status = 'ACTIVE'
+                    JOIN reviews rv ON rtr.review_id = rv.id
+                        AND rtr.review_version <= rv.current_version
+                        AND rv.status = 'PUBLISHED'
+                    JOIN merchants m ON rv.merchant_id = m.id
+                        AND m.platform_status = 'ACTIVE'
+                        AND m.operation_status = 'OPERATING'
+                    WHERE m.region_code = ?
+                      AND rv.created_at >= ?
+                      AND rv.created_at <  (?::DATE + INTERVAL '1 day')
+                ),
+                kw_rows AS (
+                    SELECT
+                        jt.word,
+                        COALESCE(
+                            rt_exact.category,
+                            rt_sub.category,
+                            'GENERAL'
+                        ) AS tag_category,
+                        ra.sentiment,
+                        rv.id AS review_id,
+                        rv.merchant_id
+                    FROM review_analysis ra
+                    JOIN reviews rv ON ra.review_id = rv.id
+                        AND ra.review_version <= rv.current_version
+                        AND rv.status = 'PUBLISHED'
+                    JOIN merchants m ON rv.merchant_id = m.id
+                        AND m.platform_status = 'ACTIVE'
+                        AND m.operation_status = 'OPERATING'
+                    CROSS JOIN LATERAL jsonb_array_elements_text(ra.keywords) AS jt(word)
+                    LEFT JOIN review_tags rt_exact
+                        ON rt_exact.name = jt.word AND rt_exact.status = 'ACTIVE'
+                    LEFT JOIN LATERAL (
+                        SELECT rt2.category FROM review_tags rt2
+                        WHERE rt2.status = 'ACTIVE'
+                          AND rt_exact.name IS NULL
+                          AND jt.word LIKE '%' || rt2.name || '%'
+                        ORDER BY char_length(rt2.name) DESC
+                        LIMIT 1
+                    ) rt_sub ON true
+                    WHERE ra.status = 'SUCCESS'
+                      AND ra.keywords IS NOT NULL
+                      AND jsonb_array_length(ra.keywords) > 0
+                      AND m.region_code = ?
+                      AND rv.created_at >= ?
+                      AND rv.created_at <  (?::DATE + INTERVAL '1 day')
+                ),
+                all_rows AS (
+                    SELECT word, tag_category, sentiment, review_id, merchant_id, 'TAG' AS src FROM tag_rows
+                    UNION
+                    SELECT word, tag_category, sentiment, review_id, merchant_id, 'KW'  AS src FROM kw_rows
+                )
                 SELECT
-                    rt.name AS word,
-                    rt.category AS category,
-                    rtr.sentiment,
-                    COUNT(*) AS mention_count,
-                    COUNT(DISTINCT rtr.review_id) AS review_count,
-                    COUNT(DISTINCT rv.merchant_id) AS merchant_count,
-                    SUM(CASE WHEN rtr.sentiment = 'POSITIVE' THEN 1 ELSE 0 END)::NUMERIC
-                        / NULLIF(COUNT(*), 0) AS positive_ratio
-                FROM review_tag_relations rtr
-                JOIN review_tags rt ON rtr.tag_id = rt.id AND rt.status = 'ACTIVE'
-                JOIN reviews rv ON rtr.review_id = rv.id
-                    AND rtr.review_version <= rv.current_version
-                    AND rv.status = 'PUBLISHED'
-                JOIN merchants m ON rv.merchant_id = m.id
-                    AND m.platform_status = 'ACTIVE'
-                    AND m.operation_status = 'OPERATING'
-                WHERE m.region_code = ?
-                  AND rv.created_at >= ?
-                  AND rv.created_at <  (?::DATE + INTERVAL '1 day')
-                GROUP BY rt.name, rt.category, rtr.sentiment
-                HAVING COUNT(*) > 0
+                    word,
+                    COALESCE(
+                        MAX(CASE WHEN tag_category <> 'GENERAL' THEN tag_category END),
+                        'GENERAL'
+                    ) AS category,
+                    sentiment,
+                    COUNT(DISTINCT review_id)                 AS mention_count,
+                    COUNT(DISTINCT review_id)                 AS review_count,
+                    COUNT(DISTINCT merchant_id)               AS merchant_count,
+                    CASE WHEN sentiment = 'POSITIVE' THEN 1.0000
+                         WHEN sentiment = 'NEGATIVE' THEN 0.0000
+                         ELSE NULL END                       AS positive_ratio,
+                    COALESCE(
+                        CASE WHEN MAX(CASE WHEN src = 'TAG' THEN 1 ELSE 0 END) > 0
+                             THEN 'AI_TAG' ELSE 'KEYWORD_EXTRACT' END,
+                        'AI_TAG'
+                    ) AS source_type
+                FROM all_rows
+                WHERE word IS NOT NULL AND trim(word) <> ''
+                GROUP BY word, sentiment
+                HAVING COUNT(DISTINCT review_id) > 0
                 ORDER BY mention_count DESC
                 """;
 
-        return jdbcTemplate.query(sql,
+        // 加载标签名称集合，用于后续合并
+        Set<String> tagNames = loadTagNames();
+
+        List<WordStat> stats = jdbcTemplate.query(sql,
                 ps -> {
-                    ps.setString(1, regionCode);
-                    ps.setObject(2, startDate);
-                    ps.setObject(3, endDate);
+                    ps.setString(1, regionCode);  // tag: region
+                    ps.setObject(2, startDate);   // tag: start
+                    ps.setObject(3, endDate);     // tag: end
+                    ps.setString(4, regionCode);  // kw: region
+                    ps.setObject(5, startDate);   // kw: start
+                    ps.setObject(6, endDate);     // kw: end
                 },
                 (rs, rowNum) -> {
                     WordStat stat = new WordStat();
@@ -339,178 +599,42 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
                     stat.reviewCount = rs.getInt("review_count");
                     stat.merchantCount = rs.getInt("merchant_count");
                     stat.positiveRatio = rs.getBigDecimal("positive_ratio");
-                    stat.sourceType = "AI_TAG";
+                    stat.sourceType = rs.getString("source_type");
                     return stat;
                 });
-    }
 
-    /**
-     * 从 review_analysis 表的 keywords JSONB 字段聚合关键词。
-     *
-     * review_analysis.keywords 存储的是 AI 提取的关键词 JSON 数组，如 ["麻辣", "上菜慢", ...]
-     * 这路数据与标签路数据互补 —— 有些关键词可能没有对应的标签定义。
-     */
-    private List<WordStat> aggregateFromKeywords(String regionCode, LocalDate startDate, LocalDate endDate) {
-        // PostgreSQL JSONB 聚合：展开 keywords 数组，每个关键词一行，然后统计
-        String sql = """
-                WITH keyword_rows AS (
-                    SELECT
-                        jsonb_array_elements_text(ra.keywords) AS word,
-                        ra.sentiment,
-                        rv.merchant_id,
-                        rv.id AS review_id
-                    FROM review_analysis ra
-                    JOIN reviews rv ON ra.review_id = rv.id
-                        AND ra.review_version <= rv.current_version
-                        AND rv.status = 'PUBLISHED'
-                    JOIN merchants m ON rv.merchant_id = m.id
-                        AND m.platform_status = 'ACTIVE'
-                        AND m.operation_status = 'OPERATING'
-                    WHERE m.region_code = ?
-                      AND ra.status = 'SUCCESS'
-                      AND ra.keywords IS NOT NULL
-                      AND jsonb_array_length(ra.keywords) > 0
-                      AND rv.created_at >= ?
-                      AND rv.created_at <  (?::DATE + INTERVAL '1 day')
-                )
-                SELECT
-                    word,
-                    sentiment,
-                    COUNT(*) AS mention_count,
-                    COUNT(DISTINCT review_id) AS review_count,
-                    COUNT(DISTINCT merchant_id) AS merchant_count,
-                    SUM(CASE WHEN sentiment = 'POSITIVE' THEN 1 ELSE 0 END)::NUMERIC
-                        / NULLIF(COUNT(*), 0) AS positive_ratio
-                FROM keyword_rows
-                WHERE word IS NOT NULL AND trim(word) <> ''
-                GROUP BY word, sentiment
-                HAVING COUNT(*) > 0
-                ORDER BY mention_count DESC
-                """;
+        // ===== 合并复合关键词到基础标签词 =====
+        // 如 "服务热情" → 合并到 "服务"，"环境整洁" → 合并到 "环境"
+        stats = mergeCompoundIntoBase(stats, tagNames);
 
-        return jdbcTemplate.query(sql,
-                ps -> {
-                    ps.setString(1, regionCode);
-                    ps.setObject(2, startDate);
-                    ps.setObject(3, endDate);
-                },
-                (rs, rowNum) -> {
-                    WordStat stat = new WordStat();
-                    stat.word = rs.getString("word");
-                    stat.category = "GENERAL";        // 关键词提取没有明确的分类
-                    stat.sentiment = rs.getString("sentiment");
-                    stat.mentionCount = rs.getInt("mention_count");
-                    stat.reviewCount = rs.getInt("review_count");
-                    stat.merchantCount = rs.getInt("merchant_count");
-                    stat.positiveRatio = rs.getBigDecimal("positive_ratio");
-                    stat.sourceType = "KEYWORD_EXTRACT";
-                    return stat;
-                });
-    }
-
-    // ==================== 数据合并与过滤 ====================
-
-    /**
-     * 合并两路数据源（AI标签 + 关键词提取）。
-     *
-     * 合并规则：
-     * - 同一 word + sentiment 组合，频次数值相加
-     * - sourceType 优先标记为 AI_TAG（如果有的话）
-     */
-    private Map<String, WordStat> mergeWordStats(List<WordStat> tagStats, List<WordStat> keywordStats) {
-        Map<String, WordStat> merged = new LinkedHashMap<>();
-
-        // 先放入标签数据
-        for (WordStat stat : tagStats) {
-            String key = buildMergeKey(stat.word, stat.sentiment);
-            merged.put(key, stat);
-        }
-
-        // 合并关键词数据
-        for (WordStat kw : keywordStats) {
-            String key = buildMergeKey(kw.word, kw.sentiment);
-            WordStat existing = merged.get(key);
-            if (existing != null) {
-                // 合并：频次相加，取最大值
-                existing.mentionCount += kw.mentionCount;
-                existing.reviewCount = Math.max(existing.reviewCount, kw.reviewCount);
-                existing.merchantCount = Math.max(existing.merchantCount, kw.merchantCount);
-                // positiveRatio 以标签数据为准（更可靠）
-            } else {
-                merged.put(key, kw);
-            }
-        }
-
-        return merged;
-    }
-
-    /**
-     * 过滤停用词、无意义词和过长/过短的词。
-     */
-    private Map<String, WordStat> filterStopWords(Map<String, WordStat> stats) {
-        return stats.entrySet().stream()
-                .filter(entry -> {
-                    String word = entry.getValue().word;
-                    // 过滤空或空白
-                    if (word == null || word.isBlank()) return false;
-                    // 过滤停用词
-                    if (STOP_WORDS.contains(word.trim())) return false;
-                    // 过滤过长或过短的词（1个字太短，超过15个字不像热词）
-                    String trimmed = word.trim();
-                    if (trimmed.length() < 2 || trimmed.length() > 15) return false;
-                    // 过滤纯数字或纯符号
-                    if (trimmed.matches("^[\\d.]+$") || trimmed.matches("^[^\\w\\u4e00-\\u9fa5]+$"))
-                        return false;
+        // 过滤停用词
+        stats = stats.stream()
+                .filter(s -> {
+                    if (s.word == null || s.word.isBlank()) return false;
+                    if (STOP_WORDS.contains(s.word.trim())) return false;
+                    String t = s.word.trim();
+                    if (t.length() < 2 || t.length() > 15) return false;
+                    if (t.matches("^[\\d.]+$") || t.matches("^[^\\w\\u4e00-\\u9fa5]+$")) return false;
                     return true;
                 })
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        Map.Entry::getValue,
-                        (a, b) -> a,
-                        LinkedHashMap::new));
-    }
+                .collect(Collectors.toList());
 
-    // ==================== 热度计算 ====================
-
-    /**
-     * 构建热词实体列表，计算热度分数。
-     *
-     * 热度计算公式：
-     * <pre>
-     *   rawScore = mentionCount × recencyFactor × sentimentMultiplier
-     *   heatScore = min(rawScore, MAX_HEAT_SCORE)
-     *
-     *   其中 recencyFactor = 1.0 / (1 + N / DECAY_DAYS)
-     *     N = 数据平均年龄（天），取 (endDate - createdAt) 的中间值
-     * </pre>
-     */
-    private List<RegionHotWord> buildHotWordEntities(Map<String, WordStat> stats,
-                                                      String regionCode, String periodType,
-                                                      LocalDate startDate, LocalDate endDate,
-                                                      int version) {
-        // 时间衰减因子：基于统计窗口的中间日期计算
+        // 计算热度并写入
         long daysFromMidpoint = ChronoUnit.DAYS.between(
                 startDate.plusDays((ChronoUnit.DAYS.between(startDate, endDate)) / 2),
                 LocalDate.now());
         double recencyFactor = 1.0 / (1.0 + (double) daysFromMidpoint / DECAY_DAYS);
 
         List<RegionHotWord> hotWords = new ArrayList<>();
-
-        for (WordStat stat : stats.values()) {
-            // 获取情感权重
+        for (WordStat stat : stats) {
             BigDecimal sentimentWeight = switch (stat.sentiment != null ? stat.sentiment : "NEUTRAL") {
                 case "POSITIVE" -> POSITIVE_WEIGHT;
                 case "NEGATIVE" -> NEGATIVE_WEIGHT;
                 default -> NEUTRAL_WEIGHT;
             };
-
-            // 基础分数 = 提及次数 × 时间衰减 × 情感权重，然后归一化到 0~100
             double rawScore = stat.mentionCount * recencyFactor * sentimentWeight.doubleValue();
-            // 归一化：假设单区域热词最大提及次数约 200 次
             double normalized = Math.min(rawScore * 100.0 / 200.0, 100.0);
-            BigDecimal heatScore = BigDecimal.valueOf(normalized)
-                    .setScale(2, RoundingMode.HALF_UP);
-            // 确保在 [0, 100] 范围
+            BigDecimal heatScore = BigDecimal.valueOf(normalized).setScale(2, RoundingMode.HALF_UP);
             if (heatScore.compareTo(BigDecimal.ZERO) < 0) heatScore = BigDecimal.ZERO;
             if (heatScore.compareTo(MAX_HEAT_SCORE) > 0) heatScore = MAX_HEAT_SCORE;
 
@@ -530,17 +654,23 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
             hw.setPeriodEnd(endDate);
             hw.setVersion(version);
             hw.setStatus("ACTIVE");
-
             hotWords.add(hw);
         }
 
-        // 按热度降序排列，最多保留前 100 个
         hotWords.sort((a, b) -> b.getHeatScore().compareTo(a.getHeatScore()));
         if (hotWords.size() > 100) {
             hotWords = hotWords.subList(0, 100);
         }
 
-        return hotWords;
+        for (RegionHotWord hw : hotWords) {
+            try {
+                regionHotWordMapper.insert(hw);
+            } catch (Exception e) {
+                log.debug("插入热词失败(跳过): word={}, error={}", hw.getWord(), e.getMessage());
+            }
+        }
+
+        return hotWords.size();
     }
 
     // ==================== 辅助方法 ====================
@@ -594,6 +724,87 @@ public class RegionHotWordService extends ServiceImpl<RegionHotWordMapper, Regio
                 """;
         Integer next = jdbcTemplate.queryForObject(sql, Integer.class, periodType, startDate, endDate);
         return next != null ? next : 1;
+    }
+
+    /**
+     * 加载所有活跃标签的名称集合。
+     */
+    private Set<String> loadTagNames() {
+        String sql = "SELECT name FROM review_tags WHERE status = 'ACTIVE'";
+        return new LinkedHashSet<>(jdbcTemplate.queryForList(sql, String.class));
+    }
+
+    /**
+     * 将复合关键词合并到其包含的基础标签词中。
+     *
+     * 例如 "服务热情" 包含标签 "服务" → 将 "服务热情" 的 mentionCount
+     * 加到同 sentiment 的 "服务" 上，然后移除 "服务热情"。
+     * 只合并 sentiment 相同的条目，不同 sentiment 的保留原样（如 "服务热情" 正面
+     * 不应合并到 "服务" 负面）。
+     */
+    private List<WordStat> mergeCompoundIntoBase(List<WordStat> stats, Set<String> tagNames) {
+        // 按 sentiment 分组处理
+        Map<String, List<WordStat>> bySentiment = stats.stream()
+                .collect(Collectors.groupingBy(s -> s.sentiment != null ? s.sentiment : "NEUTRAL",
+                        LinkedHashMap::new, Collectors.toList()));
+
+        List<WordStat> result = new ArrayList<>();
+        for (var entry : bySentiment.entrySet()) {
+            List<WordStat> group = entry.getValue();
+            // 建立 word → stat 索引
+            Map<String, WordStat> index = new LinkedHashMap<>();
+            for (WordStat s : group) {
+                index.put(s.word, s);
+            }
+
+            for (WordStat s : group) {
+                // 如果这个词本身就是一个标签名，或者不包含任何标签名，保留
+                if (tagNames.contains(s.word) || !containsAnyTag(s.word, tagNames)) {
+                    // 不重复添加（可能在上面的循环中已处理）
+                    continue;
+                }
+                // 找到被包含的标签名
+                String baseTag = findContainedTag(s.word, tagNames);
+                if (baseTag != null) {
+                    WordStat base = index.get(baseTag);
+                    if (base != null) {
+                        // 合并：取较大值来估算真实提及次数
+                        base.mentionCount = Math.max(base.mentionCount, s.mentionCount);
+                        base.reviewCount = Math.max(base.reviewCount, s.reviewCount);
+                        base.merchantCount = Math.max(base.merchantCount, s.merchantCount);
+                        // 如果基础词来自标签，保持 sourceType = AI_TAG
+                        if ("AI_TAG".equals(base.sourceType)) {
+                            // keep
+                        }
+                        // 从索引中移除复合词
+                        index.remove(s.word);
+                    }
+                }
+            }
+
+            result.addAll(index.values());
+        }
+
+        return result;
+    }
+
+    private boolean containsAnyTag(String word, Set<String> tagNames) {
+        return findContainedTag(word, tagNames) != null;
+    }
+
+    /**
+     * 找到被 word 包含的最长标签名。如 word="服务热情" → 返回 "服务"。
+     */
+    private String findContainedTag(String word, Set<String> tagNames) {
+        String best = null;
+        for (String tag : tagNames) {
+            if (!word.equals(tag) && word.contains(tag)) {
+                if (best == null || tag.length() > best.length()) {
+                    best = tag;
+                }
+            }
+        }
+        return best;
     }
 
     /**

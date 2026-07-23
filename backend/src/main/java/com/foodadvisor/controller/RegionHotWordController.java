@@ -5,6 +5,7 @@ import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.PageResult;
 import com.foodadvisor.dto.RegionHotWordVO;
 import com.foodadvisor.dto.RegionHotWordVO.HotWordMerchantBrief;
+import com.foodadvisor.dto.RegionHotWordVO.HotWordReviewBrief;
 import com.foodadvisor.dto.RegionHotWordVO.RegionBriefVO;
 import com.foodadvisor.service.RegionHotWordService;
 import org.springframework.web.bind.annotation.*;
@@ -80,25 +81,37 @@ public class RegionHotWordController {
     }
 
     /**
-     * 获取热词关联的商家列表（公开接口）。
+     * 获取热词关联的商家列表（第一层下钻）。
      *
-     * 前端点击某个热词后调用此接口，展示该热词在哪些商家评价中被提及。
-     * 返回结果按提及次数降序排列。
+     * 前端点击某个热词后先展示关联商家及其提及次数，
+     * 点击具体商家后再查看评价详情。
      *
      * 请求示例：
-     *   GET /api/hot-words/1/merchants?limit=10
-     *
-     * @param id    热词 ID
-     * @param limit 最多返回商家数，默认 10
-     * @return 关联商家简要信息列表
+     *   GET /api/hot-words/1/merchants?limit=20
      */
     @GetMapping("/{id}/merchants")
     public ApiResponse<List<HotWordMerchantBrief>> getAssociatedMerchants(
             @PathVariable Long id,
-            @RequestParam(defaultValue = "10") int limit
+            @RequestParam(defaultValue = "20") int limit
     ) {
         List<HotWordMerchantBrief> merchants = hotWordService.getAssociatedMerchants(id, limit);
         return ApiResponse.success(merchants);
+    }
+
+    /**
+     * 获取某热词在某商家下的评价列表（第二层下钻）。
+     *
+     * 请求示例：
+     *   GET /api/hot-words/1/merchants/5/reviews?limit=30
+     */
+    @GetMapping("/{id}/merchants/{merchantId}/reviews")
+    public ApiResponse<List<HotWordReviewBrief>> getMerchantReviews(
+            @PathVariable Long id,
+            @PathVariable Long merchantId,
+            @RequestParam(defaultValue = "30") int limit
+    ) {
+        List<HotWordReviewBrief> reviews = hotWordService.getMerchantReviews(id, merchantId, limit);
+        return ApiResponse.success(reviews);
     }
 
     // ==================== 管理接口 ====================
