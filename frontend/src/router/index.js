@@ -232,6 +232,19 @@ const routes = [
       allowedRoles: ['ADMIN', 'OPERATOR'],
     },
   },
+  {
+    path: '/admin/faithfulness-test',
+    name: 'admin-faithfulness-test',
+    component: () =>
+      import(
+        '../views/admin/FaithfulnessTestView.vue'
+      ),
+    meta: {
+      requiresAuth: true,
+      role: 'admin',
+      allowedRoles: ['ADMIN', 'OPERATOR'],
+    },
+  },
 ]
 
 const router = createRouter({

@@ -82,4 +82,60 @@ public interface ReviewMapper extends BaseMapper<Review> {
 
     @Select("SELECT COUNT(*) FROM reviews WHERE moderation_status = 'PENDING' AND deleted_at IS NULL")
     Long countPendingReviews();
+
+    // ===== 以下为刷评检测（FraudDetectionService）所需方法 =====
+
+    @Select("<script>" +
+            "SELECT merchant_id, COUNT(*) AS cnt FROM reviews " +
+            "WHERE deleted_at IS NULL AND created_at >= #{since} " +
+            "<if test='targetMerchantId != null'>AND merchant_id = #{targetMerchantId}</if> " +
+            "GROUP BY merchant_id HAVING cnt >= #{thresholdCount}" +
+            "</script>")
+    List<Map<String, Object>> countReviewsByMerchantSince(
+            @Param("since") OffsetDateTime since,
+            @Param("thresholdCount") int thresholdCount,
+            @Param("targetMerchantId") Long targetMerchantId);
+
+    @Select("SELECT id FROM reviews WHERE deleted_at IS NULL " +
+            "AND merchant_id = #{merchantId} AND created_at >= #{since} " +
+            "ORDER BY created_at DESC")
+    List<Long> getReviewIdsByMerchantSince(
+            @Param("merchantId") Long merchantId,
+            @Param("since") OffsetDateTime since);
+
+    @Select("SELECT id, content FROM reviews WHERE deleted_at IS NULL " +
+            "AND merchant_id = #{merchantId} AND created_at >= #{since} " +
+            "ORDER BY created_at DESC LIMIT #{limit}")
+    List<Map<String, Object>> getRecentReviewContents(
+            @Param("merchantId") Long merchantId,
+            @Param("since") OffsetDateTime since,
+            @Param("limit") int limit);
+
+    @Select("SELECT user_id, COUNT(*) AS cnt FROM reviews " +
+            "WHERE deleted_at IS NULL AND created_at >= #{since} " +
+            "GROUP BY user_id HAVING cnt >= #{thresholdCount}")
+    List<Map<String, Object>> countReviewsByUserSince(
+            @Param("since") OffsetDateTime since,
+            @Param("thresholdCount") int thresholdCount);
+
+    @Select("SELECT id FROM reviews WHERE deleted_at IS NULL " +
+            "AND user_id = #{userId} AND created_at >= #{since} " +
+            "ORDER BY created_at DESC")
+    List<Long> getReviewIdsByUserSince(
+            @Param("userId") Long userId,
+            @Param("since") OffsetDateTime since);
+
+    @Select("SELECT rating, COUNT(*) AS cnt FROM reviews " +
+            "WHERE deleted_at IS NULL AND merchant_id = #{merchantId} " +
+            "AND created_at >= #{since} " +
+            "GROUP BY rating")
+    List<Map<String, Object>> getRatingDistribution(
+            @Param("merchantId") Long merchantId,
+            @Param("since") OffsetDateTime since);
+
+    @Update("UPDATE reviews SET risk_level = #{riskLevel}, updated_at = CURRENT_TIMESTAMP " +
+            "WHERE id = #{reviewId}")
+    int updateReviewRiskLevel(
+            @Param("reviewId") Long reviewId,
+            @Param("riskLevel") String riskLevel);
 }

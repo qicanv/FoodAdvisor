@@ -640,6 +640,21 @@ public class AIClientService {
         return post(url, request, "KNOWLEDGE_UPSERT");
     }
 
+    /**
+     * 调用评论摘要忠实性测试接口（EPIC-06 Story 3）。
+     *
+     * 将已生成的商家口碑摘要和原始评价原文送入 AI 服务，
+     * 以 LLM-as-Judge 模式对摘要中的每个声明做忠实性验证。
+     *
+     * @param requestBody 包含 merchantId、summary（ReviewSummaryResponse 结构）、
+     *                    reviews（FaithfulnessReviewItem 列表）的 Map
+     * @return AI 服务返回的 JSON，包含 overallScore、claimResults、各类计数等
+     */
+    public JsonNode testSummaryFaithfulness(Map<String, Object> requestBody) {
+        String url = aiServiceBaseUrl + "/internal/reviews/summary-faithfulness-test";
+        return post(url, requestBody, "FAITHFULNESS_TEST");
+    }
+
     public boolean isHealthy() {
         try {
             String url = aiServiceBaseUrl + "/health";

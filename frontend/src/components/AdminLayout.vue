@@ -121,6 +121,14 @@ const allNavItems = [
     iconPath:
       'M9 2h6 M10 2v5l-5 9a4 4 0 0 0 3.5 6h7a4 4 0 0 0 3.5-6l-5-9V2 M8 14h8',
   },
+  {
+    path: '/admin/faithfulness-test',
+    label: '摘要忠实性测试',
+    allowedRoles: ['ADMIN', 'OPERATOR'],
+    iconViewBox: '0 0 24 24',
+    iconPath:
+      'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+  },
   { path: '/admin/restaurants', label: '商家管理', iconViewBox: '0 0 24 24', iconPath: 'M8 21l1-17a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4l1 17' },
   { path: '/admin/diners', label: '食客管理', iconViewBox: '0 0 24 24', iconPath: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M17 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0' },
   { path: '/admin/topics', label: '专题管理', iconViewBox: '0 0 24 24', iconPath: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6M16 13H8M16 17H8M10 9H8' },
