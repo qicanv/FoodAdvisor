@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.dto.dialogue.DialogueContinueResponse;
 import com.foodadvisor.dto.dialogue.DialogueHistoryResponse;
@@ -82,7 +83,7 @@ public class DiningDialogueMessageService {
             "SYSTEM_NOTICE";
 
     private static final Duration IDEMPOTENCY_TTL =
-            Duration.ofSeconds(60);
+            Duration.ofMinutes(3);
 
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
@@ -100,6 +101,8 @@ public class DiningDialogueMessageService {
     private final TransactionTemplate transactionTemplate;
     @Autowired(required = false)
     private AiRequestTraceService traceService;
+    @Autowired(required = false)
+    private AIClientService aiClientService;
 
     public DiningDialogueMessageService(
             ChatSessionMapper chatSessionMapper,
@@ -458,8 +461,9 @@ public class DiningDialogueMessageService {
                         ));
 
         if (!dialogue.isReadyForRecommendation()) {
-            String assistantText =
-                    buildClarificationText(dialogue);
+            GeneratedReply generatedReply =
+                    generateClarificationReply(dialogue);
+            String assistantText = generatedReply.text();
             ChatMessage assistant =
                     saveAssistantMessage(
                             sessionId,
@@ -483,6 +487,9 @@ public class DiningDialogueMessageService {
                     dialogue,
                     null
             );
+            response.setReplyGenerator(generatedReply.generator());
+            response.setReplyPromptVersion(generatedReply.promptVersion());
+            response.setReplyDegraded(generatedReply.degraded());
 
             saveResponseSnapshot(assistant, response);
             return response;
@@ -512,8 +519,9 @@ public class DiningDialogueMessageService {
                         ? TYPE_RECOMMENDATION
                         : TYPE_NO_MATCH;
 
-        String assistantText =
-                buildRecommendationText(recommendation);
+        GeneratedReply generatedReply =
+                generateRecommendationReply(dialogue, recommendation);
+        String assistantText = generatedReply.text();
 
         ChatMessage assistant =
                 saveAssistantMessage(
@@ -545,6 +553,9 @@ public class DiningDialogueMessageService {
                 dialogue,
                 recommendation
         );
+        response.setReplyGenerator(generatedReply.generator());
+        response.setReplyPromptVersion(generatedReply.promptVersion());
+        response.setReplyDegraded(generatedReply.degraded());
 
         saveResponseSnapshot(assistant, response);
         return response;
@@ -854,6 +865,8 @@ public class DiningDialogueMessageService {
                 new LinkedHashMap<>(metadata);
         updated.put("responseSnapshot", response);
         updated.put("traceId", response.getTraceId());
+        updated.put("replyGenerator", response.getReplyGenerator());
+        updated.put("replyPromptVersion", response.getReplyPromptVersion());
         if (response.getRecommendation() != null) {
             updated.put(
                     "adjustmentSuggestions",
@@ -1225,6 +1238,241 @@ public class DiningDialogueMessageService {
         }
 
         return String.join(" ", questions);
+    }
+
+    private GeneratedReply generateClarificationReply(
+            DialogueContinueResponse dialogue
+    ) {
+        String fallback = buildClarificationText(dialogue);
+        if (aiClientService == null) {
+            return GeneratedReply.fallback(fallback);
+        }
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("mode", "CLARIFICATION");
+            payload.put("currentConstraints", dialogue.getConstraints());
+            payload.put("changedFields", List.of());
+            payload.put("missingFields", dialogue.getMissingFields());
+            payload.put("conflicts", dialogue.getConflicts());
+            payload.put("candidates", List.of());
+            payload.put("gapFacts", List.of());
+            payload.put("recentMessages", List.of());
+            payload.put("maximumQuestions", 2);
+            JsonNode result = aiClientService.generateDiningReply(payload);
+            JsonNode questions = result.path("followUpQuestions");
+            if (!questions.isArray() || questions.size() > 2) {
+                return GeneratedReply.fallback(fallback);
+            }
+            return validatedText(result, fallback);
+        } catch (Exception exception) {
+            log.warn("Dining clarification reply degraded: {}",
+                    exception.getClass().getSimpleName());
+            return GeneratedReply.fallback(fallback);
+        }
+    }
+
+    private GeneratedReply generateRecommendationReply(
+            DialogueContinueResponse dialogue,
+            RecommendationRankResponse recommendation
+    ) {
+        String fallback = buildRecommendationText(recommendation);
+        if (aiClientService == null || recommendation == null) {
+            return GeneratedReply.fallback(fallback);
+        }
+        try {
+            Map<Long, java.util.Set<String>> allowedFacts =
+                    new LinkedHashMap<>();
+            Map<Long, java.util.Set<Long>> allowedEvidence =
+                    new LinkedHashMap<>();
+            List<Map<String, Object>> candidates = new ArrayList<>();
+            for (RecommendationItemVO item : recommendation.getResults()) {
+                Map<String, String> facts = new LinkedHashMap<>();
+                int index = 1;
+                for (String fact : item.getMatchedConditions()) {
+                    if (fact != null && !fact.isBlank()) {
+                        facts.put("m" + item.getMerchantId() + ".fact." + index++,
+                                fact);
+                    }
+                }
+                Map<String, String> risks = new LinkedHashMap<>();
+                index = 1;
+                for (String risk : item.getRiskNotes()) {
+                    if (risk != null && !risk.isBlank()) {
+                        risks.put("m" + item.getMerchantId() + ".risk." + index++,
+                                risk);
+                    }
+                }
+                List<Long> evidenceIds = item.getRecommendationBases().stream()
+                        .map(RecommendationBasisVO::getEvidenceId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList();
+                allowedFacts.put(item.getMerchantId(), facts.keySet());
+                allowedEvidence.put(item.getMerchantId(),
+                        new java.util.LinkedHashSet<>(evidenceIds));
+                Map<String, Object> candidate = new LinkedHashMap<>();
+                candidate.put("merchantId", item.getMerchantId());
+                candidate.put("name", item.getMerchantName());
+                candidate.put("facts", facts);
+                candidate.put("riskFacts", risks);
+                candidate.put("evidenceIds", evidenceIds);
+                candidates.add(candidate);
+            }
+
+            List<Map<String, Object>> gapFacts = new ArrayList<>();
+            int gapIndex = 1;
+            Map<String, AdjustmentSuggestionVO> suggestionByField =
+                    new LinkedHashMap<>();
+            for (AdjustmentSuggestionVO suggestion :
+                    recommendation.getAdjustmentSuggestions()) {
+                if (suggestion.getField() != null) {
+                    suggestionByField.putIfAbsent(
+                            suggestion.getField(), suggestion);
+                }
+            }
+            java.util.Set<String> representedGapFields =
+                    new java.util.LinkedHashSet<>();
+            for (LimitingConditionVO limit :
+                    recommendation.getLimitingConditions()) {
+                AdjustmentSuggestionVO suggestion =
+                        suggestionByField.get(limit.getField());
+                Map<String, Object> gap = new LinkedHashMap<>();
+                gap.put("factId", "gap-" + gapIndex++);
+                gap.put("field", limit.getField());
+                gap.put("description", limit.getDescription());
+                gap.put("currentValue", limit.getCurrentValue());
+                gap.put("nearestCandidateValue", suggestion == null
+                        ? null : suggestion.getSuggestedValue());
+                gap.put("difference", suggestion == null
+                        ? null : numericDifference(
+                        suggestion.getCurrentValue(),
+                        suggestion.getSuggestedValue()));
+                gap.put("recoveredMerchantCount",
+                        limit.getRecoveredMerchantCount() == null
+                                ? 0 : limit.getRecoveredMerchantCount());
+                gap.put("candidateMerchantIds",
+                        limit.getCandidateMerchantIds() == null
+                                ? List.of() : limit.getCandidateMerchantIds());
+                gapFacts.add(gap);
+                representedGapFields.add(limit.getField());
+            }
+            for (AdjustmentSuggestionVO suggestion :
+                    recommendation.getAdjustmentSuggestions()) {
+                if (representedGapFields.contains(suggestion.getField())) {
+                    continue;
+                }
+                Map<String, Object> gap = new LinkedHashMap<>();
+                gap.put("factId", suggestion.getId() == null
+                        ? "gap-" + gapIndex++ : suggestion.getId());
+                gap.put("field", suggestion.getField());
+                gap.put("description", suggestion.getDisplayText() == null
+                        ? suggestion.getReason() : suggestion.getDisplayText());
+                gap.put("currentValue", suggestion.getCurrentValue());
+                gap.put("nearestCandidateValue",
+                        suggestion.getSuggestedValue());
+                gap.put("difference", numericDifference(
+                        suggestion.getCurrentValue(),
+                        suggestion.getSuggestedValue()));
+                gap.put("recoveredMerchantCount", 0);
+                gap.put("candidateMerchantIds", List.of());
+                gapFacts.add(gap);
+            }
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("mode", Boolean.TRUE.equals(recommendation.getMatched())
+                    ? "RECOMMENDATION" : "NO_MATCH");
+            payload.put("currentConstraints", dialogue.getConstraints());
+            payload.put("changedFields", List.of());
+            payload.put("missingFields", dialogue.getMissingFields());
+            payload.put("conflicts", dialogue.getConflicts());
+            payload.put("candidates", candidates);
+            payload.put("gapFacts", gapFacts);
+            payload.put("recentMessages", List.of());
+            payload.put("maximumQuestions", 0);
+            JsonNode result = aiClientService.generateDiningReply(payload);
+            if (!validateReplyReferences(
+                    result, allowedFacts, allowedEvidence,
+                    Boolean.TRUE.equals(recommendation.getMatched()))) {
+                return GeneratedReply.fallback(fallback);
+            }
+            for (JsonNode reason : result.path("merchantReasons")) {
+                Long merchantId = reason.path("merchantId").asLong();
+                recommendation.getResults().stream()
+                        .filter(item -> Objects.equals(
+                                item.getMerchantId(), merchantId))
+                        .findFirst()
+                        .ifPresent(item -> item.setReason(
+                                reason.path("reason").asText(item.getReason())));
+            }
+            return validatedText(result, fallback);
+        } catch (Exception exception) {
+            log.warn("Dining recommendation reply degraded: {}",
+                    exception.getClass().getSimpleName());
+            return GeneratedReply.fallback(fallback);
+        }
+    }
+
+    private Object numericDifference(Object current, Object suggested) {
+        if (!(current instanceof Number left)
+                || !(suggested instanceof Number right)) return null;
+        return new BigDecimal(right.toString())
+                .subtract(new BigDecimal(left.toString()));
+    }
+
+    private GeneratedReply validatedText(JsonNode result, String fallback) {
+        if (result == null
+                || result.path("assistantText").asText("").isBlank()) {
+            return GeneratedReply.fallback(fallback);
+        }
+        return new GeneratedReply(
+                result.path("assistantText").asText(),
+                "AI_MODEL",
+                false,
+                result.path("promptVersion").asText("dining-reply:v1")
+        );
+    }
+
+    private boolean validateReplyReferences(
+            JsonNode result,
+            Map<Long, java.util.Set<String>> allowedFacts,
+            Map<Long, java.util.Set<Long>> allowedEvidence,
+            boolean recommendationMode
+    ) {
+        if (result == null || !result.path("merchantReasons").isArray()) {
+            return false;
+        }
+        for (JsonNode reason : result.path("merchantReasons")) {
+            Long merchantId = reason.path("merchantId").asLong(-1);
+            if (!allowedFacts.containsKey(merchantId)) return false;
+            int basisCount = 0;
+            for (JsonNode fact : reason.path("factIds")) {
+                if (!allowedFacts.get(merchantId).contains(fact.asText())) {
+                    return false;
+                }
+                basisCount++;
+            }
+            for (JsonNode evidence : reason.path("evidenceIds")) {
+                if (!allowedEvidence.getOrDefault(merchantId, java.util.Set.of())
+                        .contains(evidence.asLong())) {
+                    return false;
+                }
+                basisCount++;
+            }
+            if (recommendationMode && basisCount < 2) return false;
+        }
+        return true;
+    }
+
+    private record GeneratedReply(
+            String text,
+            String generator,
+            boolean degraded,
+            String promptVersion
+    ) {
+        private static GeneratedReply fallback(String text) {
+            return new GeneratedReply(
+                    text, "TEMPLATE_FALLBACK", true, "NOT_APPLICABLE");
+        }
     }
 
     private String buildRecommendationText(

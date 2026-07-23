@@ -297,6 +297,9 @@ public class DialogueService {
                                 preparedExtraction,
                                 context
                         );
+        directRecommendRequested = directRecommendRequested
+                || Boolean.TRUE.equals(
+                extractionResponse.getDirectRecommend());
 
         /*
          * extractAndMerge 执行后，

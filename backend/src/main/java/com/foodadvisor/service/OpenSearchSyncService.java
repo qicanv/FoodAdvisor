@@ -3,9 +3,16 @@ package com.foodadvisor.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.foodadvisor.entity.OpenSearchSyncTask;
 import com.foodadvisor.mapper.OpenSearchSyncTaskMapper;
+import com.foodadvisor.mapper.DishMapper;
+import com.foodadvisor.mapper.ReviewMapper;
+import com.foodadvisor.entity.Dish;
+import com.foodadvisor.entity.Review;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -26,6 +33,10 @@ public class OpenSearchSyncService {
     private final OpenSearchSyncTaskMapper mapper;
     private final AIClientService aiClientService;
     private final KnowledgeEnrichmentService knowledgeEnrichmentService;
+    @Autowired(required = false)
+    private DishMapper dishMapper;
+    @Autowired(required = false)
+    private ReviewMapper reviewMapper;
 
     public OpenSearchSyncService(
             OpenSearchSyncTaskMapper mapper,
@@ -45,13 +56,27 @@ public class OpenSearchSyncService {
      * @param operationType 操作类型（UPSERT / DISABLE / DELETE / REINDEX）
      * @return 创建的任务
      */
+    @Transactional
     public OpenSearchSyncTask createSyncTask(
             String sourceType,
             Long sourceId,
             String operationType
     ) {
+        String normalizedSource = "DISH".equals(sourceType)
+                ? "MENU" : sourceType;
+        OpenSearchSyncTask existing = mapper.selectOne(
+                new LambdaQueryWrapper<OpenSearchSyncTask>()
+                        .eq(OpenSearchSyncTask::getSourceType, normalizedSource)
+                        .eq(OpenSearchSyncTask::getSourceId, sourceId)
+                        .eq(OpenSearchSyncTask::getOperationType, operationType)
+                        .in(OpenSearchSyncTask::getStatus,
+                                OpenSearchSyncTask.STATUS_PENDING,
+                                OpenSearchSyncTask.STATUS_PROCESSING)
+                        .last("LIMIT 1"));
+        if (existing != null) return existing;
+
         OpenSearchSyncTask task = new OpenSearchSyncTask();
-        task.setSourceType(sourceType);
+        task.setSourceType(normalizedSource);
         task.setSourceId(sourceId);
         task.setOperationType(operationType);
         task.setContentVersion(1);
@@ -76,16 +101,13 @@ public class OpenSearchSyncService {
         LambdaQueryWrapper<OpenSearchSyncTask> wrapper =
                 new LambdaQueryWrapper<>();
         wrapper.eq(OpenSearchSyncTask::getStatus, OpenSearchSyncTask.STATUS_PENDING)
-                .le(OpenSearchSyncTask::getNextRetryAt, OffsetDateTime.now())
-                .or()
-                .isNull(OpenSearchSyncTask::getNextRetryAt);
-
-        // 同时满足 status=PENDING AND (next_retry_at <= now OR next_retry_at IS NULL)
-        wrapper.and(w -> w
+                .and(w -> w
                 .isNull(OpenSearchSyncTask::getNextRetryAt)
                 .or()
                 .le(OpenSearchSyncTask::getNextRetryAt, OffsetDateTime.now())
-        );
+                )
+                .orderByAsc(OpenSearchSyncTask::getId)
+                .last("LIMIT 100");
 
         List<OpenSearchSyncTask> tasks = mapper.selectList(wrapper);
         int processedCount = 0;
@@ -129,6 +151,19 @@ public class OpenSearchSyncService {
         }
 
         return retriedCount;
+    }
+
+    @Scheduled(fixedDelayString = "${opensearch.sync.fixed-delay-ms:15000}")
+    public void consumeOutbox() {
+        try {
+            processPendingTasks();
+            retryFailed();
+        } catch (RuntimeException exception) {
+            // Keep application startup healthy while a rolling deployment is
+            // waiting for the idempotent outbox migration to be applied.
+            log.warn("OpenSearch outbox consumer skipped this cycle: {}",
+                    exception.getClass().getSimpleName());
+        }
     }
 
     /**
@@ -180,7 +215,8 @@ public class OpenSearchSyncService {
         mapper.updateById(task);
 
         try {
-            if (OpenSearchSyncTask.OP_DISABLE.equals(task.getOperationType())) {
+            if (OpenSearchSyncTask.OP_DISABLE.equals(task.getOperationType())
+                    || OpenSearchSyncTask.OP_DELETE.equals(task.getOperationType())) {
                 // 停用操作：调用 AI 服务 deactivate 接口
                 aiClientService.deactivateKnowledge(
                         task.getSourceType(),
@@ -197,10 +233,33 @@ public class OpenSearchSyncService {
                     }
                     case "MERCHANT_INTRO" ->
                             knowledgeEnrichmentService.syncMerchantIntro(sourceId);
-                    case "MENU" ->
-                            knowledgeEnrichmentService.syncMerchantMenu(sourceId);
-                    case "REVIEW" ->
-                            log.info("单条评价同步暂不支持，需提供 merchantId");
+                    case "MENU" -> {
+                        Dish dish = dishMapper == null
+                                ? null : dishMapper.selectById(sourceId);
+                        if (dish == null || dish.getMerchantId() == null) {
+                            aiClientService.deactivateKnowledge(
+                                    "MENU", List.of(sourceId));
+                        } else {
+                            knowledgeEnrichmentService.syncMerchantMenu(
+                                    dish.getMerchantId());
+                        }
+                    }
+                    case "REVIEW" -> {
+                        Review review = reviewMapper == null
+                                ? null : reviewMapper.selectById(sourceId);
+                        boolean visible = review != null
+                                && "PUBLISHED".equals(review.getStatus())
+                                && "APPROVED".equals(
+                                review.getModerationStatus())
+                                && review.getDeletedAt() == null;
+                        if (visible) {
+                            knowledgeEnrichmentService.syncMerchantReviews(
+                                    review.getMerchantId());
+                        } else {
+                            aiClientService.deactivateKnowledge(
+                                    "REVIEW", List.of(sourceId));
+                        }
+                    }
                     default ->
                             log.warn("未知同步来源类型: {}", task.getSourceType());
                 }

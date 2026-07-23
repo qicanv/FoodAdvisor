@@ -14,6 +14,8 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.TemporalAdjusters;
+import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -82,7 +84,10 @@ public class MerchantBusinessHoursService {
     ) {
         return constraints != null
                 && (hasText(constraints.getBusinessTargetTime())
-                || hasText(constraints.getBusinessTime()));
+                || hasText(constraints.getBusinessTime())
+                || hasText(constraints.getBusinessTargetDate())
+                || constraints.getBusinessTargetDayOfWeek() != null
+                || hasText(constraints.getBusinessTimeWindow()));
     }
 
     public BusinessHoursMatch match(
@@ -96,20 +101,22 @@ public class MerchantBusinessHoursService {
             return BusinessHoursMatch.notMatched();
         }
 
+        ZoneId targetZone = resolveZone(constraints.getTimezone());
         ZonedDateTime now = ZonedDateTime.now(clock)
-                .withZoneSameInstant(businessZoneId);
+                .withZoneSameInstant(targetZone);
 
-        if (hasText(constraints.getBusinessTargetTime())) {
-            LocalTime target = parseTargetTime(
-                    constraints.getBusinessTargetTime()
-            );
+        if (hasText(constraints.getBusinessTargetTime())
+                || hasText(constraints.getBusinessTargetDate())
+                || constraints.getBusinessTargetDayOfWeek() != null
+                || hasText(constraints.getBusinessTimeWindow())) {
+            LocalTime target = hasText(constraints.getBusinessTargetTime())
+                    ? parseTargetTime(constraints.getBusinessTargetTime())
+                    : timeForWindow(constraints.getBusinessTimeWindow());
             if (target == null) {
                 return BusinessHoursMatch.notMatched();
             }
-            LocalDate date = Boolean.TRUE.equals(
-                    constraints.getBusinessTargetNextDay()
-            ) ? now.toLocalDate().plusDays(1) : now.toLocalDate();
-            return matchAt(hours, date.atTime(target).atZone(businessZoneId),
+            LocalDate date = resolveTargetDate(constraints, now.toLocalDate());
+            return matchAt(hours, date.atTime(target).atZone(targetZone),
                     target.format(TIME_FORMAT) + "仍处于营业时段");
         }
 
@@ -252,6 +259,51 @@ public class MerchantBusinessHoursService {
         } catch (DateTimeParseException exception) {
             LOGGER.warn("Ignoring invalid business target time: {}", value);
             return null;
+        }
+    }
+
+    /**
+     * 周末固定解析为“从今天起最近的周六”；若今天是周六则使用今天。
+     * 若模型明确给出周日（7），则按最近周日处理。
+     */
+    private LocalDate resolveTargetDate(
+            ConstraintState constraints,
+            LocalDate today
+    ) {
+        if (hasText(constraints.getBusinessTargetDate())) {
+            try {
+                return LocalDate.parse(constraints.getBusinessTargetDate());
+            } catch (DateTimeParseException exception) {
+                LOGGER.warn("Ignoring invalid business target date");
+            }
+        }
+        if (constraints.getBusinessTargetDayOfWeek() != null
+                && constraints.getBusinessTargetDayOfWeek() >= 1
+                && constraints.getBusinessTargetDayOfWeek() <= 7) {
+            return today.with(TemporalAdjusters.nextOrSame(
+                    DayOfWeek.of(constraints.getBusinessTargetDayOfWeek())));
+        }
+        return Boolean.TRUE.equals(constraints.getBusinessTargetNextDay())
+                ? today.plusDays(1) : today;
+    }
+
+    private LocalTime timeForWindow(String window) {
+        if (window == null) return null;
+        return switch (window) {
+            case "LUNCH" -> LocalTime.NOON;
+            case "EVENING", "TONIGHT" -> TONIGHT_START;
+            case "LATE_NIGHT" -> LATE_NIGHT_THRESHOLD;
+            default -> null;
+        };
+    }
+
+    private ZoneId resolveZone(String zone) {
+        if (!hasText(zone)) return businessZoneId;
+        try {
+            return ZoneId.of(zone);
+        } catch (Exception exception) {
+            LOGGER.warn("Ignoring invalid business timezone");
+            return businessZoneId;
         }
     }
 

@@ -252,6 +252,14 @@ public class AIClientService {
     }
 
     /**
+     * 调用受控的探店自然语言回复链。请求中只允许包含 Java 已验证的事实。
+     */
+    public JsonNode generateDiningReply(Map<String, Object> request) {
+        String url = aiServiceBaseUrl + "/internal/dialogue/reply";
+        return post(url, request, "DINING_RECOMMENDATION");
+    }
+
+    /**
      * 调用评价摘要生成接口（EPIC-01 Story 7）
      */
     public JsonNode generateReviewSummary(
@@ -617,6 +625,18 @@ public class AIClientService {
     }
 
     /**
+     * Read active OpenSearch document/source counts for administrator
+     * reconciliation. This endpoint never mutates the index.
+     */
+    public JsonNode getActiveKnowledgeCounts() {
+        return post(
+                aiServiceBaseUrl + "/internal/knowledge/active-counts",
+                Map.of(),
+                "KNOWLEDGE_RECONCILIATION"
+        );
+    }
+
+    /**
      * 调用内容清洗与切分接口。
      *
      * @param items 待处理内容列表，每项包含 merchantId/sourceType/sourceId/content
@@ -892,7 +912,7 @@ public class AIClientService {
     }
 
     /**
-     * 为探店条件提取请求附加数据库中绑定的运行时模型配置。
+     * 为探店条件提取与探店推荐回复请求附加数据库中绑定的运行时模型配置。
      *
      * 请求摘要在本方法执行前已经生成，因此明文 API Key 不会进入
      * ai_call_logs 或审计日志。
@@ -901,10 +921,9 @@ public class AIClientService {
             Object body,
             String functionType
     ) {
-        if (!"DIALOGUE_CONSTRAINT_EXTRACTION".equals(
-                functionType
-        )) {
-            return body;
+        if (!"DIALOGUE_CONSTRAINT_EXTRACTION".equals(functionType)
+                && !"DINING_RECOMMENDATION".equals(functionType)) {
+        return body;
         }
 
         if (runtimeModelConfigResolver == null) {
@@ -1022,6 +1041,9 @@ public class AIClientService {
 
             case "DIALOGUE_CONSTRAINT_EXTRACTION" ->
                     PromptScene.CONSTRAINT_EXTRACTION;
+
+            case "DINING_RECOMMENDATION" ->
+                    PromptScene.DINING_RECOMMENDATION;
 
             case "REVIEW_SUMMARY_GENERATION" ->
                     PromptScene.REVIEW_SUMMARY;
@@ -1249,6 +1271,7 @@ public class AIClientService {
         return switch (functionType) {
             case "SEMANTIC_SEARCH" -> "KNOWLEDGE_RETRIEVAL";
             case "DIALOGUE_CONSTRAINT_EXTRACTION" -> "CONSTRAINT_EXTRACTION";
+            case "DINING_RECOMMENDATION" -> "REPLY_GENERATION";
             default -> "MODEL_CALL";
         };
     }

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     ml_model_path: str = "../train/model/best"
     ml_device: str = "auto"  # auto / cpu / cuda
 
-    request_timeout_seconds: int = 90
+    request_timeout_seconds: int = 120
 
     # ---- 内容处理配置 ----
     content_processing_enabled: bool = True

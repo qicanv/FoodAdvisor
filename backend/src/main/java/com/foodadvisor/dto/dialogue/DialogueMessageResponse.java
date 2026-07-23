@@ -37,4 +37,7 @@ public class DialogueMessageResponse {
     private String extractor;
     private String modelName;
     private String promptVersion;
+    private String replyGenerator = "TEMPLATE_FALLBACK";
+    private String replyPromptVersion;
+    private Boolean replyDegraded = true;
 }

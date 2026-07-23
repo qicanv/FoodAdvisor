@@ -15,12 +15,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.*;
 
 @RestController
 @RequestMapping("/api/admin/dishes")
+@Transactional
 public class AdminDishController {
 
     private static final Logger log =
@@ -140,6 +142,8 @@ public class AdminDishController {
         dish.setStatus(status != null && VALID_STATUSES.contains(status) ? status : "ACTIVE");
 
         dishMapper.insert(dish);
+        openSearchSyncService.createSyncTask(
+                CONTENT_TYPE_DISH, dish.getId(), OpenSearchSyncTask.OP_UPSERT);
 
         // 记录初始状态
         Long userId = getUserId(request);
@@ -211,6 +215,7 @@ public class AdminDishController {
         }
 
         dishMapper.updateById(dish);
+        triggerSync(id, dish.getStatus());
 
         // 状态变更时记录历史并触发同步
         String newStatus = dish.getStatus();
@@ -387,21 +392,12 @@ public class AdminDishController {
     }
 
     private void triggerSync(Long dishId, String newStatus) {
-        try {
-            if ("OFF_SHELF".equals(newStatus) || "ARCHIVED".equals(newStatus)) {
-                openSearchSyncService.createSyncTask(
-                        CONTENT_TYPE_DISH, dishId,
-                        OpenSearchSyncTask.OP_DISABLE
-                );
-            } else if ("ACTIVE".equals(newStatus)) {
-                openSearchSyncService.createSyncTask(
-                        CONTENT_TYPE_DISH, dishId,
-                        OpenSearchSyncTask.OP_UPSERT
-                );
-            }
-        } catch (Exception e) {
-            log.error("创建同步任务失败: dishId={}, newStatus={}, error={}",
-                    dishId, newStatus, e.getMessage(), e);
+        if ("OFF_SHELF".equals(newStatus) || "ARCHIVED".equals(newStatus)) {
+            openSearchSyncService.createSyncTask(
+                    CONTENT_TYPE_DISH, dishId, OpenSearchSyncTask.OP_DISABLE);
+        } else if ("ACTIVE".equals(newStatus)) {
+            openSearchSyncService.createSyncTask(
+                    CONTENT_TYPE_DISH, dishId, OpenSearchSyncTask.OP_UPSERT);
         }
     }
 

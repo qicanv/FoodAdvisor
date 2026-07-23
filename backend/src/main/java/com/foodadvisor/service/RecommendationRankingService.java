@@ -51,9 +51,11 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -366,10 +368,8 @@ public class RecommendationRankingService {
         RecommendationWeights weights =
                 resolveWeights(request);
 
-        String semanticQuery = request.getQuery() != null
-                && !request.getQuery().isBlank()
-                ? request.getQuery().trim()
-                : null;
+        String semanticQuery = buildCanonicalSemanticQuery(
+                constraints, request.getQuery());
 
         Recommendation recommendation =
                 createPendingRecommendation(
@@ -476,7 +476,8 @@ public class RecommendationRankingService {
                         candidates,
                         constraints,
                         request.getUserLatitude(),
-                        request.getUserLongitude()
+                        request.getUserLongitude(),
+                        businessHours
                 )
                         : new NoMatchAnalysis(
                         List.of(),
@@ -913,6 +914,10 @@ public class RecommendationRankingService {
 
         Map<Long, SemanticMatchResult> semanticMatches =
                 semanticOutcome.matches();
+        if (semanticOutcome.status() == SemanticSearchStatus.UNAVAILABLE
+                || semanticOutcome.status() == SemanticSearchStatus.SKIPPED) {
+            redistributeUnavailableSemanticWeight(weights);
+        }
 
         /*
          * 第三阶段：计算规则分、语义分和最终综合分。
@@ -946,6 +951,73 @@ public class RecommendationRankingService {
                 results,
                 semanticOutcome.status()
         );
+    }
+
+    /**
+     * 构建稳定的语义查询。控制词只参与状态修改，不作为正向召回词。
+     */
+    String buildCanonicalSemanticQuery(
+            ConstraintState constraints,
+            String latestMessage
+    ) {
+        if (constraints == null) return meaningfulTail(latestMessage);
+        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        terms.addAll(DiningConstraintNormalizer.normalizeList(
+                constraints.getCuisines()));
+        terms.addAll(DiningConstraintNormalizer.normalizeList(
+                constraints.getMerchantTypes()));
+        terms.addAll(DiningConstraintNormalizer.normalizeList(
+                constraints.getEnvironmentRequirements()));
+        terms.addAll(DiningConstraintNormalizer.normalizeList(
+                constraints.getScenes()));
+        terms.addAll(DiningConstraintNormalizer.normalizeList(
+                constraints.getTastePreferences()));
+        terms.addAll(DiningConstraintNormalizer.normalizeList(
+                constraints.getDishKeywords()));
+        String tail = meaningfulTail(latestMessage);
+        if (tail != null) terms.add(tail);
+        return terms.isEmpty() ? null : String.join(" ", terms);
+    }
+
+    private String meaningfulTail(String message) {
+        if (message == null || message.isBlank()) return null;
+        String cleaned = message
+                .replaceAll("改成|改为|换成|不要|不吃|取消|不再排除|不用排除|直接推荐", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return cleaned.isBlank() ? null : cleaned;
+    }
+
+    /**
+     * 语义不可用时将其权重归零，并按比例分配给真实可用的规则项。
+     */
+    void redistributeUnavailableSemanticWeight(RecommendationWeights weights) {
+        if (weights == null || weights.getSemantic() == null
+                || weights.getSemantic().signum() == 0) return;
+        BigDecimal available = new BigDecimal("100")
+                .subtract(weights.getSemantic());
+        if (available.signum() <= 0) {
+            weights.setSemantic(BigDecimal.ZERO);
+            weights.setCuisine(new BigDecimal("100"));
+            return;
+        }
+        BigDecimal factor = new BigDecimal("100").divide(
+                available, 8, RoundingMode.HALF_UP);
+        weights.setCuisine(weights.getCuisine().multiply(factor)
+                .setScale(6, RoundingMode.HALF_UP));
+        weights.setRating(weights.getRating().multiply(factor)
+                .setScale(6, RoundingMode.HALF_UP));
+        weights.setPrice(weights.getPrice().multiply(factor)
+                .setScale(6, RoundingMode.HALF_UP));
+        weights.setDistance(weights.getDistance().multiply(factor)
+                .setScale(6, RoundingMode.HALF_UP));
+        weights.setEnvironment(weights.getEnvironment().multiply(factor)
+                .setScale(6, RoundingMode.HALF_UP));
+        BigDecimal assigned = weights.getCuisine().add(weights.getRating())
+                .add(weights.getPrice()).add(weights.getDistance())
+                .add(weights.getEnvironment());
+        weights.setReputation(new BigDecimal("100").subtract(assigned));
+        weights.setSemantic(BigDecimal.ZERO);
     }
 
     /**
@@ -1509,7 +1581,8 @@ private void applyDishKeywordFilter(
             List<Merchant> candidates,
             ConstraintState constraints,
             BigDecimal userLatitude,
-            BigDecimal userLongitude
+            BigDecimal userLongitude,
+            Map<Long, List<MerchantBusinessHours>> businessHours
     ) {
         List<LimitingConditionVO> limitingConditions =
                 new ArrayList<>();
@@ -1576,15 +1649,25 @@ private void applyDishKeywordFilter(
                 suggestions
         );
 
+        addBusinessHoursAnalysis(
+                candidates, constraints, userLatitude, userLongitude,
+                businessHours, limitingConditions, suggestions);
+
         if (constraints.getDishKeywords() != null
                 && !constraints.getDishKeywords().isEmpty()) {
+            ConstraintState relaxed = copyConstraints(constraints);
+            relaxed.setDishKeywords(new ArrayList<>());
+            List<Merchant> recovered = strictMatches(
+                    candidates, relaxed, userLatitude, userLongitude);
+            if (!recovered.isEmpty()) {
             limitingConditions.add(
                     new LimitingConditionVO(
                             "dishKeywords",
                             "DISH",
                             constraints.getDishKeywords(),
-                            0,
-                            "当前有效菜单中没有命中指定菜品"
+                            recovered.size(),
+                            "当前有效菜单中没有命中指定菜品",
+                            merchantIds(recovered)
                     )
             );
             suggestions.add(
@@ -1598,6 +1681,7 @@ private void applyDishKeywordFilter(
                             "放宽菜品要求后可继续按其他条件推荐"
                     )
             );
+            }
         }
 
         limitingConditions.sort(
@@ -1698,7 +1782,8 @@ private void applyDishKeywordFilter(
                         "BUDGET",
                         currentBudget,
                         recovered.size(),
-                        "当前人均预算限制排除了部分可匹配商家"
+                        "当前人均预算限制排除了部分可匹配商家",
+                        merchantIds(recovered)
                 )
         );
 
@@ -1823,7 +1908,8 @@ private void applyDishKeywordFilter(
                         "DISTANCE",
                         currentDistance,
                         verifiedRecovered.size(),
-                        "当前距离范围内没有完全匹配的商家"
+                        "当前距离范围内没有完全匹配的商家",
+                        merchantIds(verifiedRecovered)
                 )
         );
 
@@ -1862,57 +1948,26 @@ private void applyDishKeywordFilter(
             return;
         }
 
-        ConstraintState relaxed =
-                copyConstraints(constraints);
-
-        if ("cuisines".equals(field)) {
-            relaxed.setCuisines(new ArrayList<>());
-        } else if ("scenes".equals(field)) {
-            relaxed.setScenes(new ArrayList<>());
+        for (String value : currentValues) {
+            ConstraintState relaxed = copyConstraints(constraints);
+            List<String> remaining = new ArrayList<>(currentValues);
+            remaining.remove(value);
+            if ("cuisines".equals(field)) relaxed.setCuisines(remaining);
+            else if ("scenes".equals(field)) relaxed.setScenes(remaining);
+            List<Merchant> recovered = strictMatches(
+                    candidates, relaxed, userLatitude, userLongitude);
+            if (recovered.isEmpty()) continue;
+            String displayText = "取消“" + value + "”后可恢复 "
+                    + recovered.size() + " 家";
+            limitingConditions.add(new LimitingConditionVO(
+                    field, type, value, recovered.size(), displayText,
+                    merchantIds(recovered)));
+            suggestions.add(new AdjustmentSuggestionVO(
+                    ("cuisines".equals(field) ? "relax-cuisine-" : "remove-scene-")
+                            + stableToken(value),
+                    type, field, currentValues, remaining, displayText,
+                    "只移除一个限制元素后重新评估"));
         }
-
-        List<Merchant> recovered =
-                strictMatches(
-                        candidates,
-                        relaxed,
-                        userLatitude,
-                        userLongitude
-                );
-
-        if (recovered.isEmpty()) {
-            return;
-        }
-
-        String displayText =
-                "cuisines".equals(field)
-                        ? "暂时取消菜系限制并重新搜索"
-                        : "暂时取消用餐场景限制并重新搜索";
-
-        limitingConditions.add(
-                new LimitingConditionVO(
-                        field,
-                        type,
-                        currentValues,
-                        recovered.size(),
-                        displayText
-                )
-        );
-
-        suggestions.add(
-                new AdjustmentSuggestionVO(
-                        ("cuisines".equals(field)
-                                ? "relax-cuisine"
-                                : "remove-scene")
-                                + "-"
-                                + recovered.size(),
-                        type,
-                        field,
-                        currentValues,
-                        List.of(),
-                        displayText,
-                        "放宽该条件后可以找到符合其他条件的商家"
-                )
-        );
     }
 
     private void addEnvironmentAnalysis(
@@ -1968,7 +2023,8 @@ private void applyDishKeywordFilter(
                             recovered.size(),
                             "环境要求“"
                                     + requirement
-                                    + "”限制了可匹配商家"
+                                    + "”限制了可匹配商家",
+                            merchantIds(recovered)
                     )
             );
 
@@ -2037,7 +2093,8 @@ private void applyDishKeywordFilter(
                         "RATING",
                         currentRating,
                         recovered.size(),
-                        "当前最低评分要求限制了可匹配商家"
+                        "当前最低评分要求限制了可匹配商家",
+                        merchantIds(recovered)
                 )
         );
 
@@ -2069,6 +2126,13 @@ private void applyDishKeywordFilter(
         List<Merchant> matched =
                 new ArrayList<>();
 
+        boolean timeConstrained =
+                businessHoursService.hasBusinessTimeConstraint(constraints);
+        Map<Long, List<MerchantBusinessHours>> hours =
+                timeConstrained
+                        ? businessHoursService.loadGrouped(candidates.stream()
+                        .map(Merchant::getId).toList())
+                        : Map.of();
         for (Merchant candidate : candidates) {
             if (matchScoreCalculator
                     .passesHardFilters(
@@ -2076,12 +2140,49 @@ private void applyDishKeywordFilter(
                             constraints,
                             userLatitude,
                             userLongitude
-                    )) {
+                    )
+                    && (!timeConstrained
+                    || businessHoursService.match(
+                    constraints, hours.get(candidate.getId())).matched())) {
                 matched.add(candidate);
             }
         }
 
         return matched;
+    }
+
+    private void addBusinessHoursAnalysis(
+            List<Merchant> candidates,
+            ConstraintState constraints,
+            BigDecimal userLatitude,
+            BigDecimal userLongitude,
+            Map<Long, List<MerchantBusinessHours>> businessHours,
+            List<LimitingConditionVO> limitingConditions,
+            List<AdjustmentSuggestionVO> suggestions
+    ) {
+        if (!businessHoursService.hasBusinessTimeConstraint(constraints)) return;
+        List<Merchant> recovered = candidates.stream()
+                .filter(candidate -> matchScoreCalculator.passesHardFilters(
+                        candidate, constraints, userLatitude, userLongitude))
+                .filter(candidate -> !businessHoursService.match(
+                        constraints,
+                        businessHours.get(candidate.getId())).matched())
+                .toList();
+        if (recovered.isEmpty()) return;
+        limitingConditions.add(new LimitingConditionVO(
+                "businessTime", "BUSINESS_HOURS",
+                constraints.getBusinessTargetTime() != null
+                        ? constraints.getBusinessTargetTime()
+                        : constraints.getBusinessTime(),
+                recovered.size(),
+                "目标时段没有满足其他条件且仍营业的商家",
+                merchantIds(recovered)));
+        suggestions.add(new AdjustmentSuggestionVO(
+                "relax-business-time", "RELAX_BUSINESS_TIME",
+                "businessTime",
+                constraints.getBusinessTime(), null,
+                "改选其他营业时段后重新搜索",
+                "营业时间由商家真实营业表重新校验"));
     }
 
     private AdjustmentSuggestionVO fallbackSuggestion(
@@ -2765,6 +2866,14 @@ private void applyDishKeywordFilter(
                     constraints.setMinRating(
                             readRating(value)
                     );
+            case "businessTime" -> {
+                constraints.setBusinessTime(null);
+                constraints.setBusinessTargetTime(null);
+                constraints.setBusinessTargetNextDay(null);
+                constraints.setBusinessTargetDate(null);
+                constraints.setBusinessTargetDayOfWeek(null);
+                constraints.setBusinessTimeWindow(null);
+            }
             default -> throw invalidAdjustment(
                     "不支持调整字段: " + field
             );
@@ -3042,6 +3151,15 @@ private void applyDishKeywordFilter(
                 )
         );
         copy.setBusinessTime(source.getBusinessTime());
+        copy.setBusinessTargetTime(source.getBusinessTargetTime());
+        copy.setBusinessTargetNextDay(source.getBusinessTargetNextDay());
+        copy.setBusinessTargetDate(source.getBusinessTargetDate());
+        copy.setBusinessTargetDayOfWeek(source.getBusinessTargetDayOfWeek());
+        copy.setBusinessTimeWindow(source.getBusinessTimeWindow());
+        copy.setTimezone(source.getTimezone());
+        copy.setConstraintStrengths(source.getConstraintStrengths() == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(source.getConstraintStrengths()));
 
         return copy;
     }
@@ -3111,6 +3229,16 @@ private void applyDishKeywordFilter(
     private String formatIdValue(BigDecimal value) {
         return formatNumber(value)
                 .replace(".", "-");
+    }
+
+    private List<Long> merchantIds(List<Merchant> merchants) {
+        if (merchants == null) return List.of();
+        return merchants.stream()
+                .map(Merchant::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .toList();
     }
 
     private String stableToken(String value) {

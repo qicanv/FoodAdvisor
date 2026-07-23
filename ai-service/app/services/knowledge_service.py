@@ -181,6 +181,43 @@ class KnowledgeService:
                 error=str(exc)[:500],
             )
 
+    def active_source_counts(self) -> dict:
+        """Return active document and distinct source counts for reconciliation."""
+        response = self.client.search(
+            index=self._index_name,
+            body={
+                "size": 0,
+                "query": {"term": {"isActive": True}},
+                "aggs": {
+                    "by_source_type": {
+                        "terms": {"field": "sourceType", "size": 20},
+                        "aggs": {
+                            "distinct_sources": {
+                                "cardinality": {"field": "sourceId"}
+                            }
+                        },
+                    }
+                },
+            },
+        )
+        buckets = (
+            response.get("aggregations", {})
+            .get("by_source_type", {})
+            .get("buckets", [])
+        )
+        source_counts = {
+            str(bucket.get("key")): int(
+                bucket.get("distinct_sources", {}).get("value", 0)
+            )
+            for bucket in buckets
+        }
+        total = response.get("hits", {}).get("total", 0)
+        document_count = int(total.get("value", 0)) if isinstance(total, dict) else int(total)
+        return {
+            "activeDocumentCount": document_count,
+            "activeDistinctSourceCounts": source_counts,
+        }
+
     # ============================================
     # 内部：Embedding + 写入
     # ============================================

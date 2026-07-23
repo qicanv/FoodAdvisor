@@ -22,6 +22,7 @@ import com.foodadvisor.entity.ReviewImage;
 import com.foodadvisor.entity.ReviewReply;
 import com.foodadvisor.entity.ReviewTagRelation;
 import com.foodadvisor.entity.ReviewVersion;
+import com.foodadvisor.entity.OpenSearchSyncTask;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.ReviewAnalysisMapper;
 import com.foodadvisor.mapper.ReviewImageMapper;
@@ -38,6 +39,7 @@ import com.foodadvisor.mapper.TagSentimentCount;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import com.foodadvisor.entity.ReviewIssueCategory;
@@ -91,6 +93,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final AuditLogService auditLogService;
     private final com.foodadvisor.mapper.ReviewReplyMapper replyMapper;
     private final NotificationService notificationService;
+    @Autowired(required = false)
+    private OpenSearchSyncService openSearchSyncService;
 
     public ReviewService(
             ReviewAnalysisMapper analysisMapper,
@@ -291,6 +295,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     "评价保存失败"
             );
         }
+        enqueueReviewSync(review);
 
         List<ReviewImage> activeImages = replaceImages(
                 review.getId(),
@@ -405,6 +410,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     "评价更新失败"
             );
         }
+        enqueueReviewSync(review);
 
         // 处理图片：保留 keepImageIds 中的旧图 + 上传新图，其余标记删除
         List<ReviewImage> activeImages = replaceImages(
@@ -467,6 +473,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     "评价更新失败"
             );
         }
+        enqueueReviewSync(review);
 
         List<ReviewImage> activeImages = List.of();
 
@@ -514,6 +521,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 执行 UPDATE
         this.updateById(review);
+        enqueueReviewDisable(review);
 
         // 记录版本快照，changeType = "EDIT"（数据库约束不允许DELETE）
         // List.of() 表示删除后没有保留任何图片
@@ -526,6 +534,26 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 删掉的评价不再计入商家评分，重新算一次
         refreshMerchantRatingStats(review.getMerchantId());
+    }
+
+    private void enqueueReviewSync(Review review) {
+        if (openSearchSyncService == null || review == null
+                || review.getId() == null) return;
+        boolean visible = "PUBLISHED".equals(review.getStatus())
+                && "APPROVED".equals(review.getModerationStatus())
+                && review.getDeletedAt() == null;
+        openSearchSyncService.createSyncTask(
+                "REVIEW", review.getId(),
+                visible ? OpenSearchSyncTask.OP_UPSERT
+                        : OpenSearchSyncTask.OP_DISABLE);
+    }
+
+    private void enqueueReviewDisable(Review review) {
+        if (openSearchSyncService != null && review != null
+                && review.getId() != null) {
+            openSearchSyncService.createSyncTask(
+                    "REVIEW", review.getId(), OpenSearchSyncTask.OP_DISABLE);
+        }
     }
 
     /**

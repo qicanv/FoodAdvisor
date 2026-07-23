@@ -49,6 +49,14 @@ public class ConstraintExtraction {
 
     private String modelVersion;
 
+    @TableField(typeHandler = JsonbTypeHandler.class)
+    private String constraintPatch;
+
+    private String extractor;
+    private Boolean degraded;
+    private String promptVersion;
+    private String degradationReason;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 }

@@ -21,6 +21,10 @@
         </button>
         <span class="location-status">{{ locationStatusText() }}</span>
       </div>
+      <div v-if="Object.keys(currentConstraints).length" class="constraint-bar">
+        <strong>当前条件</strong>
+        <span>{{ constraintSummary(currentConstraints) }}</span>
+      </div>
       <section ref="messageListRef" class="message-list" aria-live="polite">
         <div v-if="initializing" class="state-panel">正在加载会话...</div>
         <div v-else-if="messages.length === 0" class="empty-panel">
@@ -38,6 +42,9 @@
           <div class="message-bubble">
             <div class="message-role">{{ message.role === 'USER' ? '我' : 'AI 探店助手' }}</div>
             <p>{{ message.content }}</p>
+            <div v-if="message.notice" class="notice-banner">
+              {{ message.notice }}
+            </div>
 
             <div v-if="message.recommendations.length" class="merchant-grid">
               <div
@@ -61,6 +68,9 @@
                   <span>{{ distanceText(merchant.distanceKm) }}</span>
                 </div>
                 <p class="reason">{{ textOr(merchant.reason, '暂无推荐理由') }}</p>
+                <ul v-if="merchant.riskNotes?.length" class="risk-list">
+                  <li v-for="risk in merchant.riskNotes" :key="risk">{{ risk }}</li>
+                </ul>
                 <div
                   v-if="Array.isArray(merchant.matchedDishes) && merchant.matchedDishes.length"
                   class="matched-dishes"
@@ -76,8 +86,6 @@
                   </span>
                 </div>
                 <button
-                  v-if="(Array.isArray(merchant.recommendationBases) && merchant.recommendationBases.length)
-                    || (Array.isArray(merchant.matchedDishes) && merchant.matchedDishes.length)"
                   type="button"
                   class="evidence-button"
                   @click.stop="openEvidence(message, merchant)"
@@ -125,6 +133,14 @@
 
       <div v-if="errorMessage" class="error-banner" role="alert">
         {{ errorMessage }}
+        <button
+          v-if="pendingRequest"
+          type="button"
+          class="retry-button"
+          @click="submitMessage"
+        >
+          使用同一请求重试
+        </button>
       </div>
 
       <form class="composer" @submit.prevent="submitMessage">
@@ -196,6 +212,7 @@ const evidenceDialogOpen = ref(false)
 const evidenceLoading = ref(false)
 const evidenceError = ref('')
 const evidences = ref([])
+const pendingRequest = ref(null)
 
 const currentUserId = () => {
   const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
@@ -215,6 +232,33 @@ const createRequestId = () => {
 }
 
 const textOr = (value, fallback) => value === null || value === undefined || value === '' ? fallback : value
+const hiddenConstraintKeys = new Set([
+  'constraintStrengths'
+])
+
+const constraintSummary = value => Object.entries(value || {})
+  .filter(([key, item]) => {
+    if (hiddenConstraintKeys.has(key)) return false
+    if (item === null || item === undefined || item === '') return false
+    if (Array.isArray(item)) return item.length > 0
+
+    // 其他内部对象也不直接渲染，避免再次出现 [object Object]
+    if (typeof item === 'object') return false
+
+    return true
+  })
+  .map(([key, item]) => {
+    let displayValue = item
+
+    if (Array.isArray(item)) {
+      displayValue = item.join('、')
+    } else if (typeof item === 'boolean') {
+      displayValue = item ? '是' : '否'
+    }
+
+    return `${key}: ${displayValue}`
+  })
+  .join('；')
 const ratingText = value => value === null || value === undefined ? '暂无评分' : `评分 ${value}`
 const priceText = value => value === null || value === undefined ? '人均消费暂无' : `人均 ￥${value}`
 const distanceText = value => value === null || value === undefined ? '距离未知' : `距离 ${value} km`
@@ -287,8 +331,17 @@ const normalizeHistoryMessage = item => ({
   recommendationId: item.recommendationId,
   recommendations: Array.isArray(item.recommendations) ? item.recommendations : [],
   suggestions: Array.isArray(item.adjustmentSuggestions) ? item.adjustmentSuggestions : [],
-  limitingConditions: Array.isArray(item.limitingConditions) ? item.limitingConditions : []
+  limitingConditions: Array.isArray(item.limitingConditions) ? item.limitingConditions : [],
+  notice: degradationNotice(item)
 })
+
+const degradationNotice = data => {
+  if (data?.responseType === 'DATA_ERROR') return '数据服务异常，请稍后重试'
+  if (data?.recommendation?.semanticStatus === 'UNAVAILABLE') return '语义检索暂不可用，本次已使用确定性规则排序'
+  if (data?.degraded && data?.extractor === 'RULE_FALLBACK') return 'AI 理解暂不可用，本次已使用规则安全降级'
+  if (data?.degraded) return '部分 AI 能力暂不可用，核心推荐仍可使用'
+  return ''
+}
 
 const scrollToBottom = async () => {
   await nextTick()
@@ -348,7 +401,11 @@ const submitMessage = async () => {
   const userId = currentUserId()
   logSearch({ userId: userId !== 'anonymous' ? userId : undefined, keyword: content }).catch(() => {})
 
-  const requestId = createRequestId()
+  const requestId =
+    pendingRequest.value?.content === content
+      ? pendingRequest.value.requestId
+      : createRequestId()
+  pendingRequest.value = { content, requestId }
   sending.value = true
   errorMessage.value = ''
   try {
@@ -385,13 +442,15 @@ const submitMessage = async () => {
       recommendationId: data.recommendation?.recommendationId,
       recommendations: data.recommendation?.results || [],
       suggestions: data.recommendation?.adjustmentSuggestions || [],
-      limitingConditions: data.recommendation?.limitingConditions || []
+      limitingConditions: data.recommendation?.limitingConditions || [],
+      notice: degradationNotice(data)
     })
     currentConstraints.value =
       data.recommendation?.currentConstraints ||
       data.currentConstraints ||
       currentConstraints.value
     draft.value = ''
+    pendingRequest.value = null
   } catch (error) {
     errorMessage.value = error.message || '网络或 AI 服务异常，请稍后重新发送'
   } finally {
@@ -477,11 +536,14 @@ const evidenceTypeText = type => ({
 }[type] || '推荐依据')
 
 const openEvidence = async (message, merchant) => {
-  if (!message.recommendationId) return
   evidenceDialogOpen.value = true
   evidenceLoading.value = true
   evidenceError.value = ''
   evidences.value = []
+  if (!message.recommendationId) {
+    evidenceLoading.value = false
+    return
+  }
   try {
     const response = await getRecommendationEvidences(
       message.recommendationId,
@@ -515,6 +577,7 @@ onMounted(initialize)
 .location-button { min-width: 132px; padding: 8px 13px; border: 1px solid #8b5cf6; border-radius: 9px; color: #6d28d9; background: #fff; cursor: pointer; }
 .location-button:disabled { opacity: .6; cursor: wait; }
 .location-status { color: #667085; font-size: 13px; }
+.constraint-bar { display: flex; gap: 10px; padding: 10px 22px; color: #475467; background: #f8fafc; font-size: 13px; }
 .message-list { height: calc(100vh - 280px); min-height: 430px; overflow-y: auto; padding: 28px; }
 .empty-panel, .state-panel { height: 100%; display: grid; place-content: center; text-align: center; color: #667085; }
 .empty-panel h2 { color: #1f2937; margin: 12px 0 4px; }
@@ -541,6 +604,8 @@ onMounted(initialize)
 .merchant-meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .merchant-meta span { padding: 3px 7px; border-radius: 6px; background: #f3f4f6; color: #4b5563; font-size: 12px; }
 .reason { margin-top: 12px !important; color: #374151; font-size: 14px; }
+.risk-list { margin: 8px 0 0; padding-left: 20px; color: #b45309; font-size: 13px; }
+.notice-banner { margin-top: 10px; padding: 9px 11px; border-radius: 8px; color: #475467; background: #eef2ff; font-size: 13px; }
 .matched-dishes { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .matched-dishes-title { color: #6b7280; font-size: 13px; }
 .matched-dish { padding: 4px 8px; border-radius: 999px; background: #fff7ed; color: #9a3412; font-size: 13px; }
@@ -554,6 +619,7 @@ onMounted(initialize)
 .limiting-panel ul { margin: 7px 0 0; padding-left: 20px; }
 .typing-indicator { color: #7c3aed; font-size: 14px; }
 .error-banner { margin: 0 28px 12px; padding: 11px 14px; border-radius: 9px; color: #b42318; background: #fef3f2; }
+.retry-button { margin-left: 12px; border: 1px solid #b42318; border-radius: 7px; color: #b42318; background: #fff; cursor: pointer; }
 .composer { padding: 18px 22px; border-top: 1px solid #eaecf0; background: #fff; }
 .composer textarea { width: 100%; resize: none; box-sizing: border-box; padding: 13px; border: 1px solid #d0d5dd; border-radius: 12px; font: inherit; }
 .composer textarea:focus { outline: 0; border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, .1); }

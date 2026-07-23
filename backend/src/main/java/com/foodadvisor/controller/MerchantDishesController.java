@@ -4,14 +4,18 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.entity.Dish;
+import com.foodadvisor.entity.OpenSearchSyncTask;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.mapper.DishMapper;
 import com.foodadvisor.service.ContentStatusService;
+import com.foodadvisor.service.OpenSearchSyncService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -19,6 +23,7 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api/merchant-console/dishes")
+@Transactional
 public class MerchantDishesController {
 
     private static final Logger log =
@@ -31,6 +36,8 @@ public class MerchantDishesController {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ContentStatusService contentStatusService;
+    @Autowired(required = false)
+    private OpenSearchSyncService openSearchSyncService;
 
     public MerchantDishesController(
             DishMapper dishMapper,
@@ -122,6 +129,7 @@ public class MerchantDishesController {
         dish.setStatus(status != null && VALID_STATUSES.contains(status) ? status : "ACTIVE");
 
         dishMapper.insert(dish);
+        enqueueDishSync(dish);
 
         log.info("商户 userId={} 新增菜品 dishId={}, name={}, merchantId={}",
                 userId, dish.getId(), dish.getName(), merchantId);
@@ -179,6 +187,7 @@ public class MerchantDishesController {
         }
 
         dishMapper.updateById(dish);
+        enqueueDishSync(dish);
 
         log.info("商户 userId={} 修改菜品 dishId={}", userId, dishId);
         return ApiResponse.success("菜品已更新", dish);
@@ -210,6 +219,7 @@ public class MerchantDishesController {
         String oldStatus = dish.getStatus();
         dish.setStatus(newStatus);
         dishMapper.updateById(dish);
+        enqueueDishSync(dish);
 
         // 记录状态变更历史
         if (!newStatus.equals(oldStatus)) {
@@ -243,6 +253,7 @@ public class MerchantDishesController {
 
         dish.setStatus("OFF_SHELF");
         dishMapper.updateById(dish);
+        enqueueDishSync(dish);
 
         log.info("商户 userId={} 下架菜品 dishId={}", userId, dishId);
         return ApiResponse.success("菜品已下架", null);
@@ -279,6 +290,18 @@ public class MerchantDishesController {
                         "WHERE user_id = ? AND status = 'ACTIVE'",
                 Long.class, userId
         );
+    }
+
+    private void enqueueDishSync(Dish dish) {
+        if (openSearchSyncService == null || dish == null || dish.getId() == null) {
+            return;
+        }
+        openSearchSyncService.createSyncTask(
+                "DISH",
+                dish.getId(),
+                "ACTIVE".equals(dish.getStatus())
+                        ? OpenSearchSyncTask.OP_UPSERT
+                        : OpenSearchSyncTask.OP_DISABLE);
     }
 
     private String parseTasteTags(Map<String, Object> body) {

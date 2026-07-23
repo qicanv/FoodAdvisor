@@ -22,6 +22,7 @@ from app.models.schemas import (
     BatchAnalyzeRequest, BatchAnalyzeResponse
 )
 from app.schemas.dialogue import DialogueExtractRequest, DialogueExtractResponse
+from app.schemas.dining_reply import DiningReply, DiningReplyRequest
 from app.schemas.content_processing import (
     ProcessRequest, ProcessResult, QueryRequest,
 )
@@ -30,6 +31,7 @@ from app.schemas.knowledge import (
     KnowledgeDeactivateRequest, KnowledgeDeactivateResponse,
 )
 from app.services.dialogue_extraction_service import dialogue_extraction_service
+from app.services.dining_reply_service import dining_reply_service
 from app.services.review_analysis_service import review_analysis_service
 from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
 from app.services.review_summary_service import review_summary_service
@@ -121,6 +123,11 @@ async def extract_dialogue_constraints(request: DialogueExtractRequest):
         raise HTTPException(status_code=422, detail="content must not be blank")
 
     return await dialogue_extraction_service.extract(request)
+
+
+@router.post("/dialogue/reply", response_model=DiningReply)
+async def generate_dining_reply(request: DiningReplyRequest):
+    return await dining_reply_service.generate(request)
 
 
 # ---- 内容清洗与切分 ----
@@ -258,6 +265,22 @@ async def deactivate_knowledge(request: KnowledgeDeactivateRequest):
         result.deactivatedCount,
     )
     return result
+
+
+@router.post("/knowledge/active-counts", summary="读取活跃知识来源计数")
+async def active_knowledge_counts():
+    """Read-only reconciliation view; no index mutation is performed."""
+    try:
+        return get_knowledge_service().active_source_counts()
+    except Exception as exc:
+        logger.warning(
+            "读取 OpenSearch 活跃来源计数失败: %s",
+            exc.__class__.__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="OpenSearch reconciliation is unavailable",
+        ) from exc
 
 
 # ---- 语义检索 ----

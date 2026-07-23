@@ -5,6 +5,13 @@ const request = axios.create({
   timeout: 10000,
 })
 
+export const buildLoginRedirect = (pathname, search = '') =>
+  `/diner?redirect=${encodeURIComponent(`${pathname}${search}`)}`
+
+const redirectToLogin = () => window.location.assign(
+  buildLoginRedirect(window.location.pathname, window.location.search)
+)
+
 request.interceptors.request.use(
   config => {
     const token = localStorage.getItem('token') || localStorage.getItem('accessToken')
@@ -44,7 +51,7 @@ request.interceptors.response.use(
       localStorage.removeItem('accessToken')
       localStorage.removeItem('user')
       localStorage.removeItem('userInfo')
-      window.location.href = '/diner'
+      redirectToLogin()
       return { success: false, code, message }
     }
     return { success: false, code, message, data }
@@ -56,7 +63,7 @@ request.interceptors.response.use(
       if (code === 40101 || code === 40102) {
         localStorage.removeItem('accessToken')
         localStorage.removeItem('userInfo')
-        window.location.href = '/login'
+        redirectToLogin()
       }
       return { success: false, code: response.status, message, data }
     }

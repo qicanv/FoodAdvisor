@@ -14,6 +14,7 @@ import com.foodadvisor.service.OpenSearchSyncService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -22,6 +23,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/admin/merchants")
 @Slf4j
+@Transactional
 public class AdminMerchantController {
 
     private static final String CONTENT_TYPE_MERCHANT = "MERCHANT";
@@ -177,6 +179,9 @@ public class AdminMerchantController {
         }
 
         merchantMapper.insert(merchant);
+        openSearchSyncService.createSyncTask(
+                CONTENT_TYPE_MERCHANT, merchant.getId(),
+                com.foodadvisor.entity.OpenSearchSyncTask.OP_UPSERT);
 
         // 记录初始状态
         Long userId = getUserId(request);
@@ -185,11 +190,6 @@ public class AdminMerchantController {
                 null, merchant.getPlatformStatus(),
                 userId, "商家创建"
         );
-
-        // 异步触发知识入库（增强文本 → OpenSearch）
-        if ("ACTIVE".equals(merchant.getPlatformStatus())) {
-            triggerKnowledgeSync(merchant.getId());
-        }
 
         return ApiResponse.success(merchant);
     }
@@ -233,6 +233,8 @@ public class AdminMerchantController {
         }
 
         merchantMapper.updateById(merchant);
+        triggerSync(id, isSearchable(merchant)
+                ? "ACTIVE" : "DISABLED");
 
         // 记录状态变更历史并触发同步
         if (newPlatformStatus != null && !newPlatformStatus.equals(oldPlatformStatus)) {
@@ -317,6 +319,8 @@ public class AdminMerchantController {
                         userId, reason
                 );
             }
+            triggerSync(id, isSearchable(merchant)
+                    ? "ACTIVE" : "DISABLED");
         }
 
         return ApiResponse.success(merchant);
@@ -431,22 +435,22 @@ public class AdminMerchantController {
     }
 
     private void triggerSync(Long merchantId, String newStatus) {
-        try {
-            if ("DISABLED".equals(newStatus) || "ARCHIVED".equals(newStatus)) {
-                openSearchSyncService.createSyncTask(
-                        CONTENT_TYPE_MERCHANT, merchantId,
-                        com.foodadvisor.entity.OpenSearchSyncTask.OP_DISABLE
-                );
-            } else if ("ACTIVE".equals(newStatus)) {
-                openSearchSyncService.createSyncTask(
-                        CONTENT_TYPE_MERCHANT, merchantId,
-                        com.foodadvisor.entity.OpenSearchSyncTask.OP_UPSERT
-                );
-            }
-        } catch (Exception e) {
-            log.error("创建同步任务失败: merchantId={}, newStatus={}, error={}",
-                    merchantId, newStatus, e.getMessage(), e);
+        if ("DISABLED".equals(newStatus) || "ARCHIVED".equals(newStatus)) {
+            openSearchSyncService.createSyncTask(
+                    CONTENT_TYPE_MERCHANT, merchantId,
+                    com.foodadvisor.entity.OpenSearchSyncTask.OP_DISABLE);
+        } else if ("ACTIVE".equals(newStatus)) {
+            openSearchSyncService.createSyncTask(
+                    CONTENT_TYPE_MERCHANT, merchantId,
+                    com.foodadvisor.entity.OpenSearchSyncTask.OP_UPSERT);
         }
+    }
+
+    private boolean isSearchable(Merchant merchant) {
+        return merchant != null
+                && "ACTIVE".equals(merchant.getPlatformStatus())
+                && "OPERATING".equals(merchant.getOperationStatus())
+                && merchant.getDeletedAt() == null;
     }
 
     /**

@@ -263,7 +263,7 @@ class RecommendationRankingServiceTest {
 
         assertAll(
                 () -> assertEquals(
-                        "RULE_V1",
+                        "RULE_FALLBACK_V1",
                         response.getAlgorithmVersion()
                 ),
                 () -> assertTrue(response.getMatched()),
@@ -1285,6 +1285,9 @@ class RecommendationRankingServiceTest {
                                                 && condition
                                                 .getRecoveredMerchantCount()
                                                 == 1
+                                                && condition
+                                                .getCandidateMerchantIds()
+                                                .equals(List.of(603L))
                                 )
                 )
         );

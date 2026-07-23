@@ -3,6 +3,7 @@ from math import isfinite
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from app.schemas.constraint_patch import ConstraintPatch
 
 
 ALLOWED_FIELDS = {
@@ -23,6 +24,10 @@ ALLOWED_FIELDS = {
     "businessTime",
     "businessTargetTime",
     "businessTargetNextDay",
+    "businessTargetDate",
+    "businessTargetDayOfWeek",
+    "businessTimeWindow",
+    "timezone",
 }
 
 
@@ -56,6 +61,22 @@ class ConstraintStateModel(BaseModel):
         pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
     )
     businessTargetNextDay: Optional[bool] = None
+    businessTargetDate: Optional[str] = Field(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    )
+    businessTargetDayOfWeek: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=7,
+    )
+    businessTimeWindow: Optional[str] = None
+    timezone: Optional[str] = Field(default="Asia/Shanghai", max_length=100)
+
+    constraintStrengths: dict[str, Any] = Field(
+        default_factory=dict,
+        exclude=True,
+    )
 
     @field_validator("totalBudget", "perCapitaBudget", "distanceKm", "minRating")
     @classmethod
@@ -185,6 +206,10 @@ class DialogueExtractRequest(BaseModel):
     currentConstraints: ConstraintStateModel = Field(
         default_factory=ConstraintStateModel
     )
+    recentMessages: list[dict[str, str]] = Field(default_factory=list, max_length=6)
+    rejectedFields: list[str] = Field(default_factory=list)
+    pendingConflicts: list[dict] = Field(default_factory=list)
+    timezone: str = Field(default="Asia/Shanghai", max_length=100)
     runtimeModel: RuntimeModelConfigModel
     systemPrompt: Optional[str] = Field(
         default=None,
@@ -220,6 +245,7 @@ class DialogueExtractResponse(BaseModel):
     modelVersion: Optional[str] = None
     promptVersion: Optional[str] = "dialogue-extraction:v1"
     provider: Optional[str] = None
+    patch: Optional[ConstraintPatch] = None
 
     @field_validator("clearedFields", mode="before")
     @classmethod

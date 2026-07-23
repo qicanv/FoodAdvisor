@@ -304,6 +304,11 @@ CREATE TABLE IF NOT EXISTS constraint_extractions (
     conflict_fields JSONB NOT NULL DEFAULT '[]'::jsonb,
     model_name VARCHAR(100),
     model_version VARCHAR(100),
+    constraint_patch JSONB NOT NULL DEFAULT '{}'::jsonb,
+    extractor VARCHAR(30),
+    degraded BOOLEAN NOT NULL DEFAULT FALSE,
+    prompt_version VARCHAR(150),
+    degradation_reason VARCHAR(100),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_constraint_extractions_session
@@ -316,6 +321,37 @@ CREATE TABLE IF NOT EXISTS constraint_extractions (
 
     CONSTRAINT uk_constraint_extraction_message UNIQUE (message_id)
 );
+
+-- OpenSearch transactional outbox.
+CREATE TABLE IF NOT EXISTS opensearch_sync_tasks (
+    id BIGSERIAL PRIMARY KEY,
+    source_type VARCHAR(30) NOT NULL,
+    source_id BIGINT NOT NULL,
+    operation_type VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMPTZ,
+    error_message VARCHAR(500),
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    content_version INTEGER NOT NULL DEFAULT 1,
+    content_hash VARCHAR(128),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_opensearch_sync_source
+        CHECK (source_type IN ('MERCHANT','MERCHANT_INTRO','MENU','REVIEW')),
+    CONSTRAINT ck_opensearch_sync_operation
+        CHECK (operation_type IN ('UPSERT','DISABLE','DELETE','REINDEX')),
+    CONSTRAINT ck_opensearch_sync_status
+        CHECK (status IN ('PENDING','PROCESSING','SUCCESS','FAILED')),
+    CONSTRAINT ck_opensearch_sync_retry CHECK (retry_count >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_opensearch_sync_due
+    ON opensearch_sync_tasks(status, next_retry_at, id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_opensearch_sync_active_task
+    ON opensearch_sync_tasks(source_type, source_id, operation_type)
+    WHERE status IN ('PENDING','PROCESSING');
 
 -- ============================================
 -- 5.14 閹恒劏宕樼拋鏉跨秿鐞?recommendations
