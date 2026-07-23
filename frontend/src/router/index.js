@@ -114,6 +114,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'merchant' },
   },
   {
+    path: '/merchant/business-suggestions',
+    name: 'merchant-business-suggestions',
+    component: () => import('../views/merchant/BusinessSuggestionsView.vue'),
+    meta: { requiresAuth: true, role: 'merchant' },
+  },
+  {
     path: '/admin',
     name: 'admin-login',
     component: () => import('../views/admin/LoginView.vue'),
