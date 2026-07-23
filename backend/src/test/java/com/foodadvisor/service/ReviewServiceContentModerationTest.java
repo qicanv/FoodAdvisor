@@ -417,9 +417,6 @@ class ReviewServiceContentModerationTest {
         review.setSource("SYSTEM");
         review.setContent("Existing published review");
         review.setRating(BigDecimal.valueOf(4));
-        review.setTasteRating(BigDecimal.valueOf(4));
-        review.setEnvironmentRating(BigDecimal.valueOf(4));
-        review.setServiceRating(BigDecimal.valueOf(4));
         review.setCurrentVersion(1);
         review.setStatus("PUBLISHED");
         review.setModerationStatus("APPROVED");

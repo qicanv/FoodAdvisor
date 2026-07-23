@@ -15,16 +15,17 @@
         </div>
         <div class="filter-item">
           <label>风险等级</label>
-          <select v-model="filters.riskLevel" class="filter-select" @change="loadReviewList">
+          <select v-model="filters.riskLevel" class="filter-select" @change="handleFilterChange">
             <option value="">全部</option>
             <option value="HIGH">高风险</option>
             <option value="MEDIUM">中风险</option>
-            <option value="LOW">低风险</option>
           </select>
         </div>
         <div class="filter-item">
           <label>处理状态</label>
           <select v-model="filters.moderationStatus" class="filter-select" @change="loadReviewList">
+          <select v-model="filters.moderationStatus" class="filter-select" @change="handleFilterChange">
+            <option value="">全部</option>
             <option value="PENDING">待审核</option>
             <option value="">全部</option>
             <option value="APPROVED">已通过</option>
@@ -33,7 +34,7 @@
         </div>
         <div class="filter-item">
           <label>商家</label>
-          <select v-model="filters.merchantId" class="filter-select" @change="loadReviewList">
+          <select v-model="filters.merchantId" class="filter-select" @change="handleFilterChange">
             <option value="">全部商家</option>
             <option v-for="merchant in merchants" :key="merchant.id" :value="merchant.id">
               {{ merchant.name }}
@@ -42,11 +43,11 @@
         </div>
         <div class="filter-item">
           <label>开始时间</label>
-          <input type="datetime-local" v-model="filters.startTime" class="filter-input" @change="loadReviewList" />
+          <input type="datetime-local" v-model="filters.startTime" class="filter-input" @change="handleFilterChange" />
         </div>
         <div class="filter-item">
           <label>结束时间</label>
-          <input type="datetime-local" v-model="filters.endTime" class="filter-input" @change="loadReviewList" />
+          <input type="datetime-local" v-model="filters.endTime" class="filter-input" @change="handleFilterChange" />
         </div>
         <div class="filter-item filter-actions">
           <button class="btn-reset" @click="resetFilters">重置</button>
@@ -57,6 +58,7 @@
 
     <!-- 统计卡片：内容审核 + 违规检测 -->
     <div class="stats-cards">
+    <div class="stat-cards">
       <div class="stat-card stat-card-pending">
         <div class="stat-icon">⏳</div>
         <div class="stat-info">
@@ -85,6 +87,7 @@
           <div class="stat-label">降级检测（30天）</div>
         </div>
       </div>
+      
     </div>
 
     <!-- 违规类型分布 -->
@@ -111,6 +114,7 @@
               <th>评分</th>
               <th>风险等级</th>
               <th>审核状态</th>
+              <th>审核人员</th>
               <th>商家</th>
               <th>用户</th>
               <th>提交时间</th>
@@ -136,20 +140,20 @@
                   {{ getModerationStatusText(modStatus(item)) }}
                 </span>
               </td>
+              <td class="cell-operator">{{ item.moderationOperator || '尚未审核' }}</td>
               <td class="cell-merchant">{{ item.merchantName || '-' }}</td>
               <td class="cell-user">{{ item.userNickname || item.username || '-' }}</td>
               <td class="cell-time">{{ formatTime(item.createdAt) }}</td>
-              <td class="cell-actions" @click.stop>
-                <button class="action-btn btn-detail" @click="showDetail(item)">详情</button>
-                <template v-if="isPending(item)">
-                  <button class="action-btn btn-approve" @click="handleAction(item, 'APPROVE')">✓ 通过</button>
-                  <button class="action-btn btn-reject" @click="handleAction(item, 'REJECT')">✗ 驳回</button>
-                </template>
-                <span v-else class="action-done">{{ getModerationStatusText(modStatus(item)) }}</span>
+              <td class="cell-actions">
+                <button class="action-btn btn-detail" @click.stop="showDetail(item)">详情</button>
+                <button v-if="item.moderationStatus === 'PENDING'" class="action-btn btn-approve" @click.stop="handleAction(item, 'APPROVE')">通过</button>
+                <button v-if="item.moderationStatus === 'PENDING'" class="action-btn btn-reject" @click.stop="handleAction(item, 'REJECT')">驳回</button>
+                <button v-if="item.moderationStatus === 'APPROVED'" class="action-btn btn-undo-approve" @click.stop="handleAction(item, 'UNDO_APPROVE')">撤销通过</button>
+                <button v-if="item.moderationStatus === 'REJECTED'" class="action-btn btn-undo-reject" @click.stop="handleAction(item, 'UNDO_REJECT')">撤销驳回</button>
               </td>
             </tr>
             <tr v-if="reviewList.length === 0" class="empty-row">
-              <td colspan="9" class="empty-cell">暂无数据</td>
+              <td colspan="10" class="empty-cell">暂无数据</td>
             </tr>
           </tbody>
         </table>
@@ -248,32 +252,8 @@
               </div>
             </div>
             <div class="detail-row">
-              <span class="detail-label">口味评分</span>
-              <span>{{ currentDetail.tasteRating || '-' }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">环境评分</span>
-              <span>{{ currentDetail.environmentRating || '-' }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">服务评分</span>
-              <span>{{ currentDetail.serviceRating || '-' }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">人均消费</span>
-              <span>{{ currentDetail.averageSpend ? '￥' + currentDetail.averageSpend : '-' }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">消费日期</span>
-              <span>{{ currentDetail.consumptionDate || '-' }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">评价来源</span>
-              <span>{{ getSourceText(currentDetail.source) }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">评价时间</span>
-              <span>{{ formatTime(currentDetail.reviewTime) }}</span>
+              <span class="detail-label">审核人员</span>
+              <span>{{ currentDetail.moderationOperator || '尚未审核' }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">提交时间</span>
@@ -337,6 +317,20 @@
                         </div>
                       </div>
                     </div>
+                <div v-if="currentDetail.matchedRules && currentDetail.matchedRules.length > 0" class="rules-container">
+                  <div v-for="(rule, index) in currentDetail.matchedRules" :key="index" class="rule-item">
+                    <span :class="['rule-icon', getRiskLevelClass(rule.riskLevel)]">{{ getRiskLevelIcon(rule.riskLevel) }}</span>
+                    <div class="rule-info">
+                      <div class="rule-name">{{ rule.ruleName }}</div>
+                      <div class="rule-desc">{{ rule.description }}</div>
+                      <div v-if="rule.keyword" class="rule-keyword">
+                        <span class="keyword-label">匹配关键词：</span>
+                        <span class="keyword-value">{{ rule.keyword }}</span>
+                      </div>
+                    </div>
+                    <span :class="['risk-badge', (rule.riskLevel || '').toLowerCase()]">
+                      {{ getRiskLevelText(rule.riskLevel) }}
+                    </span>
                   </div>
                 </div>
                 <div v-else class="rule-item">
@@ -352,12 +346,14 @@
           </div>
         </div>
         <div v-if="currentDetail && modStatus(currentDetail) === 'PENDING'" class="modal-footer">
+        <div v-if="currentDetail && (currentDetail.moderationStatus === 'PENDING' || currentDetail.moderationStatus === 'APPROVED')" class="modal-footer">
           <textarea v-model="reviewRemark" class="remark-input" placeholder="请输入审核备注（可选）" rows="3"></textarea>
           <div class="footer-actions">
-            <button class="footer-btn btn-approve" @click="handleAction(currentDetail, 'APPROVE')">通过</button>
-            <button class="footer-btn btn-reject" @click="handleAction(currentDetail, 'REJECT')">驳回</button>
-            <button class="footer-btn btn-delete" @click="handleAction(currentDetail, 'DELETE')">删除</button>
-            <button class="footer-btn btn-return" @click="handleAction(currentDetail, 'RETURN_FOR_MODIFICATION')">退回修改</button>
+            <button v-if="currentDetail.moderationStatus === 'PENDING'" class="footer-btn btn-approve" @click="handleAction(currentDetail, 'APPROVE')">通过</button>
+            <button v-if="currentDetail.moderationStatus === 'APPROVED'" class="footer-btn btn-undo-approve" @click="handleAction(currentDetail, 'UNDO_APPROVE')">撤销通过</button>
+            <button v-if="currentDetail.moderationStatus === 'PENDING'" class="footer-btn btn-reject" @click="handleAction(currentDetail, 'REJECT')">驳回</button>
+            <button v-if="currentDetail.moderationStatus === 'REJECTED'" class="footer-btn btn-undo-reject" @click="handleAction(currentDetail, 'UNDO_REJECT')">撤销驳回</button>
+            <button v-if="currentDetail.moderationStatus === 'PENDING'" class="footer-btn btn-return" @click="handleAction(currentDetail, 'RETURN_FOR_MODIFICATION')">退回修改</button>
             <button class="footer-btn btn-cancel" @click="closeDetail">取消</button>
           </div>
         </div>
@@ -392,6 +388,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
 import { getReviewList, getReviewDetail, getActiveMerchants, getPendingCount, moderateReview } from '../../api/moderation'
 import { getRiskRecords, getViolationStats } from '../../api/violationText'
+import { getReviewList, getReviewDetail, getActiveMerchants, getPendingCount, moderateReview, getStats } from '../../api/moderation'
 
 const reviewList = ref([])
 const merchants = ref([])
@@ -445,8 +442,7 @@ const pagination = reactive({
 const stats = reactive({
   pending: 0,
   highRisk: 0,
-  mediumRisk: 0,
-  lowRisk: 0
+  mediumRisk: 0
 })
 
 const truncateContent = (content) => {
@@ -469,6 +465,16 @@ const formatTime = (timeStr) => {
 const getRiskLevelText = (level) => {
   const map = { HIGH: '高风险', MEDIUM: '中风险', LOW: '低风险' }
   return map[level] || '未知'
+}
+
+const getRiskLevelIcon = (level) => {
+  const map = { HIGH: '🔴', MEDIUM: '🟡', LOW: '🟢' }
+  return map[level] || '⚪'
+}
+
+const getRiskLevelClass = (level) => {
+  const map = { HIGH: 'risk-high', MEDIUM: 'risk-medium', LOW: 'risk-low' }
+  return map[level] || 'risk-default'
 }
 
 const getModerationStatusText = (status) => {
@@ -499,7 +505,7 @@ const modStatus = (item) => {
 const isPending = (item) => modStatus(item) === 'PENDING'
 
 const getActionTitle = (type) => {
-  const map = { APPROVE: '确认通过', REJECT: '确认驳回', DELETE: '确认删除', RETURN_FOR_MODIFICATION: '确认退回修改' }
+  const map = { APPROVE: '确认通过', REJECT: '确认驳回', DELETE: '确认删除', RETURN_FOR_MODIFICATION: '确认退回修改', UNDO_APPROVE: '确认撤销通过' }
   return map[type] || '确认操作'
 }
 
@@ -508,13 +514,14 @@ const getActionDesc = (type) => {
     APPROVE: '通过后该评价将进入已发布状态，用户可正常查看。',
     REJECT: '驳回后该评价将被隐藏，用户不可查看。',
     DELETE: '删除后该评价将被永久移除，请谨慎操作。',
-    RETURN_FOR_MODIFICATION: '退回后用户可修改评价内容后重新提交。'
+    RETURN_FOR_MODIFICATION: '退回后用户可修改评价内容后重新提交。',
+    UNDO_APPROVE: '撤销通过后该评价将回到待审核状态，需重新审核。'
   }
   return map[type] || ''
 }
 
 const getActionText = (type) => {
-  const map = { APPROVE: '通过', REJECT: '驳回', DELETE: '删除', RETURN_FOR_MODIFICATION: '退回修改' }
+  const map = { APPROVE: '通过', REJECT: '驳回', DELETE: '删除', RETURN_FOR_MODIFICATION: '退回修改', UNDO_APPROVE: '撤销通过' }
   return map[type] || '操作'
 }
 
@@ -599,26 +606,37 @@ const loadViolationStats = async () => {
   } catch (e) {
     console.error('加载违规统计失败:', e)
   }
+const handleFilterChange = () => {
+  pagination.pageNum = 1
+  loadReviewList()
+}
+
+const formatDateTime = (dateTimeStr) => {
+  if (!dateTimeStr) return undefined
+  return dateTimeStr + ':00'
 }
 
 const loadReviewList = async () => {
   loading.value = true
   try {
-    const params = {
-      riskLevel: filters.riskLevel || undefined,
-      moderationStatus: filters.moderationStatus || undefined,
-      merchantId: filters.merchantId ? Number(filters.merchantId) : undefined,
-      startTime: filters.startTime || undefined,
-      endTime: filters.endTime || undefined,
-      pageNum: pagination.pageNum,
-      pageSize: pagination.pageSize
-    }
+    const params = {}
+    if (filters.riskLevel) params.riskLevel = filters.riskLevel
+    if (filters.moderationStatus) params.moderationStatus = filters.moderationStatus
+    if (filters.merchantId) params.merchantId = Number(filters.merchantId)
+    if (filters.startTime) params.startTime = formatDateTime(filters.startTime)
+    if (filters.endTime) params.endTime = formatDateTime(filters.endTime)
+    params.pageNum = pagination.pageNum
+    params.pageSize = pagination.pageSize
+    
+    console.log('Loading review list with params:', params)
+    
     const response = await getReviewList(params)
     if (response.success && response.data) {
+      reviewList.value = []
       reviewList.value = response.data.records || []
       pagination.total = response.data.total || 0
       pagination.totalPages = response.data.totalPages || 0
-      calculateStats()
+      await calculateStats()
     }
   } catch (error) {
     console.error('加载审核列表失败:', error)
@@ -633,6 +651,20 @@ const calculateStats = () => {
   stats.highRisk = reviewList.value.filter(item => item.riskLevel === 'HIGH').length
   stats.mediumRisk = reviewList.value.filter(item => item.riskLevel === 'MEDIUM').length
   stats.lowRisk = reviewList.value.filter(item => item.riskLevel === 'LOW').length
+const calculateStats = async () => {
+  try {
+    const response = await getStats()
+    if (response.success && response.data) {
+      stats.pending = response.data.pending || 0
+      stats.highRisk = response.data.highRisk || 0
+      stats.mediumRisk = response.data.mediumRisk || 0
+    }
+  } catch (error) {
+    console.error('获取统计数据失败:', error)
+    stats.pending = reviewList.value.filter(item => item.moderationStatus === 'PENDING').length
+    stats.highRisk = reviewList.value.filter(item => item.riskLevel === 'HIGH').length
+    stats.mediumRisk = reviewList.value.filter(item => item.riskLevel === 'MEDIUM').length
+  }
 }
 
 const loadMerchants = async () => {
@@ -699,12 +731,30 @@ const closeDetail = () => {
 const handleAction = (item, action) => {
   if (modStatus(item) !== 'PENDING') {
     showToast('该评价已处理，无法重复操作', 'error')
+  if (item.moderationStatus === 'APPROVED') {
+    if (['UNDO_APPROVE'].includes(action)) {
+      actionType.value = action
+      actionTarget.value = item
+      actionRemark.value = ''
+      showActionModal.value = true
+      return
+    }
+  } else if (item.moderationStatus === 'REJECTED') {
+    if (['UNDO_REJECT'].includes(action)) {
+      actionType.value = action
+      actionTarget.value = item
+      actionRemark.value = ''
+      showActionModal.value = true
+      return
+    }
+  } else if (item.moderationStatus === 'PENDING') {
+    actionType.value = action
+    actionTarget.value = item
+    actionRemark.value = ''
+    showActionModal.value = true
     return
   }
-  actionType.value = action
-  actionTarget.value = item
-  actionRemark.value = ''
-  showActionModal.value = true
+  showToast('该评价已处理，无法重复操作', 'error')
 }
 
 const closeActionModal = () => {
@@ -717,7 +767,6 @@ const closeActionModal = () => {
 const confirmAction = async () => {
   if (!actionTarget.value) return
 
-  const loadingToast = true
   try {
     const response = await moderateReview(actionTarget.value.id, actionType.value, actionRemark.value)
     if (response.success) {
@@ -730,7 +779,11 @@ const confirmAction = async () => {
     }
   } catch (error) {
     console.error('审核操作失败:', error)
-    showToast('操作失败，请重试', 'error')
+    if (error.response && error.response.status === 403) {
+      showToast('您没有权限执行此操作', 'error')
+    } else {
+      showToast('操作失败，请重试', 'error')
+    }
   }
 }
 
@@ -833,9 +886,9 @@ onMounted(() => {
   background: #40a9ff;
 }
 
-.stats-cards {
+.stat-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -843,37 +896,45 @@ onMounted(() => {
 .stat-card {
   background: #fff;
   border-radius: 12px;
-  padding: 20px;
+  padding: 16px 20px;
   display: flex;
   align-items: center;
   gap: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
+.stat-card-pending {
+  background: linear-gradient(135deg, #fff7e6 0%, #fff1cc 100%);
+}
+
 .stat-card-pending .stat-icon {
   background: linear-gradient(135deg, #fa8c16 0%, #ffa940 100%);
+}
+
+.stat-card-high {
+  background: linear-gradient(135deg, #fff2f0 0%, #ffccc7 100%);
 }
 
 .stat-card-high .stat-icon {
   background: linear-gradient(135deg, #f5222d 0%, #ff4d4f 100%);
 }
 
-.stat-card-medium .stat-icon {
-  background: linear-gradient(135deg, #fa8c16 0%, #ffa940 100%);
+.stat-card-medium {
+  background: linear-gradient(135deg, #fffbe6 0%, #fff1b8 100%);
 }
 
-.stat-card-low .stat-icon {
-  background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
+.stat-card-medium .stat-icon {
+  background: linear-gradient(135deg, #faad14 0%, #ffc53d 100%);
 }
 
 .stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 22px;
 }
 
 .stat-info {
@@ -881,13 +942,13 @@ onMounted(() => {
 }
 
 .stat-value {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
   color: #1f2329;
 }
 
 .stat-label {
-  font-size: 13px;
+  font-size: 14px;
   color: #8f959e;
   margin-top: 4px;
 }
@@ -1089,6 +1150,24 @@ onMounted(() => {
   background: rgba(245, 34, 45, 0.2);
 }
 
+.btn-undo-approve {
+  background: rgba(24, 144, 255, 0.1);
+  color: #1890ff;
+}
+
+.btn-undo-approve:hover {
+  background: rgba(24, 144, 255, 0.2);
+}
+
+.btn-undo-reject {
+  background: rgba(24, 144, 255, 0.1);
+  color: #1890ff;
+}
+
+.btn-undo-reject:hover {
+  background: rgba(24, 144, 255, 0.2);
+}
+
 .empty-row {
   background: #f7f8fa;
 }
@@ -1253,20 +1332,80 @@ onMounted(() => {
   color: #faad14;
 }
 
-.rule-item {
+.rules-container {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.rule-item:last-child {
-  border-bottom: none;
+.rule-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e5e6eb;
 }
 
 .rule-icon {
-  font-size: 16px;
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.rule-icon.risk-high {
+  color: #f5222d;
+}
+
+.rule-icon.risk-medium {
+  color: #fa8c16;
+}
+
+.rule-icon.risk-low {
+  color: #52c41a;
+}
+
+.rule-icon.risk-default {
+  color: #8f959e;
+}
+
+.rule-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rule-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2329;
+}
+
+.rule-desc {
+  font-size: 13px;
+  color: #8f959e;
+}
+
+.rule-keyword {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.keyword-label {
+  font-size: 12px;
+  color: #8f959e;
+}
+
+.keyword-value {
+  font-size: 12px;
+  color: #f5222d;
+  font-weight: 500;
+  background: rgba(245, 34, 45, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .rule-text {
@@ -1355,6 +1494,14 @@ onMounted(() => {
   background: #40a9ff;
 }
 
+.btn-confirm.btn-undo_approve {
+  background: #1890ff;
+}
+
+.btn-confirm.btn-undo_approve:hover {
+  background: #40a9ff;
+}
+
 .btn-return {
   background: #1890ff;
   color: #fff;
@@ -1404,14 +1551,8 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 1200px) {
-  .stats-cards {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 @media (max-width: 768px) {
-  .stats-cards {
+  .stat-cards {
     grid-template-columns: 1fr;
   }
 

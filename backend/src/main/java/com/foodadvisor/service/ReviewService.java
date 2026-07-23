@@ -697,9 +697,6 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         vo.setReviewType(review.getReviewType());
         vo.setParentReviewId(review.getParentReviewId());
         vo.setRating(review.getRating());
-        vo.setTasteRating(review.getTasteRating());
-        vo.setEnvironmentRating(review.getEnvironmentRating());
-        vo.setServiceRating(review.getServiceRating());
         vo.setAverageSpend(review.getAverageSpend());
         vo.setConsumptionDate(review.getConsumptionDate());
         vo.setContent(review.getContent());
@@ -1228,30 +1225,6 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 )
         );
 
-        summary.setAverageTasteRating(
-                average(
-                        reviews.stream()
-                                .map(Review::getTasteRating)
-                                .toList()
-                )
-        );
-
-        summary.setAverageEnvironmentRating(
-                average(
-                        reviews.stream()
-                                .map(Review::getEnvironmentRating)
-                                .toList()
-                )
-        );
-
-        summary.setAverageServiceRating(
-                average(
-                        reviews.stream()
-                                .map(Review::getServiceRating)
-                                .toList()
-                )
-        );
-
         return summary;
     }
 
@@ -1755,23 +1728,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 "总体评分"
         );
 
-        validateRating(
-                "REVIEW_TASTE_RATING_INVALID",
-                request.getTasteRating(),
-                "口味评分"
-        );
-
-        validateRating(
-                "REVIEW_ENVIRONMENT_RATING_INVALID",
-                request.getEnvironmentRating(),
-                "环境评分"
-        );
-
-        validateRating(
-                "REVIEW_SERVICE_RATING_INVALID",
-                request.getServiceRating(),
-                "服务评分"
-        );
+        
 
         if (request.getAverageSpend() != null
                 && request.getAverageSpend()
@@ -1842,13 +1799,6 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         );
 
         review.setRating(request.getRating() != null ? BigDecimal.valueOf(request.getRating()) : null);
-        review.setTasteRating(request.getTasteRating() != null ? BigDecimal.valueOf(request.getTasteRating()) : null);
-        review.setEnvironmentRating(
-                request.getEnvironmentRating() != null ? BigDecimal.valueOf(request.getEnvironmentRating()) : null
-        );
-        review.setServiceRating(
-                request.getServiceRating() != null ? BigDecimal.valueOf(request.getServiceRating()) : null
-        );
         review.setAverageSpend(
                 request.getAverageSpend()
         );
@@ -2307,15 +2257,6 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 review.getCurrentVersion()
         );
         version.setRating(review.getRating());
-        version.setTasteRating(
-                review.getTasteRating()
-        );
-        version.setEnvironmentRating(
-                review.getEnvironmentRating()
-        );
-        version.setServiceRating(
-                review.getServiceRating()
-        );
         version.setAverageSpend(
                 review.getAverageSpend()
         );
@@ -2431,15 +2372,6 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         );
         response.setContent(review.getContent());
         response.setRating(review.getRating());
-        response.setTasteRating(
-                review.getTasteRating()
-        );
-        response.setEnvironmentRating(
-                review.getEnvironmentRating()
-        );
-        response.setServiceRating(
-                review.getServiceRating()
-        );
         response.setAverageSpend(
                 review.getAverageSpend()
         );

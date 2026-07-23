@@ -16,19 +16,23 @@ public interface ReviewMapper extends BaseMapper<Review> {
     @Select("SELECT COUNT(*) FROM reviews WHERE review_time >= #{startTime} AND review_time <= #{endTime}")
     Long countByTimeRange(@Param("startTime") OffsetDateTime startTime, @Param("endTime") OffsetDateTime endTime);
 
+    @Select("SELECT COUNT(*) FROM reviews WHERE deleted_at IS NULL")
+    Long countTotalReviews();
+
     @Select("<script>" +
-            "SELECT r.id, r.content, r.rating, r.risk_level, r.moderation_status, r.status, r.created_at, " +
-            "r.review_time, r.source, m.name as merchant_name, m.region_code, u.nickname as user_nickname, u.username " +
+            "SELECT r.id, r.content, r.rating, r.risk_level as \"riskLevel\", r.moderation_status as \"moderationStatus\", r.status, r.created_at as \"createdAt\", " +
+            "r.moderation_operator as \"moderationOperator\", m.name as \"merchantName\", m.region_code as \"regionCode\", u.nickname as \"userNickname\", u.username " +
             "FROM reviews r " +
             "LEFT JOIN merchants m ON r.merchant_id = m.id " +
             "LEFT JOIN users u ON r.user_id = u.id " +
             "WHERE r.deleted_at IS NULL " +
             "<if test='riskLevel != null and riskLevel != \"\"'>AND r.risk_level = #{riskLevel}</if> " +
+            "<if test='riskLevel == null or riskLevel == \"\"'>AND r.risk_level IN ('MEDIUM', 'HIGH')</if> " +
             "<if test='moderationStatus != null and moderationStatus != \"\"'>AND r.moderation_status = #{moderationStatus}</if> " +
             "<if test='merchantId != null'>AND r.merchant_id = #{merchantId}</if> " +
             "<if test='startTime != null'>AND r.created_at >= #{startTime}</if> " +
             "<if test='endTime != null'>AND r.created_at &lt;= #{endTime}</if> " +
-            "ORDER BY r.created_at DESC " +
+            "ORDER BY CASE WHEN r.moderation_status = 'PENDING' THEN 0 ELSE 1 END, CASE WHEN r.risk_level = 'HIGH' THEN 0 WHEN r.risk_level = 'MEDIUM' THEN 1 ELSE 2 END, r.created_at DESC " +
             "LIMIT #{limit} OFFSET #{offset}" +
             "</script>")
     List<Map<String, Object>> getModerationList(
@@ -45,6 +49,7 @@ public interface ReviewMapper extends BaseMapper<Review> {
             "FROM reviews r " +
             "WHERE r.deleted_at IS NULL " +
             "<if test='riskLevel != null and riskLevel != \"\"'>AND r.risk_level = #{riskLevel}</if> " +
+            "<if test='riskLevel == null or riskLevel == \"\"'>AND r.risk_level IN ('MEDIUM', 'HIGH')</if> " +
             "<if test='moderationStatus != null and moderationStatus != \"\"'>AND r.moderation_status = #{moderationStatus}</if> " +
             "<if test='merchantId != null'>AND r.merchant_id = #{merchantId}</if> " +
             "<if test='startTime != null'>AND r.created_at >= #{startTime}</if> " +
@@ -57,11 +62,11 @@ public interface ReviewMapper extends BaseMapper<Review> {
             @Param("startTime") OffsetDateTime startTime,
             @Param("endTime") OffsetDateTime endTime);
 
-    @Select("SELECT r.id, r.content, r.rating, r.taste_rating, r.environment_rating, r.service_rating, " +
-            "r.average_spend, r.consumption_date, r.risk_level, r.moderation_status, r.status, " +
-            "r.created_at, r.review_time, r.source, r.review_type, " +
-            "m.id as merchant_id, m.name as merchant_name, m.category, m.cuisine, m.address, m.region_code, " +
-            "u.id as user_id, u.nickname as user_nickname, u.username, u.phone, u.email " +
+    @Select("SELECT r.id, r.content, r.rating, r.taste_rating as \"tasteRating\", r.environment_rating as \"environmentRating\", r.service_rating as \"serviceRating\", " +
+            "r.average_spend as \"averageSpend\", r.consumption_date as \"consumptionDate\", r.risk_level as \"riskLevel\", r.moderation_status as \"moderationStatus\", r.status, " +
+            "r.created_at as \"createdAt\", r.review_time as \"reviewTime\", r.source, r.review_type as \"reviewType\", r.moderation_operator as \"moderationOperator\", " +
+            "m.id as \"merchantId\", m.name as \"merchantName\", m.category, m.cuisine, m.address, m.region_code as \"regionCode\", " +
+            "u.id as \"userId\", u.nickname as \"userNickname\", u.username, u.phone, u.email " +
             "FROM reviews r " +
             "LEFT JOIN merchants m ON r.merchant_id = m.id " +
             "LEFT JOIN users u ON r.user_id = u.id " +
@@ -69,10 +74,14 @@ public interface ReviewMapper extends BaseMapper<Review> {
     Map<String, Object> getReviewDetailWithRelations(@Param("id") Long id);
 
     @Update("UPDATE reviews SET moderation_status = #{moderationStatus}, status = #{status}, " +
-            "updated_at = CURRENT_TIMESTAMP WHERE id = #{id}")
+            "moderation_operator = #{moderationOperator}, updated_at = CURRENT_TIMESTAMP WHERE id = #{id}")
     int updateModerationStatus(@Param("id") Long id,
                                @Param("moderationStatus") String moderationStatus,
-                               @Param("status") String status);
+                               @Param("status") String status,
+                               @Param("moderationOperator") String moderationOperator);
+
+    @Update("UPDATE reviews SET risk_level = #{riskLevel}, updated_at = CURRENT_TIMESTAMP WHERE id = #{id}")
+    int updateRiskLevel(@Param("id") Long id, @Param("riskLevel") String riskLevel);
 
     @Select("SELECT moderation_status FROM reviews WHERE id = #{id} AND deleted_at IS NULL")
     String getCurrentModerationStatus(@Param("id") Long id);
@@ -80,133 +89,12 @@ public interface ReviewMapper extends BaseMapper<Review> {
     @Select("SELECT id, name FROM merchants WHERE platform_status = 'ACTIVE' ORDER BY name")
     List<Map<String, Object>> getActiveMerchants();
 
-    @Select("SELECT COUNT(*) FROM reviews WHERE moderation_status = 'PENDING' AND deleted_at IS NULL")
+    @Select("SELECT COUNT(*) FROM reviews WHERE moderation_status = 'PENDING' AND risk_level IN ('MEDIUM', 'HIGH') AND deleted_at IS NULL")
     Long countPendingReviews();
 
-    /**
-     * 查询指定时间后评价数量达到阈值的商家。
-     * targetMerchantId 为空时检测全部商家。
-     */
-    @Select("<script>" +
-            "SELECT merchant_id, COUNT(*) AS cnt " +
-            "FROM reviews " +
-            "WHERE deleted_at IS NULL " +
-            "AND created_at &gt;= #{since} " +
-            "<if test='targetMerchantId != null'>" +
-            "AND merchant_id = #{targetMerchantId} " +
-            "</if>" +
-            "GROUP BY merchant_id " +
-            "HAVING COUNT(*) &gt;= #{threshold} " +
-            "ORDER BY cnt DESC" +
-            "</script>")
-    List<Map<String, Object>> countReviewsByMerchantSince(
-            @Param("since") OffsetDateTime since,
-            @Param("threshold") int threshold,
-            @Param("targetMerchantId") Long targetMerchantId
-    );
+    @Select("SELECT COUNT(*) FROM reviews WHERE risk_level = 'HIGH' AND deleted_at IS NULL")
+    Long countHighRiskReviews();
 
-    /**
-     * 查询指定商家在给定时间后的评价 ID。
-     */
-    @Select("SELECT id " +
-            "FROM reviews " +
-            "WHERE merchant_id = #{merchantId} " +
-            "AND deleted_at IS NULL " +
-            "AND created_at >= #{since} " +
-            "ORDER BY created_at DESC")
-    List<Long> getReviewIdsByMerchantSince(
-            @Param("merchantId") Long merchantId,
-            @Param("since") OffsetDateTime since
-    );
-
-    /**
-     * 查询指定商家近期用于文本相似度检测的评价。
-     */
-    @Select("SELECT id, content " +
-            "FROM reviews " +
-            "WHERE merchant_id = #{merchantId} " +
-            "AND deleted_at IS NULL " +
-            "AND created_at >= #{since} " +
-            "AND content IS NOT NULL " +
-            "AND BTRIM(content) <> '' " +
-            "ORDER BY created_at DESC " +
-            "LIMIT #{limit}")
-    List<Map<String, Object>> getRecentReviewContents(
-            @Param("merchantId") Long merchantId,
-            @Param("since") OffsetDateTime since,
-            @Param("limit") int limit
-    );
-
-    /**
-     * 查询指定时间后评价数量达到阈值的用户。
-     */
-    @Select("SELECT user_id, COUNT(*) AS cnt " +
-            "FROM reviews " +
-            "WHERE user_id IS NOT NULL " +
-            "AND deleted_at IS NULL " +
-            "AND created_at >= #{since} " +
-            "GROUP BY user_id " +
-            "HAVING COUNT(*) >= #{threshold} " +
-            "ORDER BY cnt DESC")
-    List<Map<String, Object>> countReviewsByUserSince(
-            @Param("since") OffsetDateTime since,
-            @Param("threshold") int threshold
-    );
-
-    /**
-     * 查询指定用户在给定时间后的评价 ID。
-     */
-    @Select("SELECT id " +
-            "FROM reviews " +
-            "WHERE user_id = #{userId} " +
-            "AND deleted_at IS NULL " +
-            "AND created_at >= #{since} " +
-            "ORDER BY created_at DESC")
-    List<Long> getReviewIdsByUserSince(
-            @Param("userId") Long userId,
-            @Param("since") OffsetDateTime since
-    );
-
-    /**
-     * 查询指定商家在给定时间后的评分分布。
-     */
-    @Select("SELECT rating, COUNT(*) AS cnt " +
-            "FROM reviews " +
-            "WHERE merchant_id = #{merchantId} " +
-            "AND deleted_at IS NULL " +
-            "AND created_at >= #{since} " +
-            "AND rating IS NOT NULL " +
-            "GROUP BY rating " +
-            "ORDER BY rating")
-    List<Map<String, Object>> getRatingDistribution(
-            @Param("merchantId") Long merchantId,
-            @Param("since") OffsetDateTime since
-    );
-
-    /**
-     * 更新评价风险等级。
-     */
-    @Update("UPDATE reviews " +
-            "SET risk_level = #{riskLevel}, " +
-            "updated_at = CURRENT_TIMESTAMP " +
-            "WHERE id = #{id} " +
-            "AND deleted_at IS NULL")
-    int updateReviewRiskLevel(
-            @Param("id") Long id,
-            @Param("riskLevel") String riskLevel
-    );
-
-    /** 批量更新评价状态（刷评确认后批量隐藏/删除） */
-    @Update("<script>" +
-            "UPDATE reviews SET status = #{newStatus}, updated_at = CURRENT_TIMESTAMP " +
-            "WHERE id IN " +
-            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>" +
-            "#{id}" +
-            "</foreach>" +
-            " AND deleted_at IS NULL" +
-            "</script>")
-    int batchUpdateReviewStatus(
-            @Param("ids") java.util.List<Long> ids,
-            @Param("newStatus") String newStatus
-    );
+    @Select("SELECT COUNT(*) FROM reviews WHERE risk_level = 'MEDIUM' AND deleted_at IS NULL")
+    Long countMediumRiskReviews();
 }

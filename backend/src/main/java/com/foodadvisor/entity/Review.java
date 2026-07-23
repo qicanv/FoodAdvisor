@@ -26,15 +26,6 @@ public class Review {
     /** 综合评分 1-5 */
     private BigDecimal rating;
 
-    /** 口味评分 1-5 */
-    private BigDecimal tasteRating;
-
-    /** 环境评分 1-5 */
-    private BigDecimal environmentRating;
-
-    /** 服务评分 1-5 */
-    private BigDecimal serviceRating;
-
     /** 人均消费 */
     private BigDecimal averageSpend;
 
@@ -70,6 +61,9 @@ public class Review {
 
     /** LOW / MEDIUM / HIGH */
     private String riskLevel;
+
+    /** 审核人员用户名 */
+    private String moderationOperator;
 
     private OffsetDateTime publishedAt;
     private OffsetDateTime editedAt;

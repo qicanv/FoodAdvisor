@@ -16,6 +16,10 @@ export const getPendingCount = () => {
   return request.get('/api/moderation/pending-count')
 }
 
+export const getStats = () => {
+  return request.get('/api/moderation/stats')
+}
+
 export const moderateReview = (id, action, remark) => {
   return request.post(`/api/moderation/reviews/${id}/action`, { action, remark })
 }

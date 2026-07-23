@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.Map;
 
@@ -29,16 +30,19 @@ public class ModerationController {
             @RequestParam(required = false) String riskLevel,
             @RequestParam(required = false) String moderationStatus,
             @RequestParam(required = false) Long merchantId,
-            @RequestParam(required = false) OffsetDateTime startTime,
-            @RequestParam(required = false) OffsetDateTime endTime,
+            @RequestParam(required = false) LocalDateTime startTime,
+            @RequestParam(required = false) LocalDateTime endTime,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize,
             HttpServletRequest request) {
 
         adminAccessGuard.requireAdmin(request);
 
+        OffsetDateTime startOffset = startTime != null ? startTime.atOffset(java.time.ZoneOffset.UTC) : null;
+        OffsetDateTime endOffset = endTime != null ? endTime.atOffset(java.time.ZoneOffset.UTC) : null;
+
         Map<String, Object> result = moderationService.getReviewList(
-                riskLevel, moderationStatus, merchantId, startTime, endTime, pageNum, pageSize);
+                riskLevel, moderationStatus, merchantId, startOffset, endOffset, pageNum, pageSize);
 
         return ApiResponse.success(result);
     }
@@ -69,6 +73,28 @@ public class ModerationController {
     public ApiResponse<Long> getPendingCount(HttpServletRequest request) {
         adminAccessGuard.requireAdmin(request);
         return ApiResponse.success(moderationService.countPendingReviews());
+    }
+
+    @GetMapping("/stats")
+    public ApiResponse<Map<String, Object>> getStats(HttpServletRequest request) {
+        adminAccessGuard.requireAdmin(request);
+        return ApiResponse.success(moderationService.getStats());
+    }
+
+    @PostMapping("/reviews/{id}/refresh-risk")
+    public ApiResponse<?> refreshRiskDetection(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+        adminAccessGuard.requireAdmin(request);
+        moderationService.refreshRiskDetection(id);
+        return ApiResponse.success("风险检测已刷新");
+    }
+
+    @PostMapping("/reviews/refresh-all-risk")
+    public ApiResponse<?> refreshAllRiskDetection(HttpServletRequest request) {
+        adminAccessGuard.requireAdmin(request);
+        moderationService.refreshAllRiskDetection();
+        return ApiResponse.success("所有待审核评价的风险检测已刷新");
     }
 
     @PostMapping("/reviews/{id}/action")
