@@ -40,7 +40,8 @@ public class KnowledgeEnrichmentService {
     private static final String SOURCE_TYPE_MENU = "MENU";
     private static final String SOURCE_TYPE_REVIEW = "REVIEW";
 
-    private static final String REVIEW_STATUS_APPROVED = "APPROVED";
+    private static final String REVIEW_STATUS_PUBLISHED = "PUBLISHED";
+    private static final String REVIEW_MODERATION_APPROVED = "APPROVED";
 
     private final MerchantMapper merchantMapper;
     private final DishMapper dishMapper;
@@ -91,22 +92,42 @@ public class KnowledgeEnrichmentService {
      * @return 提交的 chunk 数量
      */
     public int syncMerchantMenu(Long merchantId) {
-        List<Dish> dishes = dishMapper.selectActiveByMerchantIds(List.of(merchantId));
+        List<Dish> dishes =
+                dishMapper.selectActiveByMerchantIds(
+                        List.of(merchantId)
+                );
+
         if (dishes == null || dishes.isEmpty()) {
-            log.info("商家无有效菜品，跳过菜单同步: merchantId={}", merchantId);
+            log.info(
+                    "商家无有效菜品，跳过菜单同步: merchantId={}",
+                    merchantId
+            );
             return 0;
         }
 
-        StringBuilder menuText = new StringBuilder();
-        for (int i = 0; i < dishes.size(); i++) {
-            if (i > 0) menuText.append("\n");
-            menuText.append(buildDishText(dishes.get(i)));
+        int totalChunks = 0;
+
+        for (Dish dish : dishes) {
+            String enrichedText = buildDishText(dish);
+
+            int chunks = submitAndUpsertWithSourceId(
+                    SOURCE_TYPE_MENU,
+                    merchantId,
+                    dish.getId(),
+                    enrichedText
+            );
+
+            totalChunks += chunks;
         }
 
-        log.info("构建菜品文本: merchantId={}, dishCount={}, len={}",
-                merchantId, dishes.size(), menuText.length());
+        log.info(
+                "菜品同步完成: merchantId={}, dishCount={}, totalChunks={}",
+                merchantId,
+                dishes.size(),
+                totalChunks
+        );
 
-        return submitAndUpsert(SOURCE_TYPE_MENU, merchantId, menuText.toString());
+        return totalChunks;
     }
 
     /**
@@ -119,7 +140,11 @@ public class KnowledgeEnrichmentService {
         List<Review> reviews = reviewMapper.selectList(
                 new LambdaQueryWrapper<Review>()
                         .eq(Review::getMerchantId, merchantId)
-                        .eq(Review::getStatus, REVIEW_STATUS_APPROVED)
+                        .eq(Review::getStatus, REVIEW_STATUS_PUBLISHED)
+                        .eq(
+                                Review::getModerationStatus,
+                                REVIEW_MODERATION_APPROVED
+                        )
                         .isNull(Review::getDeletedAt)
         );
 
