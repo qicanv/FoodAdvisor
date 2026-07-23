@@ -128,6 +128,10 @@ class BatchAnalyzeRequest(BaseModel):
         default=None,
         max_length=255,
     )
+    analysisMode: Optional[str] = Field(
+        default=None,
+        description="覆盖全局 SENTIMENT_ANALYSIS_MODE: local / llm / hybrid。不传则使用服务端默认值",
+    )
 
 
 class BatchAnalyzeResponse(BaseModel):

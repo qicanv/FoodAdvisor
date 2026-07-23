@@ -243,7 +243,7 @@ public class MerchantSentimentService {
     // 触发批量分析
     // ============================================
 
-    public Map<String, Object> triggerBatchAnalysis(Long merchantId, String timeRange) {
+    public Map<String, Object> triggerBatchAnalysis(Long merchantId, String timeRange, String analysisMode) {
         OffsetDateTime since = parseTimeRange(timeRange);
         List<Review> reviews = queryReviews(merchantId, since);
         List<Long> reviewIds = reviews.stream().map(Review::getId).collect(Collectors.toList());
@@ -279,7 +279,7 @@ public class MerchantSentimentService {
                     .collect(Collectors.toList());
 
             try {
-                JsonNode response = aiClientService.batchAnalyzeReviews(batchRequests);
+                JsonNode response = aiClientService.batchAnalyzeReviews(batchRequests, analysisMode);
                 // 解析并持久化分析结果
                 int persisted = persistBatchResults(response, batch);
                 successCount += persisted;

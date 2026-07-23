@@ -10,7 +10,9 @@ export const getSentimentReviews = (params) => {
   return request.get('/api/merchant-console/reviews/sentiment-list', { params })
 }
 
-/** 触发批量情感分析（对未分析的评论） */
+/** 触发批量情感分析（对未分析的评论）。
+ *  analysisMode 可选: 'local'（快速/本地模型）/ 'llm'（深度/云端AI）/ 'hybrid'（推荐/本地+云端）
+ */
 export const triggerBatchAnalysis = (data) => {
   return request.post('/api/merchant-console/reviews/batch-analyze', data, {
     timeout: 60000,

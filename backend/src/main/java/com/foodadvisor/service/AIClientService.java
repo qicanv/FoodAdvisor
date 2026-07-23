@@ -199,13 +199,21 @@ public class AIClientService {
      * 批量分析评论
      */
     public JsonNode batchAnalyzeReviews(
-            List<Map<String, Object>> reviews
+            List<Map<String, Object>> reviews,
+            String analysisMode
     ) {
         String url =
                 aiServiceBaseUrl + "/internal/reviews/batch-analyze";
 
-        Map<String, Object> request =
-                Map.of("reviews", reviews);
+        Map<String, Object> request;
+        if (analysisMode != null && !analysisMode.isEmpty()) {
+            request = Map.of(
+                "reviews", reviews,
+                "analysisMode", analysisMode
+            );
+        } else {
+            request = Map.of("reviews", reviews);
+        }
 
         return post(
                 url,

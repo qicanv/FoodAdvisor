@@ -156,14 +156,20 @@ class ReviewAnalysisService:
         self,
         request: AnalyzeRequest,
         analysis_version: int = 1,
+        mode_override: Optional[str] = None,
     ) -> AnalyzeResponse:
         """
         分析单条评价 — 根据 SENTIMENT_ANALYSIS_MODE 选择分析策略。
+
+        参数:
+            mode_override: 可选，覆盖全局 SENTIMENT_ANALYSIS_MODE。
+                           支持 "local" / "llm" / "hybrid"
         """
-        mode = settings.sentiment_analysis_mode
+        mode = mode_override or settings.sentiment_analysis_mode
 
         if mode == "local":
-            response = self._analyze_with_local_model(
+            # 纯本地模型：先尝试本地模型，失败则降级到 LLM
+            response = await self._analyze_local_with_llm_fallback(
                 request,
                 analysis_version,
             )
@@ -189,20 +195,39 @@ class ReviewAnalysisService:
         return response
 
     # ============================================
-    # 本地模型分析
+    # 本地模型分析（增强降级：本地失败 → LLM）
     # ============================================
 
-    def _analyze_with_local_model(self, request: AnalyzeRequest, analysis_version: int = 1) -> AnalyzeResponse:
-        """使用本地微调模型进行情感分析"""
+    async def _analyze_local_with_llm_fallback(self, request: AnalyzeRequest, analysis_version: int = 1) -> AnalyzeResponse:
+        """
+        使用本地微调模型进行情感分析。
+
+        增强降级策略：
+        - 首选：微调模型做维度情感（快速、离线）
+        - 降级：本地模型失败时自动切换到 LLM
+        """
         from app.services.ml_sentiment_service import ml_sentiment_service
 
         try:
             ml_result = ml_sentiment_service.predict(request.content)
-            return ml_sentiment_service.map_to_analyze_response(request, ml_result, analysis_version)
+            response = ml_sentiment_service.map_to_analyze_response(request, ml_result, analysis_version)
+            response.modelName = f"local:{ml_sentiment_service.model_name}"
+            return response
         except Exception as e:
-            logger.error(f"本地模型分析失败 reviewId={request.reviewId}: {e}")
-            from app.services.ml_sentiment_service import ml_sentiment_service
-            return ml_sentiment_service.degrade_response(request, str(e))
+            logger.warning(
+                f"本地模型分析失败 reviewId={request.reviewId}，降级到 LLM。原因: {e}"
+            )
+            # 自动降级到 LLM
+            try:
+                llm_response = await self._analyze_with_llm(request, analysis_version)
+                llm_response.modelName = f"fallback:llm:{llm_service.model}"
+                return llm_response
+            except Exception as llm_e:
+                logger.error(
+                    f"LLM 降级也失败 reviewId={request.reviewId}: {llm_e}"
+                )
+                from app.services.ml_sentiment_service import ml_sentiment_service
+                return ml_sentiment_service.degrade_response(request, str(e))
 
     # ============================================
     # 混合分析：本地模型 + LLM
@@ -326,12 +351,16 @@ class ReviewAnalysisService:
         requests: List[AnalyzeRequest],
         system_prompt: Optional[str] = None,
         prompt_version: Optional[str] = None,
+        mode_override: Optional[str] = None,
     ) -> tuple:
         """
         批量分析，返回（成功结果列表、错误列表）。
 
         Spring Boot 将动态提示词放在批量请求外层，
         因此这里需要传播到每条单独的评价请求。
+
+        参数:
+            mode_override: 可选，覆盖全局 SENTIMENT_ANALYSIS_MODE。
         """
         results = []
         errors = []
@@ -355,7 +384,8 @@ class ReviewAnalysisService:
 
             try:
                 result = await self.analyze(
-                    effective_request
+                    effective_request,
+                    mode_override=mode_override,
                 )
                 results.append(result)
             except Exception as e:

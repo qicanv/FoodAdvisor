@@ -83,7 +83,7 @@ SELECT id, 1, 1,
          WHEN 0 THEN '["味道","服务"]'::jsonb WHEN 1 THEN '["环境","价格"]'::jsonb
          WHEN 2 THEN '["分量","排队"]'::jsonb WHEN 3 THEN '["卫生","交通"]'::jsonb
          WHEN 4 THEN '["味道","环境"]'::jsonb ELSE '["服务","价格"]'::jsonb END,
-       '{"source":"DEMO"}'::jsonb, 'SUCCESS', '2026-04-10 10:00+08',
+       '[]'::jsonb, 'SUCCESS', '2026-04-10 10:00+08',
        '2026-04-10 10:00+08', '2026-04-10 10:00+08'
 FROM reviews WHERE status = 'PUBLISHED' AND moderation_status = 'APPROVED';
 

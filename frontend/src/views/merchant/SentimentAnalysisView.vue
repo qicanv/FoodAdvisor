@@ -19,6 +19,14 @@
               <option value="all">全部</option>
             </select>
           </div>
+          <div class="mode-selector">
+            <label class="toolbar-label">分析模式</label>
+            <select v-model="analysisMode" class="toolbar-select">
+              <option value="hybrid">⚡ 深度分析（推荐）</option>
+              <option value="local">🚀 快速分析（本地AI）</option>
+              <option value="llm">☁️ 全面分析（云端AI）</option>
+            </select>
+          </div>
           <button class="btn-analyze" @click="triggerAnalysis" :disabled="analyzing">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
@@ -516,6 +524,10 @@
                 <span :class="['sentiment-tag', currentDetail.sentiment.toLowerCase()]">{{ sentimentLabel(currentDetail.sentiment) }}</span>
                 <span>置信度：{{ (currentDetail.confidence * 100).toFixed(0) }}%</span>
               </div>
+              <div class="detail-model-row" v-if="currentDetail.modelName">
+                <span class="detail-label-sm">分析模型：</span>
+                <span class="model-name-tag">{{ modelNameLabel(currentDetail.modelName) }}</span>
+              </div>
               <div class="detail-aspects">
                 <span class="detail-label-sm">维度详情：</span>
                 <div class="aspect-cards">
@@ -638,6 +650,7 @@ import {
 const stores = ref([{ id: 0, name: '全部店铺' }])
 const selectedStoreId = ref(0)
 const timeRange = ref('all')
+const analysisMode = ref('hybrid')  // 'local' | 'llm' | 'hybrid'
 const analyzing = ref(false)
 const lastUpdateTime = ref('')
 
@@ -970,6 +983,16 @@ function aspectLabel(c) {
   return map[c] || c
 }
 
+function modelNameLabel(name) {
+  if (!name) return '未知'
+  if (name.includes('hybrid')) return '⚡ 混合模式（本地AI + 云端）'
+  if (name.includes('fallback:llm') || name.includes('fallback:local')) return '⚠️ 降级分析（云端AI）'
+  if (name.includes('local:')) return '🚀 本地AI模型'
+  if (name.includes('llm:') || name.includes('DeepSeek')) return '☁️ 云端AI'
+  if (name.includes('hybrid-fallback')) return '⚡ 混合模式（仅本地）'
+  return name
+}
+
 function confidenceColor(v) {
   if (v >= 0.8) return '#52c41a'
   if (v >= 0.6) return '#faad14'
@@ -1154,6 +1177,7 @@ async function triggerAnalysis() {
       const res = await triggerBatchAnalysis({
         merchantId: id,
         timeRange: timeRange.value,
+        analysisMode: analysisMode.value,
       })
       if (res.success) {
         const d = res.data
@@ -1693,6 +1717,16 @@ watch([selectedStoreId, timeRange], () => {
 .detail-sentiment-row {
   display: flex; align-items: center; gap: 12px;
   font-size: 14px; color: #667085; margin-bottom: 12px;
+}
+.detail-model-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px; padding: 6px 10px;
+  background: #fafafa; border-radius: 6px; font-size: 12px;
+}
+.model-name-tag {
+  display: inline-block; padding: 2px 10px; border-radius: 4px;
+  font-size: 12px; font-weight: 500; color: #722ed1;
+  background: #f9f0ff; border: 1px solid #efdbff;
 }
 .aspect-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
 .aspect-card {
