@@ -106,7 +106,7 @@ async def main():
             cur.execute("""
                 SELECT id, rating, content
                 FROM reviews
-                WHERE merchant_id = %s AND status = 'PUBLISHED' AND deleted_at IS NULL
+                WHERE merchant_id = %s AND status = 'PUBLISHED' AND moderation_status = 'APPROVED' AND deleted_at IS NULL
             """, (m_id,))
             reviews = cur.fetchall()
             for r_id, rating, content in reviews:
