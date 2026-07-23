@@ -30,6 +30,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -592,6 +593,45 @@ public class AIClientService {
                         "content", content, "strategy", strategy,
                         "rating", rating == null ? 3 : rating),
                 "REVIEW_REPLY_GENERATION", context, "MODEL_CALL");
+    }
+
+    /**
+     * 调用经营改进建议生成接口（EPIC-02 Story 8）。
+     *
+     * @param merchantId 商家ID
+     * @param version    建议版本号
+     * @param dataPayload 聚合数据（口碑趋势、差评归因、亮点、竞品）
+     * @return AI 服务返回的 JSON，包含 suggestions 数组
+     */
+    public JsonNode generateBusinessSuggestions(
+            Long merchantId, Integer version,
+            Map<String, Object> dataPayload
+    ) {
+        String url = aiServiceBaseUrl
+                + "/internal/merchants/business-suggestions";
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("merchantId", merchantId);
+        request.put("version", version);
+        request.putAll(dataPayload);
+        return post(url, request, "BUSINESS_SUGGESTION_GENERATION");
+    }
+
+    /**
+     * 调用经营改进建议生成接口（带 AI 追踪上下文）。
+     */
+    public JsonNode generateBusinessSuggestions(
+            Long merchantId, Integer version,
+            Map<String, Object> dataPayload,
+            AiTraceContext context
+    ) {
+        String url = aiServiceBaseUrl
+                + "/internal/merchants/business-suggestions";
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("merchantId", merchantId);
+        request.put("version", version);
+        request.putAll(dataPayload);
+        return post(url, request, "BUSINESS_SUGGESTION_GENERATION",
+                context, "MODEL_CALL");
     }
 
     /**
