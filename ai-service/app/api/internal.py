@@ -483,3 +483,42 @@ async def test_summary_faithfulness(request: FaithfulnessTestRequest):
         )
 
     return await faithfulness_test_service.test(request)
+
+
+# ---- 经营改进建议生成（EPIC-02 Story 8） ----
+
+from app.models.schemas import BusinessSuggestionRequest, BusinessSuggestionResponse
+from app.services.business_suggestion_service import business_suggestion_service
+
+
+@router.post(
+    "/merchants/business-suggestions",
+    response_model=BusinessSuggestionResponse,
+)
+async def generate_business_suggestions(request: BusinessSuggestionRequest):
+    """
+    经营改进建议生成（EPIC-02 Story 8）
+
+    由 Spring Boot 传入聚合后的口碑趋势、差评归因、商家亮点和竞品对比数据，
+    AI 基于这些数据生成结构化、可执行的经营改进建议。
+
+    每项建议包含：
+    - 问题对象和改进措施
+    - 适用时间范围（短期/长期）
+    - 优先级和置信度
+    - 数据依据和指标快照
+
+    验收准则对齐：
+    1. 每项建议至少关联一个数据来源
+    2. 每项建议展示对应指标、数量、占比或原评论依据
+    3. 每项建议至少包含问题对象、改进措施和适用时间范围
+    4. 建议标记为短期或长期
+    5. 数据量低于配置阈值时降低置信度
+    6. 预置数据中不存在的问题不会被作为主要改进建议
+    """
+    logger.info(
+        f"生成经营改进建议 merchantId={request.merchantId}, "
+        f"reviewCount={request.reviewCount}, "
+        f"version={request.version}"
+    )
+    return await business_suggestion_service.generate(request)
