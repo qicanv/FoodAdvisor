@@ -490,10 +490,40 @@ class DiningDialogueMessageServiceTest {
         adjusted.setRequestId("rank-new-102");
         adjusted.setMessage("为您找到 4 家符合条件的商家。");
         adjusted.setResultCount(4);
+
         ConstraintState constraints = new ConstraintState();
         constraints.setScenes(List.of());
         adjusted.setCurrentConstraints(constraints);
+
         prepareAdjustment(assistant, adjusted, 1);
+
+        // 原推荐记录，指向用户消息 70
+        Recommendation sourceRecommendation =
+                new Recommendation();
+        sourceRecommendation.setId(17L);
+        sourceRecommendation.setSessionId(1L);
+        sourceRecommendation.setUserId(1L);
+        sourceRecommendation.setUserMessageId(70L);
+
+        // 原始用户消息，content 就是需要恢复的语义 query
+        ChatMessage originalUserMessage =
+                new ChatMessage();
+        originalUserMessage.setId(70L);
+        originalUserMessage.setSessionId(1L);
+        originalUserMessage.setRole("USER");
+        originalUserMessage.setContent(
+                "四个人，人均八十，想吃安静的川菜"
+        );
+
+        when(recommendationMapper.selectOne(any()))
+                .thenReturn(sourceRecommendation);
+
+        // 第一次查询返回助手消息，第二次查询返回原用户消息
+        when(chatMessageMapper.selectOne(any()))
+                .thenReturn(
+                        assistant,
+                        originalUserMessage
+                );
 
         RecommendationRankResponse response =
                 service.adjustRecommendation(
@@ -508,11 +538,15 @@ class DiningDialogueMessageServiceTest {
                                 Map<String, Object>>() {
                         }
                 );
+
         Map<?, ?> savedConstraints =
                 (Map<?, ?>) metadata.get("currentConstraints");
 
         assertAll(
-                () -> assertEquals(102L, response.getRecommendationId()),
+                () -> assertEquals(
+                        102L,
+                        response.getRecommendationId()
+                ),
                 () -> assertEquals(
                         "RECOMMENDATION",
                         assistant.getMessageType()
@@ -521,7 +555,10 @@ class DiningDialogueMessageServiceTest {
                         "RECOMMENDATION",
                         metadata.get("responseType")
                 ),
-                () -> assertEquals("SUCCESS", metadata.get("status")),
+                () -> assertEquals(
+                        "SUCCESS",
+                        metadata.get("status")
+                ),
                 () -> assertEquals(
                         102,
                         metadata.get("recommendationId")
@@ -555,12 +592,31 @@ class DiningDialogueMessageServiceTest {
 
         ArgumentCaptor<Recommendation> recommendationCaptor =
                 ArgumentCaptor.forClass(Recommendation.class);
+
         verify(recommendationMapper).updateById(
                 recommendationCaptor.capture()
         );
+
         assertEquals(
                 "rank-new-102",
                 recommendationCaptor.getValue().getRequestId()
+        );
+
+        // 捕获传入排序服务的调整请求
+        ArgumentCaptor<RecommendationAdjustRequest> requestCaptor =
+                ArgumentCaptor.forClass(
+                        RecommendationAdjustRequest.class
+                );
+
+        verify(recommendationRankingService).adjustAndRank(
+                eq(1L),
+                requestCaptor.capture()
+        );
+
+        // 验证调整时仍然携带原始自然语言
+        assertEquals(
+                "四个人，人均八十，想吃安静的川菜",
+                requestCaptor.getValue().getQuery()
         );
     }
 

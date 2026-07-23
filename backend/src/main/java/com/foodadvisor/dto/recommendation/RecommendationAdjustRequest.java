@@ -1,4 +1,5 @@
 package com.foodadvisor.dto.recommendation;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
@@ -13,6 +14,13 @@ import java.math.BigDecimal;
 public class RecommendationAdjustRequest {
 
     private Long userId;
+
+    /**
+     * 原始自然语言查询，仅由后端根据源推荐消息恢复，
+     * 不允许客户端直接传入。
+     */
+    @JsonIgnore
+    private String query;
 
     @NotNull(message = "sourceMessageId不能为空")
     private Long sourceMessageId;

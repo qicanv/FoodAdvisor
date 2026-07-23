@@ -320,6 +320,7 @@ public class RecommendationRankingService {
         RecommendationRankRequest rankRequest =
                 new RecommendationRankRequest();
         rankRequest.setUserId(session.getUserId());
+        rankRequest.setQuery(request.getQuery());
         rankRequest.setUserLatitude(
                 request.getUserLatitude()
         );

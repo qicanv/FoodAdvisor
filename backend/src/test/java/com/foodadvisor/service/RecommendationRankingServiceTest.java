@@ -1,6 +1,7 @@
 package com.foodadvisor.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.dto.recommendation.AdjustmentSuggestionVO;
@@ -51,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -930,6 +932,72 @@ class RecommendationRankingServiceTest {
                                         "\"perCapitaBudget\":90"
                                 )
                 )
+        );
+    }
+
+    @Test
+    void shouldUseOriginalQueryForSemanticSearchAfterAdjustment()
+            throws Exception {
+        stubSessionStateAndMerchants(
+                List.of(createMerchant(
+                        501L,
+                        "安静川菜馆",
+                        new BigDecimal("4.8"),
+                        120
+                )),
+                """
+                {
+                  "scenes": ["friends"]
+                }
+                """
+        );
+        stubCalculatedScores();
+
+        JsonNode semanticResponse =
+                new ObjectMapper().readTree(
+                        """
+                        {
+                          "status": "SUCCESS",
+                          "data": {
+                            "results": []
+                          }
+                        }
+                        """
+                );
+
+        when(aiClientService.semanticSearch(
+                eq("四个人，人均八十，想吃安静的川菜"),
+                eq(List.of(501L)),
+                any(),
+                anyInt(),
+                nullable(AiTraceContext.class)
+        )).thenReturn(semanticResponse);
+
+        RecommendationAdjustRequest request =
+                createAdjustRequest(
+                        "scenes",
+                        List.of()
+                );
+
+        request.setQuery(
+                "四个人，人均八十，想吃安静的川菜"
+        );
+
+        RecommendationRankResponse response =
+                service.adjustAndRank(1L, request);
+
+        verify(aiClientService, times(3))
+                .semanticSearch(
+                        eq("四个人，人均八十，想吃安静的川菜"),
+                        eq(List.of(501L)),
+                        any(),
+                        anyInt(),
+                        nullable(AiTraceContext.class)
+                );
+
+        assertEquals(
+                "FULL",
+                response.getSemanticStatus()
         );
     }
 
