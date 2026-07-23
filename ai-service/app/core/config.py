@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     embedding_device: str = "auto"  # auto / cpu / cuda
     embedding_batch_size: int = 32
 
+    # ---- Reranker 模型配置 ----
+    reranker_model_path: str = "app/local_models/bge-reranker-v2-m3"
+    reranker_device: str = "auto"       # auto / cpu / cuda
+    reranker_enabled: bool = True       # 可通过环境变量关闭
+    reranker_fetch_multiplier: int = 3  # 从 OpenSearch 多取 N 倍结果再重排
+    reranker_max_length: int = 512      # Cross-encoder 最大输入长度
+    reranker_batch_size: int = 16       # 重排序时的推理批次
+
     # ---- 知识索引 ----
     knowledge_index_name: str = "foodadvisor_knowledge_v1"
 
