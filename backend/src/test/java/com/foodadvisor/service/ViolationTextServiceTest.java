@@ -192,7 +192,7 @@ class ViolationTextServiceTest {
         assertAll(
                 () -> assertTrue(result.isViolation()),
                 () -> assertEquals("HIGH", result.getRiskLevel()),
-                () -> assertEquals(80, result.getRiskScore()),
+                () -> assertEquals(90, result.getRiskScore()),
                 () -> assertEquals("FALLBACK", result.getDetectionStatus())
         );
     }

@@ -59,10 +59,12 @@ import java.util.Map;
 import java.util.Set;
 import java.time.LocalDate;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 评价服务
  */
+@Slf4j
 @Service
 public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
@@ -256,6 +258,9 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         ViolationTextResult violationResult = performViolationCheck(
                 review, "REVIEW");
 
+        // HIGH 风险 → 直接拦截，不保存评价，返回原因
+        requireNotHighRisk(review, "REVIEW", violationResult);
+
         boolean saved = this.save(review);
         if (!saved) {
             throw new ApiException(
@@ -365,6 +370,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         ViolationTextResult violationResult = performViolationCheck(
                 review, "REVIEW");
 
+        requireNotHighRisk(review, "REVIEW", violationResult);
+
         // 执行 UPDATE SQL，把改动持久化到 reviews 表
         if (!this.updateById(review)) {
             throw new ApiException(
@@ -428,6 +435,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         applyReviewFields(review, request);
         ViolationTextResult violationResult = performViolationCheck(
                 review, "REVIEW");
+
+        requireNotHighRisk(review, "REVIEW", violationResult);
 
         if (!this.updateById(review)) {
             throw new ApiException(
@@ -864,6 +873,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         ViolationTextResult violationResult = performViolationCheck(
                 followUp, "REVIEW_FOLLOW_UP");
 
+        requireNotHighRisk(followUp, "REVIEW_FOLLOW_UP", violationResult);
+
         // 6. 持久化
         if (!this.save(followUp)) {
             throw new ApiException(
@@ -943,6 +954,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         ViolationTextResult violationResult = performViolationCheck(
                 followUp, "REVIEW_FOLLOW_UP");
+
+        requireNotHighRisk(followUp, "REVIEW_FOLLOW_UP", violationResult);
 
         // 6. 保存
         if (!this.updateById(followUp)) {
@@ -1795,10 +1808,29 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             Review review,
             String contentType
     ) {
-        ViolationTextResult result = violationTextService.detectViolation(
-                review.getContent(),
-                DEFAULT_RULE_VERSION
-        );
+        ViolationTextResult result;
+        try {
+            result = violationTextService.detectViolation(
+                    review.getContent(),
+                    DEFAULT_RULE_VERSION
+            );
+        } catch (Exception e) {
+            // 违规检测失败时降级：将评价标记为待审核，确保安全
+            log.warn("违规文本检测失败，评价将进入待审核: reviewContent={}, error={}",
+                    review.getContent() != null
+                            ? review.getContent().substring(0, Math.min(50, review.getContent().length()))
+                            : "null",
+                    e.getMessage());
+            result = ViolationTextResult.builder()
+                    .violation(true)
+                    .riskLevel("MEDIUM")
+                    .riskScore(50)
+                    .riskType(null)
+                    .matchedRules(List.of())
+                    .detectionStatus("ERROR")
+                    .errorMessage("Detection failed: " + e.getMessage())
+                    .build();
+        }
 
         // 根据检测结果设置评价状态
         applyContentSafety(review, result);
@@ -1809,8 +1841,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     /**
      * 在评价持久化后保存违规检测记录。
      *
-     * <p>必须在 review.save() 或 review.updateById() 之后调用，
-     * 确保 review.getId() 不为 null。</p>
+     * <p>安全方法 —— 任何异常都会被捕获并记录日志，
+     * 不会影响评价的正常提交流程。</p>
      */
     private void saveViolationRecord(
             Review review,
@@ -1820,14 +1852,20 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         if (review.getId() == null) {
             return;
         }
-        violationTextService.saveRecord(
-                review.getContent(),
-                contentType,
-                review.getId(),
-                review.getCurrentVersion() != null ? review.getCurrentVersion() : 1,
-                DEFAULT_RULE_VERSION,
-                result
-        );
+        try {
+            violationTextService.saveRecord(
+                    review.getContent(),
+                    contentType,
+                    review.getId(),
+                    review.getCurrentVersion() != null ? review.getCurrentVersion() : 1,
+                    DEFAULT_RULE_VERSION,
+                    result
+            );
+        } catch (Exception e) {
+            // 保存检测记录失败不应影响评价提交
+            log.warn("保存违规检测记录失败（不影响评价提交）: reviewId={}, error={}",
+                    review.getId(), e.getMessage());
+        }
     }
 
     /**
@@ -1835,23 +1873,26 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
      *
      * <p>风险等级映射（对齐 EPIC-03 故事3 验收准则）：</p>
      * <ul>
-     *   <li>HIGH（score >= 70）：明显违规，阻止发布 → PENDING/PENDING/HIGH</li>
-     *   <li>MEDIUM（score 40~69）：疑似违规，待审核 → PENDING/PENDING/MEDIUM</li>
-     *   <li>LOW（score < 40）：基本正常，自动通过 → PUBLISHED/APPROVED/LOW</li>
+     *   <li>HIGH（score >= 70）：明显违规，直接拦截不保存 → 抛出 ApiException</li>
+     *   <li>MEDIUM（score 40~69）：无法确定，进入待审核 → status=PENDING</li>
+     *   <li>LOW（score < 40）：基本正常，自动通过 → status=PUBLISHED</li>
      * </ul>
      *
+     * <p>注意：HIGH 风险应在上层通过 {@link #requireNotHighRisk} 拦截，
+     * 本方法只处理 MEDIUM 和 LOW。</p>
+     *
      * @param review 评价对象
-     * @param result 违规检测结果
+     * @param result 违规检测结果（riskLevel 不应为 HIGH）
      */
     private void applyContentSafety(Review review, ViolationTextResult result) {
-        if (result.isViolation() || !"LOW".equals(result.getRiskLevel())) {
-            // 高风险或中风险：阻止直接发布，进入待审核
+        if ("MEDIUM".equals(result.getRiskLevel()) || result.isViolation()) {
+            // 无法确定 → 进入待审核
             review.setStatus("PENDING");
             review.setModerationStatus("PENDING");
-            review.setRiskLevel(result.getRiskLevel());
+            review.setRiskLevel("MEDIUM");
             review.setPublishedAt(null);
         } else {
-            // 低风险：自动通过
+            // 低风险 → 自动通过
             review.setStatus("PUBLISHED");
             review.setModerationStatus("APPROVED");
             review.setRiskLevel("LOW");
@@ -1860,6 +1901,67 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 review.setPublishedAt(OffsetDateTime.now());
             }
         }
+    }
+
+    /**
+     * 高风险内容直接拦截，不保存评价，返回明确原因。
+     *
+     * <p>对齐 EPIC-03 故事3 验收准则：
+     * "达到高风险阈值的内容无法直接发布，并返回明确原因"</p>
+     *
+     * <p>拦截前会尝试保存检测记录到 content_risk_records（用于统计分析），
+     * 保存失败不影响拦截逻辑。</p>
+     *
+     * @param review  评价对象（可能尚未持久化）
+     * @param contentType 内容类型
+     * @param result  违规检测结果
+     * @throws ApiException CONTENT_VIOLATION，含风险类型和命中规则描述
+     */
+    private void requireNotHighRisk(
+            Review review, String contentType, ViolationTextResult result) {
+        if (!"HIGH".equals(result.getRiskLevel())) {
+            return;
+        }
+
+        // 尝试保存检测记录（即使评价被拦截，也记录用于统计分析）
+        try {
+            violationTextService.saveRecord(
+                    review.getContent(),
+                    contentType,
+                    review.getId(),  // 可能为 null（新建评价被拦截时）
+                    review.getCurrentVersion() != null ? review.getCurrentVersion() : 1,
+                    DEFAULT_RULE_VERSION,
+                    result
+            );
+        } catch (Exception e) {
+            log.warn("保存被拦截内容的检测记录失败: error={}", e.getMessage());
+        }
+
+        String riskTypeText = switch (result.getRiskType() != null ? result.getRiskType() : "") {
+            case "AD_SPAM" -> "广告引流";
+            case "ABUSE" -> "恶意谩骂";
+            case "FALSE_AD" -> "虚假宣传";
+            case "SPAM" -> "无关灌水";
+            case "OTHER" -> "其他违规";
+            default -> "违规内容";
+        };
+
+        StringBuilder reason = new StringBuilder();
+        reason.append("您的内容包含").append(riskTypeText).append("，无法发布。");
+
+        if (result.getMatchedRules() != null && !result.getMatchedRules().isEmpty()) {
+            reason.append(" 触发规则：");
+            for (int i = 0; i < result.getMatchedRules().size() && i < 3; i++) {
+                if (i > 0) reason.append("；");
+                reason.append(result.getMatchedRules().get(i).getRuleName());
+            }
+        }
+
+        throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "CONTENT_VIOLATION",
+                reason.toString()
+        );
     }
 
     private void recordContentModerationSafely(

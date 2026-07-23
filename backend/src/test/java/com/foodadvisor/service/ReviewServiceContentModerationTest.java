@@ -159,12 +159,12 @@ class ReviewServiceContentModerationTest {
         assertAll(
                 () -> assertEquals("PENDING", response.getStatus()),
                 () -> assertEquals("PENDING", response.getModerationStatus()),
-                () -> assertEquals("HIGH", response.getRiskLevel()),
+                () -> assertEquals("MEDIUM", response.getRiskLevel()),
                 () -> assertEquals("WARN", auditLog.getLevel()),
                 () -> assertTrue(auditLog.getMetadata()
                         .contains("\"violation\":true")),
                 () -> assertTrue(auditLog.getMetadata()
-                        .contains("\"riskScore\":80")),
+                        .contains("\"riskScore\":55")),
                 () -> assertFalse(auditLog.getMetadata().contains(content)),
                 () -> assertFalse(auditLog.getMetadata().contains(SENSITIVE_WORD))
         );
@@ -199,7 +199,7 @@ class ReviewServiceContentModerationTest {
                 () -> assertTrue(auditLog.getMetadata()
                         .contains("\"beforeModerationStatus\":\"APPROVED\"")),
                 () -> assertTrue(auditLog.getMetadata()
-                        .contains("\"riskLevel\":\"HIGH\""))
+                        .contains("\"riskLevel\":\"MEDIUM\""))
         );
         verify(auditLogService, times(1)).recordSafely(any(AuditLog.class));
     }
@@ -339,8 +339,8 @@ class ReviewServiceContentModerationTest {
                     if (!isBlank(content) && content.contains(SENSITIVE_WORD)) {
                         return ViolationTextResult.builder()
                                 .violation(true)
-                                .riskLevel("HIGH")
-                                .riskScore(80)
+                                .riskLevel("MEDIUM")
+                                .riskScore(55)
                                 .riskType(null)
                                 .matchedRules(List.of())
                                 .detectionStatus("SUCCESS")

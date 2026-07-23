@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  * <ol>
  *   <li>调用 AIClientService.checkViolationText() → AI 服务 LLM 检测</li>
  *   <li>成功：解析 LLM 返回的风险类型、等级、分值和命中规则</li>
- *   <li>失败/超时：降级到关键词匹配（HIGH_RISK_WORDS）</li>
+ *   <li>失败/超时：降级到关键词匹配（广告/谩骂/灌水/严重违规四类词库）</li>
  *   <li>保存检测记录到 content_risk_records 表</li>
  *   <li>返回 ViolationTextResult 供 ReviewService 判定</li>
  * </ol>
@@ -46,10 +46,29 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ViolationTextService {
 
-    /** 高风险关键词（降级时使用） */
-    private static final Set<String> HIGH_RISK_WORDS = Set.of(
+    /** 高风险关键词（降级时使用 — 暴恐/涉政/色情/赌博/毒品） */
+    private static final Set<String> SEVERE_RISK_WORDS = Set.of(
             "暴恐", "涉政", "色情", "赌博", "毒品"
     );
+
+    /** 广告引流关键词（降级时使用） */
+    private static final Set<String> AD_SPAM_KEYWORDS = Set.of(
+            "加微信", "加QQ", "加群", "扫码", "微信号", "手机号",
+            "加我", "私聊", "私信", "加好友", "免费领取", "点击链接",
+            "刷单", "代购", "代刷", "刷好评", "刷评", "返现", "返利",
+            "加V", "V信", "企鹅号"
+    );
+
+    /** 恶意谩骂关键词（降级时使用） */
+    private static final Set<String> ABUSE_KEYWORDS = Set.of(
+            "傻逼", "sb", "SB", "傻X", "傻x", "妈的", "你妈", "操你",
+            "垃圾店", "去死", "滚蛋", "畜生", "废物", "狗屎", "王八",
+            "日你", "尼玛", "草泥马", "他妈的", "狗屁", "贱"
+    );
+
+    /** 无关灌水模式（降级时使用）— 同一字符重复5次以上 */
+    private static final java.util.regex.Pattern SPAM_REPEAT_PATTERN =
+            java.util.regex.Pattern.compile("(.)\\1{4,}");
 
     /** 风险分值阈值：>= HIGH_THRESHOLD 为高风险 */
     private static final int HIGH_THRESHOLD = 70;
@@ -219,16 +238,112 @@ public class ViolationTextService {
 
     /**
      * 降级：使用关键词匹配检测违规。
+     *
+     * <p>在 AI 服务不可用时使用。覆盖广告引流、恶意谩骂、无关灌水三大类，
+     * 严重违规词（暴恐/涉政等）直接标记为高风险。</p>
      */
     ViolationTextResult fallbackKeywordCheck(String content) {
-        int hitCount = countKeywordHits(content);
-        boolean violation = hitCount > 0;
+        if (content == null || content.isBlank()) {
+            return ViolationTextResult.fallback(false, "LOW", 0);
+        }
 
-        if (violation) {
-            return ViolationTextResult.fallback(true, "HIGH", 80);
-        } else {
+        List<ViolationTextResult.MatchedRuleInfo> rules = new ArrayList<>();
+        int maxScore = 0;
+        String primaryRiskType = null;
+
+        // 1. 检测严重违规（暴恐/涉政/色情/赌博/毒品）— 直接 HIGH
+        for (String word : SEVERE_RISK_WORDS) {
+            if (content.contains(word)) {
+                rules.add(ViolationTextResult.MatchedRuleInfo.builder()
+                        .ruleCode("SEVERE_001")
+                        .ruleName("包含严重违规词语")
+                        .riskType("OTHER")
+                        .confidence(1.0)
+                        .evidenceExcerpt(word)
+                        .build());
+                maxScore = Math.max(maxScore, 90);
+                primaryRiskType = "OTHER";
+            }
+        }
+
+        // 2. 检测广告引流
+        for (String word : AD_SPAM_KEYWORDS) {
+            if (content.contains(word)) {
+                rules.add(ViolationTextResult.MatchedRuleInfo.builder()
+                        .ruleCode("AD_SPAM_FB")
+                        .ruleName("包含广告引流词语")
+                        .riskType("AD_SPAM")
+                        .confidence(0.85)
+                        .evidenceExcerpt(word)
+                        .build());
+                maxScore = Math.max(maxScore, 75);
+                primaryRiskType = "AD_SPAM";
+            }
+        }
+
+        // 3. 检测恶意谩骂
+        for (String word : ABUSE_KEYWORDS) {
+            if (content.contains(word)) {
+                rules.add(ViolationTextResult.MatchedRuleInfo.builder()
+                        .ruleCode("ABUSE_FB")
+                        .ruleName("包含恶意谩骂词语")
+                        .riskType("ABUSE")
+                        .confidence(0.85)
+                        .evidenceExcerpt(word)
+                        .build());
+                maxScore = Math.max(maxScore, 72);
+                primaryRiskType = "ABUSE";
+            }
+        }
+
+        // 4. 检测无关灌水（重复字符）
+        if (SPAM_REPEAT_PATTERN.matcher(content).find()) {
+            rules.add(ViolationTextResult.MatchedRuleInfo.builder()
+                    .ruleCode("SPAM_FB")
+                    .ruleName("包含重复无意义字符")
+                    .riskType("SPAM")
+                    .confidence(0.75)
+                    .evidenceExcerpt("重复字符模式")
+                    .build());
+            maxScore = Math.max(maxScore, 50);
+            if (primaryRiskType == null) {
+                primaryRiskType = "SPAM";
+            }
+        }
+
+        // 5. 检测纯无意义内容（只有数字/符号/单字重复）
+        String stripped = content.replaceAll("[\\s\\p{Punct}0-9]", "");
+        if (stripped.length() < 3 && content.length() > 5) {
+            rules.add(ViolationTextResult.MatchedRuleInfo.builder()
+                    .ruleCode("SPAM_FB2")
+                    .ruleName("疑似无意义灌水内容")
+                    .riskType("SPAM")
+                    .confidence(0.6)
+                    .evidenceExcerpt(content.length() > 30
+                            ? content.substring(0, 30) + "..." : content)
+                    .build());
+            maxScore = Math.max(maxScore, 45);
+            if (primaryRiskType == null) {
+                primaryRiskType = "SPAM";
+            }
+        }
+
+        if (rules.isEmpty()) {
             return ViolationTextResult.fallback(false, "LOW", 10);
         }
+
+        String riskLevel = maxScore >= HIGH_THRESHOLD ? "HIGH"
+                : maxScore >= MEDIUM_THRESHOLD ? "MEDIUM" : "LOW";
+
+        return ViolationTextResult.builder()
+                .violation(true)
+                .riskLevel(riskLevel)
+                .riskScore(maxScore)
+                .riskType(primaryRiskType)
+                .matchedRules(rules)
+                .detectionStatus("FALLBACK")
+                .modelName("keyword-fallback")
+                .build();
     }
 
     /**
@@ -295,6 +410,27 @@ public class ViolationTextService {
         return riskRecordMapper.findByContent(contentType, contentId);
     }
 
+    /**
+     * 按风险类型统计（用于管理后台统计图表）。
+     */
+    public List<Map<String, Object>> getRiskTypeStats(java.time.OffsetDateTime since) {
+        return riskRecordMapper.countByRiskType(since);
+    }
+
+    /**
+     * 按风险等级统计（用于管理后台统计图表）。
+     */
+    public List<Map<String, Object>> getRiskLevelStats(java.time.OffsetDateTime since) {
+        return riskRecordMapper.countByRiskLevel(since);
+    }
+
+    /**
+     * 按检测状态统计（用于管理后台统计图表）。
+     */
+    public List<Map<String, Object>> getDetectionStatusStats(java.time.OffsetDateTime since) {
+        return riskRecordMapper.countByDetectionStatus(since);
+    }
+
     // ==================== 内部工具方法 ====================
 
     /**
@@ -329,15 +465,4 @@ public class ViolationTextService {
         return Math.max(0, Math.min(100, score));
     }
 
-    /**
-     * 统计内容中包含的高风险关键词数量。
-     */
-    private static int countKeywordHits(String content) {
-        if (content == null || content.isBlank()) {
-            return 0;
-        }
-        return (int) HIGH_RISK_WORDS.stream()
-                .filter(content::contains)
-                .count();
-    }
 }
