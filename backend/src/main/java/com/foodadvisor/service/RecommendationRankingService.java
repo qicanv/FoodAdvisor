@@ -62,8 +62,17 @@ public class RecommendationRankingService {
     private static final java.util.concurrent.atomic.AtomicInteger TRACE_SEQUENCE =
             new java.util.concurrent.atomic.AtomicInteger(2000);
 
-    private static final String ALGORITHM_VERSION =
+    private static final String ALGORITHM_RULE_V1 =
             "RULE_V1";
+
+    private static final String ALGORITHM_HYBRID_V1 =
+            "HYBRID_V1";
+
+    private static final String ALGORITHM_HYBRID_PARTIAL_V1 =
+            "HYBRID_PARTIAL_V1";
+
+    private static final String ALGORITHM_RULE_FALLBACK_V1 =
+            "RULE_FALLBACK_V1";
 
     private static final String SESSION_STATUS_ACTIVE =
             "ACTIVE";
@@ -102,6 +111,14 @@ public class RecommendationRankingService {
     private static final BigDecimal DATABASE_SCORE_MAX =
             BigDecimal.ONE;
 
+    /**
+     * Java 端期望 AI Service 最终返回的单路最大文档数量。
+     *
+     * AI Service 启用 reranker 后，还会扩大 OpenSearch 初始召回，
+     * 因此这里不直接使用接口允许的最大值 100。
+     */
+    private static final int MAX_SEMANTIC_TOP_K = 60;
+
     private final ChatSessionMapper chatSessionMapper;
     private final ChatSessionStateMapper chatSessionStateMapper;
     private final MerchantMapper merchantMapper;
@@ -120,6 +137,40 @@ public class RecommendationRankingService {
     private final ObjectMapper objectMapper;
     @Autowired(required = false)
     private AiRequestTraceService traceService;
+
+    private enum SemanticSearchStatus {
+        /**
+         * 三个来源均正常完成检索。
+         */
+        FULL,
+
+        /**
+         * 至少一个来源正常，至少一个来源失败。
+         */
+        PARTIAL,
+
+        /**
+         * 有语义查询，但三个来源都不可用。
+         */
+        UNAVAILABLE,
+
+        /**
+         * 没有自然语言查询，或硬过滤后没有候选商家。
+         */
+        SKIPPED
+    }
+
+    private record SemanticSearchOutcome(
+            Map<Long, SemanticMatchResult> matches,
+            SemanticSearchStatus status
+    ) {
+    }
+
+    private record RankingCalculation(
+            List<RecommendationItemVO> results,
+            SemanticSearchStatus semanticStatus
+    ) {
+    }
 
     public RecommendationRankingService(
             ChatSessionMapper chatSessionMapper,
@@ -314,17 +365,30 @@ public class RecommendationRankingService {
         RecommendationWeights weights =
                 resolveWeights(request);
 
+        String semanticQuery = request.getQuery() != null
+                && !request.getQuery().isBlank()
+                ? request.getQuery().trim()
+                : null;
+
         Recommendation recommendation =
                 createPendingRecommendation(
                         session,
                         constraints,
                         weights,
-                        context
+                        context,
+                        semanticQuery
                 );
 
         AiRequestTraceStage rankingStage = startStage(
-                context, "RULE_RANKING",
-                java.util.Map.of("responseType", "RECOMMENDATION"));
+                context,
+                "RECOMMENDATION_RANKING",
+                java.util.Map.of(
+                        "responseType",
+                        "RECOMMENDATION",
+                        "semanticEnabled",
+                        semanticQuery != null
+                )
+        );
 
         List<Merchant> candidates =
                 loadCandidateMerchants();
@@ -332,12 +396,7 @@ public class RecommendationRankingService {
         Map<Long, List<MerchantBusinessHours>> businessHours =
                 loadBusinessHours(candidates, constraints);
 
-        String semanticQuery = request.getQuery() != null
-                && !request.getQuery().isBlank()
-                ? request.getQuery().trim()
-                : null;
-
-        List<RecommendationItemVO> results =
+        RankingCalculation calculation =
                 calculateResults(
                         candidates,
                         constraints,
@@ -349,6 +408,18 @@ public class RecommendationRankingService {
                         semanticQuery
                 );
 
+        List<RecommendationItemVO> results =
+                calculation.results();
+
+        SemanticSearchStatus semanticStatus =
+                calculation.semanticStatus();
+
+        String algorithmVersion =
+                algorithmVersionFor(semanticStatus);
+
+        boolean degraded =
+                isSemanticDegraded(semanticStatus);
+
         applyDishKeywordFilter(
                 candidates,
                 constraints,
@@ -358,9 +429,21 @@ public class RecommendationRankingService {
 
         results.sort(this::compareResults);
         assignRanks(results);
-        completeStage(rankingStage,
-                java.util.Map.of("resultCount", results.size()),
-                "RULE_ENGINE", "NOT_APPLICABLE");
+        completeStage(
+                rankingStage,
+                java.util.Map.of(
+                        "resultCount",
+                        results.size(),
+                        "semanticStatus",
+                        semanticStatus.name(),
+                        "algorithmVersion",
+                        algorithmVersion,
+                        "degraded",
+                        degraded
+                ),
+                rankingEngineFor(semanticStatus),
+                "NOT_APPLICABLE"
+        );
 
         AiRequestTraceStage evidenceStage = startStage(
                 context, "EVIDENCE_SELECTION",
@@ -378,7 +461,8 @@ public class RecommendationRankingService {
                 java.util.Map.of("recommendationId", recommendation.getId()));
         completeRecommendation(
                 recommendation,
-                results
+                results,
+                semanticStatus
         );
         completeStage(persistStage,
                 java.util.Map.of("recommendationId", recommendation.getId(),
@@ -403,7 +487,8 @@ public class RecommendationRankingService {
                 constraints,
                 weights,
                 results,
-                noMatchAnalysis
+                noMatchAnalysis,
+                semanticStatus
         );
         response.setTraceId(context.traceId());
         return response;
@@ -674,7 +759,8 @@ public class RecommendationRankingService {
             ChatSession session,
             ConstraintState constraints,
             RecommendationWeights weights,
-            AiTraceContext context
+            AiTraceContext context,
+            String semanticQuery
     ) {
         Recommendation recommendation =
                 new Recommendation();
@@ -688,7 +774,9 @@ public class RecommendationRankingService {
                 context.traceId()
         );
         recommendation.setQueryText(
-                "基于会话结构化需求执行商家规则排序"
+                semanticQuery == null
+                        ? "基于会话结构化需求执行商家规则排序"
+                        : "基于会话结构化需求与自然语言语义执行商家混合排序"
         );
         recommendation.setParsedConstraints(
                 serializeToJson(
@@ -698,7 +786,7 @@ public class RecommendationRankingService {
                 )
         );
         recommendation.setAlgorithmVersion(
-                ALGORITHM_VERSION
+                ALGORITHM_RULE_V1
         );
         recommendation.setWeightSnapshot(
                 serializeToJson(
@@ -759,7 +847,7 @@ public class RecommendationRankingService {
                 : merchants;
     }
 
-    private List<RecommendationItemVO> calculateResults(
+    private RankingCalculation calculateResults(
             List<Merchant> candidates,
             ConstraintState constraints,
             RecommendationWeights weights,
@@ -769,21 +857,73 @@ public class RecommendationRankingService {
             AiTraceContext context,
             String originalQuery
     ) {
-        Map<Long, SemanticMatchResult> semanticMatches =
-                performSemanticSearch(candidates, originalQuery, context);
+        /*
+         * 第一阶段：先执行确定性的硬条件过滤。
+         *
+         * 只有满足预算、菜系、商家类型、评分、距离和营业时间的商家，
+         * 才允许进入后续语义召回，避免不符合条件的商家占用向量 topK。
+         */
+        List<Merchant> eligibleCandidates = new ArrayList<>();
 
-        List<RecommendationItemVO> results =
-                new ArrayList<>();
+        Map<Long, MerchantBusinessHoursService.BusinessHoursMatch>
+                eligibleBusinessHours =
+                new java.util.LinkedHashMap<>();
 
         for (Merchant merchant : candidates) {
+            boolean passedHardFilters =
+                    matchScoreCalculator.passesHardFilters(
+                            merchant,
+                            constraints,
+                            userLatitude,
+                            userLongitude
+                    );
+
+            if (!passedHardFilters) {
+                continue;
+            }
+
             MerchantBusinessHoursService.BusinessHoursMatch
-                    businessHoursMatch = businessHoursService.match(
-                    constraints,
-                    businessHours.get(merchant.getId())
-            );
+                    businessHoursMatch =
+                    businessHoursService.match(
+                            constraints,
+                            businessHours.get(merchant.getId())
+                    );
+
             if (!businessHoursMatch.matched()) {
                 continue;
             }
+
+            eligibleCandidates.add(merchant);
+            eligibleBusinessHours.put(
+                    merchant.getId(),
+                    businessHoursMatch
+            );
+        }
+
+        /*
+         * 第二阶段：只在满足硬条件的商家范围内做语义检索和 rerank。
+         */
+        SemanticSearchOutcome semanticOutcome =
+                performSemanticSearch(
+                        eligibleCandidates,
+                        originalQuery,
+                        context
+                );
+
+        Map<Long, SemanticMatchResult> semanticMatches =
+                semanticOutcome.matches();
+
+        /*
+         * 第三阶段：计算规则分、语义分和最终综合分。
+         */
+        List<RecommendationItemVO> results =
+                new ArrayList<>();
+
+        for (Merchant merchant : eligibleCandidates) {
+            MerchantBusinessHoursService.BusinessHoursMatch
+                    businessHoursMatch =
+                    eligibleBusinessHours.get(merchant.getId());
+
             matchScoreCalculator.calculate(
                     merchant,
                     constraints,
@@ -796,11 +936,15 @@ public class RecommendationRankingService {
                         result,
                         businessHoursMatch.evidence()
                 );
+
                 results.add(result);
             });
         }
 
-        return results;
+        return new RankingCalculation(
+                results,
+                semanticOutcome.status()
+        );
     }
 
     /**
@@ -810,56 +954,117 @@ public class RecommendationRankingService {
      * 三个来源上分别做向量检索，然后按 merchantId 聚合，
      * 得到每个商家的加权语义分和可信度。
      *
-     * @param candidates   候选商家列表
+     * @param candidates    候选商家列表
      * @param originalQuery 用户原始自然语言查询，为 null 时语义检索不启用
-     * @param context      追踪上下文
-     * @return merchantId → SemanticMatchResult
+     * @param context       追踪上下文
+     * @return 语义匹配结果及检索状态
      */
-    private Map<Long, SemanticMatchResult> performSemanticSearch(
+    private SemanticSearchOutcome performSemanticSearch(
             List<Merchant> candidates,
             String originalQuery,
             AiTraceContext context
     ) {
-        if (originalQuery == null || originalQuery.isBlank()) {
-            return Map.of();
+        if (originalQuery == null
+                || originalQuery.isBlank()
+                || candidates == null
+                || candidates.isEmpty()) {
+            return new SemanticSearchOutcome(
+                    Map.of(),
+                    SemanticSearchStatus.SKIPPED
+            );
         }
 
         List<Long> merchantIds = candidates.stream()
                 .map(Merchant::getId)
                 .toList();
 
+        // ---- 根据硬过滤后的候选商家数量动态确定召回规模 ----
+        int candidateCount = merchantIds.size();
+
+        int introTopK = calculateSemanticTopK(
+                candidateCount,
+                5,
+                1
+        );
+
+        int menuTopK = calculateSemanticTopK(
+                candidateCount,
+                10,
+                2
+        );
+
+        int reviewTopK = calculateSemanticTopK(
+                candidateCount,
+                15,
+                3
+        );
+
         // ---- 三路检索 ----
-        JsonNode introHits  = safeSearch(originalQuery, merchantIds,
-                List.of("MERCHANT_INTRO"), 5, context);
-        JsonNode menuHits   = safeSearch(originalQuery, merchantIds,
-                List.of("MENU"), 5, context);
-        JsonNode reviewHits = safeSearch(originalQuery, merchantIds,
-                List.of("REVIEW"), 10, context);
+        JsonNode introHits = safeSearch(
+                originalQuery,
+                merchantIds,
+                List.of("MERCHANT_INTRO"),
+                introTopK,
+                context
+        );
+
+        JsonNode menuHits = safeSearch(
+                originalQuery,
+                merchantIds,
+                List.of("MENU"),
+                menuTopK,
+                context
+        );
+
+        JsonNode reviewHits = safeSearch(
+                originalQuery,
+                merchantIds,
+                List.of("REVIEW"),
+                reviewTopK,
+                context
+        );
 
         // 统计各路的可用状态
-        boolean introAvailable  = hasResults(introHits);
-        boolean menuAvailable   = hasResults(menuHits);
-        boolean reviewAvailable = hasResults(reviewHits);
+        boolean introAvailable =
+                isSearchAvailable(introHits);
+
+        boolean menuAvailable =
+                isSearchAvailable(menuHits);
+
+        boolean reviewAvailable =
+                isSearchAvailable(reviewHits);
 
         int availableCount = (introAvailable ? 1 : 0)
                 + (menuAvailable ? 1 : 0)
                 + (reviewAvailable ? 1 : 0);
 
         if (availableCount == 0) {
-            return Map.of(); // 三路均失败 → 语义检索降级
+            return new SemanticSearchOutcome(
+                    Map.of(),
+                    SemanticSearchStatus.UNAVAILABLE
+            );
         }
+
+        SemanticSearchStatus semanticStatus =
+                availableCount == 3
+                        ? SemanticSearchStatus.FULL
+                        : SemanticSearchStatus.PARTIAL;
 
         // 如果有路失败，重新分配权重
         BigDecimal[] weights = redistributeWeights(
                 introAvailable, menuAvailable, reviewAvailable);
 
         // ---- 聚合 ----
-        Map<Long, SemanticMatchResult> results = new java.util.LinkedHashMap<>();
+        Map<Long, SemanticMatchResult> results =
+                new java.util.LinkedHashMap<>();
 
         // 从各路的 hits 中提取最高分
-        Map<Long, BigDecimal> introMax  = extractMaxScores(introHits);
-        Map<Long, BigDecimal> menuMax   = extractMaxScores(menuHits);
-        Map<Long, BigDecimal> reviewMax = extractMaxScores(reviewHits);
+        Map<Long, BigDecimal> introMax =
+                extractMaxScores(introHits);
+        Map<Long, BigDecimal> menuMax =
+                extractMaxScores(menuHits);
+        Map<Long, BigDecimal> reviewMax =
+                extractMaxScores(reviewHits);
 
         // 从各路的 hits 中提取最佳 evidence
         Map<Long, List<SemanticMatchResult.SemanticEvidenceItem>> introEvidence =
@@ -871,25 +1076,43 @@ public class RecommendationRankingService {
 
         // 遍历所有候选商家，聚合分路分数
         for (Merchant merchant : candidates) {
-            Long mId = merchant.getId();
-            SemanticMatchResult result = new SemanticMatchResult();
-            result.setMerchantId(mId);
-            result.setIntroScore(introMax.get(mId));
-            result.setMenuScore(menuMax.get(mId));
-            result.setReviewScore(reviewMax.get(mId));
+            Long merchantId = merchant.getId();
+            SemanticMatchResult result =
+                    new SemanticMatchResult();
+
+            result.setMerchantId(merchantId);
+            result.setIntroScore(
+                    introMax.get(merchantId)
+            );
+            result.setMenuScore(
+                    menuMax.get(merchantId)
+            );
+            result.setReviewScore(
+                    reviewMax.get(merchantId)
+            );
 
             // 汇总 evidence
             List<SemanticMatchResult.SemanticEvidenceItem> evidence =
                     new ArrayList<>();
-            if (introEvidence.containsKey(mId)) {
-                evidence.addAll(introEvidence.get(mId));
+
+            if (introEvidence.containsKey(merchantId)) {
+                evidence.addAll(
+                        introEvidence.get(merchantId)
+                );
             }
-            if (menuEvidence.containsKey(mId)) {
-                evidence.addAll(menuEvidence.get(mId));
+
+            if (menuEvidence.containsKey(merchantId)) {
+                evidence.addAll(
+                        menuEvidence.get(merchantId)
+                );
             }
-            if (reviewEvidence.containsKey(mId)) {
-                evidence.addAll(reviewEvidence.get(mId));
+
+            if (reviewEvidence.containsKey(merchantId)) {
+                evidence.addAll(
+                        reviewEvidence.get(merchantId)
+                );
             }
+
             result.setEvidenceItems(evidence);
 
             // 至少有一路命中才保留
@@ -901,15 +1124,116 @@ public class RecommendationRankingService {
 
             if (availableCount < 3) {
                 result.recomputeWithWeights(
-                        weights[0], weights[1], weights[2]);
+                        weights[0],
+                        weights[1],
+                        weights[2]
+                );
             } else {
                 result.compute();
             }
 
-            results.put(mId, result);
+            results.put(merchantId, result);
         }
 
-        return results;
+        return new SemanticSearchOutcome(
+                results,
+                semanticStatus
+        );
+    }
+
+    private String algorithmVersionFor(
+            SemanticSearchStatus status
+    ) {
+        return switch (status) {
+            case FULL ->
+                    ALGORITHM_HYBRID_V1;
+            case PARTIAL ->
+                    ALGORITHM_HYBRID_PARTIAL_V1;
+            case UNAVAILABLE ->
+                    ALGORITHM_RULE_FALLBACK_V1;
+            case SKIPPED ->
+                    ALGORITHM_RULE_V1;
+        };
+    }
+
+    private boolean isSemanticDegraded(
+            SemanticSearchStatus status
+    ) {
+        return status == SemanticSearchStatus.PARTIAL
+                || status == SemanticSearchStatus.UNAVAILABLE;
+    }
+
+    private String rankingEngineFor(
+            SemanticSearchStatus status
+    ) {
+        return switch (status) {
+            case FULL, PARTIAL ->
+                    "HYBRID_ENGINE";
+            case UNAVAILABLE, SKIPPED ->
+                    "RULE_ENGINE";
+        };
+    }
+
+    private String recommendationQueryTextFor(
+            SemanticSearchStatus status
+    ) {
+        return switch (status) {
+            case FULL ->
+                    "基于结构化条件、向量检索和重排序执行商家混合排序";
+            case PARTIAL ->
+                    "部分语义来源不可用，基于可用语义结果和结构化条件执行混合排序";
+            case UNAVAILABLE ->
+                    "语义检索不可用，已降级为结构化条件规则排序";
+            case SKIPPED ->
+                    "基于会话结构化需求执行商家规则排序";
+        };
+    }
+
+    private String recommendationReplyTextFor(
+            SemanticSearchStatus status,
+            int resultCount
+    ) {
+        return switch (status) {
+            case FULL ->
+                    "混合排序完成，共返回"
+                            + resultCount
+                            + "家匹配商家";
+            case PARTIAL ->
+                    "部分语义来源降级，混合排序完成，共返回"
+                            + resultCount
+                            + "家匹配商家";
+            case UNAVAILABLE ->
+                    "语义检索不可用，已使用规则排序，共返回"
+                            + resultCount
+                            + "家匹配商家";
+            case SKIPPED ->
+                    "规则排序完成，共返回"
+                            + resultCount
+                            + "家匹配商家";
+        };
+    }
+
+    /**
+     * 根据硬过滤后的候选商家数量计算单路语义召回数量。
+     *
+     * @param candidateCount      合格候选商家数量
+     * @param minimumTopK         该来源的最小召回数量
+     * @param documentsPerMerchant 每家商家预计需要保留的文档数量
+     */
+    private int calculateSemanticTopK(
+            int candidateCount,
+            int minimumTopK,
+            int documentsPerMerchant
+    ) {
+        long desiredTopK = Math.max(
+                minimumTopK,
+                (long) candidateCount * documentsPerMerchant
+        );
+
+        return (int) Math.min(
+                desiredTopK,
+                MAX_SEMANTIC_TOP_K
+        );
     }
 
     /**
@@ -931,12 +1255,19 @@ public class RecommendationRankingService {
     }
 
     /**
-     * 检查语义检索响应是否包含有效结果。
+     * 判断语义检索服务是否正常完成。
+     *
+     * SUCCESS 且结果为空表示检索正常，只是当前来源没有相关命中；
+     * 只有响应为空或 status != SUCCESS 才表示该检索分路不可用。
      */
-    private boolean hasResults(JsonNode response) {
-        if (response == null) return false;
-        JsonNode results = response.path("data").path("results");
-        return results.isArray() && !results.isEmpty();
+    private boolean isSearchAvailable(JsonNode response) {
+        if (response == null) {
+            return false;
+        }
+
+        String status = response.path("status").asText("");
+
+        return "SUCCESS".equalsIgnoreCase(status);
     }
 
     /**
@@ -2158,12 +2489,19 @@ private void applyDishKeywordFilter(
 
     private void completeRecommendation(
             Recommendation recommendation,
-            List<RecommendationItemVO> results
+            List<RecommendationItemVO> results,
+            SemanticSearchStatus semanticStatus
     ) {
         boolean hasResults =
                 results != null
                         && !results.isEmpty();
 
+        recommendation.setAlgorithmVersion(
+                algorithmVersionFor(semanticStatus)
+        );
+        recommendation.setQueryText(
+                recommendationQueryTextFor(semanticStatus)
+        );
         recommendation.setStatus(
                 hasResults
                         ? RECOMMENDATION_STATUS_SUCCESS
@@ -2174,9 +2512,10 @@ private void applyDishKeywordFilter(
         );
         recommendation.setReplyText(
                 hasResults
-                        ? "规则排序完成，共返回"
-                        + results.size()
-                        + "家匹配商家"
+                        ? recommendationReplyTextFor(
+                        semanticStatus,
+                        results.size()
+                )
                         : NO_MATCH_MESSAGE
         );
         recommendation.setCompletedAt(
@@ -2202,7 +2541,8 @@ private void applyDishKeywordFilter(
             ConstraintState constraints,
             RecommendationWeights weights,
             List<RecommendationItemVO> results,
-            NoMatchAnalysis noMatchAnalysis
+            NoMatchAnalysis noMatchAnalysis,
+            SemanticSearchStatus semanticStatus
     ) {
         boolean matched =
                 results != null && !results.isEmpty();
@@ -2221,6 +2561,12 @@ private void applyDishKeywordFilter(
         );
         response.setAlgorithmVersion(
                 recommendation.getAlgorithmVersion()
+        );
+        response.setSemanticStatus(
+                semanticStatus.name()
+        );
+        response.setDegraded(
+                isSemanticDegraded(semanticStatus)
         );
         response.setMatched(matched);
         response.setStatus(
@@ -2300,27 +2646,61 @@ private void applyDishKeywordFilter(
     }
 
     private void completeStandalone(
-            AiTraceContext context, RecommendationRankResponse response,
+            AiTraceContext context,
+            RecommendationRankResponse response,
             String responseType
     ) {
-        if (traceService == null || response == null) return;
+        if (traceService == null || response == null) {
+            return;
+        }
+
         try {
             traceService.updateStructuredConditions(
-                    context, response.getCurrentConstraints());
-            java.util.List<Long> merchantIds = response.getResults() == null
-                    ? java.util.List.of()
-                    : response.getResults().stream()
-                    .map(RecommendationItemVO::getMerchantId)
-                    .filter(java.util.Objects::nonNull)
-                    .toList();
-            traceService.completeTrace(context, "SUCCESS",
+                    context,
+                    response.getCurrentConstraints()
+            );
+
+            List<Long> merchantIds =
+                    response.getResults() == null
+                            ? List.of()
+                            : response.getResults().stream()
+                            .map(RecommendationItemVO::getMerchantId)
+                            .filter(java.util.Objects::nonNull)
+                            .toList();
+
+            String traceEngine =
+                    response.getAlgorithmVersion() != null
+                            && response.getAlgorithmVersion()
+                            .startsWith("HYBRID")
+                            ? "HYBRID_ENGINE"
+                            : "RULE_ENGINE";
+
+            traceService.completeTrace(
+                    context,
+                    "SUCCESS",
                     java.util.Map.of(
-                            "recommendationId", response.getRecommendationId(),
-                            "merchantIds", merchantIds,
-                            "resultCount", response.getResultCount(),
-                            "degraded", false,
-                            "responseType", responseType),
-                    null, "RULE_ENGINE", null, "NOT_APPLICABLE");
+                            "recommendationId",
+                            response.getRecommendationId(),
+                            "merchantIds",
+                            merchantIds,
+                            "resultCount",
+                            response.getResultCount(),
+                            "degraded",
+                            Boolean.TRUE.equals(
+                                    response.getDegraded()
+                            ),
+                            "semanticStatus",
+                            response.getSemanticStatus(),
+                            "algorithmVersion",
+                            response.getAlgorithmVersion(),
+                            "responseType",
+                            responseType
+                    ),
+                    null,
+                    traceEngine,
+                    null,
+                    "NOT_APPLICABLE"
+            );
         } catch (Exception ignored) {
             // Trace writes must not change a successful ranking response.
         }

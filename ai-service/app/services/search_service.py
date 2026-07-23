@@ -105,9 +105,9 @@ class SearchService:
             logger.error("OpenSearch search failed: %s", exc)
             return SearchResponse(
                 requestId=request.requestId,
-                status="SUCCESS",
+                status="FAILED",
                 data=SearchData(
-                    searchMode="KEYWORD_FALLBACK",
+                    searchMode="VECTOR",
                     results=[],
                 ),
             )

@@ -51,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -175,6 +176,15 @@ class RecommendationRankingServiceTest {
         lenient().when(chatSessionStateMapper.updateById(
                 any(ChatSessionState.class)
         )).thenReturn(1);
+
+        lenient().when(
+                matchScoreCalculator.passesHardFilters(
+                        any(Merchant.class),
+                        any(ConstraintState.class),
+                        nullable(BigDecimal.class),
+                        nullable(BigDecimal.class)
+                )
+        ).thenReturn(true);
 
         lenient().when(matchScoreCalculator
                 .resolvePerCapitaBudget(

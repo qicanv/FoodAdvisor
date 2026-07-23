@@ -11,10 +11,11 @@ import java.util.List;
  */
 @Data
 public class RecommendationRankResponse {
+
     private String traceId;
 
     /**
-     * recommendations表生成的推荐记录ID。
+     * recommendations 表生成的推荐记录 ID。
      */
     private Long recommendationId;
 
@@ -23,9 +24,20 @@ public class RecommendationRankResponse {
     private String requestId;
 
     /**
-     * 排序算法版本。
+     * 本次实际采用的排序算法版本。
      */
     private String algorithmVersion;
+
+    /**
+     * 本次语义检索状态：
+     * FULL / PARTIAL / UNAVAILABLE / SKIPPED。
+     */
+    private String semanticStatus;
+
+    /**
+     * 是否因部分或全部语义检索来源不可用而发生降级。
+     */
+    private Boolean degraded;
 
     private Boolean matched;
 
