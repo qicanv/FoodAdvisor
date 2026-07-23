@@ -37,10 +37,30 @@ public interface ContentRiskRecordMapper extends BaseMapper<ContentRiskRecord> {
     /**
      * 按风险等级统计检测记录数
      */
-    @Select("SELECT risk_level, COUNT(*) as cnt " +
+    @Select("SELECT risk_level as key, COUNT(*) as cnt " +
             "FROM content_risk_records " +
             "WHERE created_at >= #{since} " +
             "GROUP BY risk_level")
     List<java.util.Map<String, Object>> countByRiskLevel(
+            @Param("since") java.time.OffsetDateTime since);
+
+    /**
+     * 按风险类型统计检测记录数
+     */
+    @Select("SELECT risk_type as key, COUNT(*) as cnt " +
+            "FROM content_risk_records " +
+            "WHERE created_at >= #{since} AND risk_type IS NOT NULL " +
+            "GROUP BY risk_type")
+    List<java.util.Map<String, Object>> countByRiskType(
+            @Param("since") java.time.OffsetDateTime since);
+
+    /**
+     * 按检测状态统计检测记录数
+     */
+    @Select("SELECT detection_status as key, COUNT(*) as cnt " +
+            "FROM content_risk_records " +
+            "WHERE created_at >= #{since} " +
+            "GROUP BY detection_status")
+    List<java.util.Map<String, Object>> countByDetectionStatus(
             @Param("since") java.time.OffsetDateTime since);
 }
