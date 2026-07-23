@@ -5,6 +5,7 @@ import com.foodadvisor.config.FraudDetectionConfig;
 import com.foodadvisor.dto.fraud.DetectRequest;
 import com.foodadvisor.dto.fraud.DetectResponse;
 import com.foodadvisor.entity.ReviewFraudCase;
+import com.foodadvisor.mapper.FraudCaseQueryMapper;
 import com.foodadvisor.mapper.ReviewFraudCaseMapper;
 import com.foodadvisor.mapper.ReviewMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -30,6 +31,7 @@ public class FraudDetectionService {
 
     private final ReviewMapper reviewMapper;
     private final ReviewFraudCaseMapper fraudCaseMapper;
+    private final FraudCaseQueryMapper queryMapper;
     private final FraudDetectionConfig config;
     private final ObjectMapper objectMapper;
 
@@ -321,13 +323,14 @@ public class FraudDetectionService {
 
         Set<Long> newIdSet = new HashSet<>(newIds);
 
-        LambdaQueryWrapper<ReviewFraudCase> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ReviewFraudCase::getMerchantId, newCase.getMerchantId())
-                .eq(ReviewFraudCase::getRuleType, newCase.getRuleType());
-        List<ReviewFraudCase> existing = fraudCaseMapper.selectList(wrapper);
+        // 用 FraudCaseQueryMapper（纯 MyBatis，SQL 中用 ::text 转 JSONB）
+        List<Map<String, Object>> existing = queryMapper.findCaseMaps(
+                null, null, null, newCase.getMerchantId(), 1000, 0);
 
-        for (ReviewFraudCase existingCase : existing) {
-            List<Long> existingIds = parseReviewIds(existingCase.getMatchedReviewIds());
+        for (Map<String, Object> row : existing) {
+            String ruleType = (String) row.get("rule_type");
+            if (!newCase.getRuleType().equals(ruleType)) continue;
+            List<Long> existingIds = parseReviewIds((String) row.get("matched_review_ids"));
             if (new HashSet<>(existingIds).containsAll(newIdSet)) {
                 return false;
             }

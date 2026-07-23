@@ -245,6 +245,18 @@ const routes = [
       allowedRoles: ['ADMIN', 'OPERATOR'],
     },
   },
+  {
+    path: '/admin/fraud-cases',
+    name: 'admin-fraud-cases',
+    component: () => import('../views/admin/fraud/FraudCaseList.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
+  },
+  {
+    path: '/admin/fraud-cases/:caseId',
+    name: 'admin-fraud-case-detail',
+    component: () => import('../views/admin/fraud/FraudCaseDetail.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
+  },
 ]
 
 const router = createRouter({

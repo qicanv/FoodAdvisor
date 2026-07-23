@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,7 +55,7 @@ public class FraudDetectionController {
      * 刷评案例列表
      */
     @GetMapping("/cases")
-    public ApiResponse<PageResult<FraudCaseListVO>> listCases(
+    public ApiResponse<Map<String, Object>> listCases(
             HttpServletRequest servletRequest,
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "20") int pageSize,
@@ -66,10 +67,10 @@ public class FraudDetectionController {
             @RequestParam(required = false) OffsetDateTime endTime) {
         requireAdminOrOperator(servletRequest);
 
-        Page<FraudCaseListVO> page = fraudCaseService.listCases(
+        Map<String, Object> page = fraudCaseService.listCases(
                 status, riskLevel, ruleType, merchantId,
                 startTime, endTime, pageNum, pageSize);
-        return ApiResponse.success(PageResult.from(page));
+        return ApiResponse.success(page);
     }
 
     /**
@@ -113,6 +114,29 @@ public class FraudDetectionController {
                 "conclusion", result.getReviewConclusion(),
                 "remark", result.getReviewRemark() != null ? result.getReviewRemark() : ""
         ));
+    }
+
+    /**
+     * 批量修改评论状态（弹窗中单条或多选操作）
+     */
+    @PutMapping("/reviews/status")
+    public ApiResponse<?> batchUpdateReviewStatus(
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest servletRequest) {
+        requireAdminOrOperator(servletRequest);
+
+        @SuppressWarnings("unchecked")
+        List<Number> rawIds = (List<Number>) body.get("reviewIds");
+        String newStatus = (String) body.get("newStatus");
+
+        if (rawIds == null || rawIds.isEmpty() || newStatus == null || newStatus.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "reviewIds 和 newStatus 不能为空");
+        }
+
+        List<Long> reviewIds = rawIds.stream().map(Number::longValue).toList();
+        int updated = fraudCaseService.batchUpdateReviewStatus(reviewIds, newStatus);
+
+        return ApiResponse.success("已更新 " + updated + " 条评论", Map.of("updatedCount", updated));
     }
 
     // ========== 权限校验 ==========

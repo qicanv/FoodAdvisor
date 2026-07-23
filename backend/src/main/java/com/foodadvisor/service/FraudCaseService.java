@@ -2,12 +2,12 @@ package com.foodadvisor.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.foodadvisor.dto.fraud.FraudCaseDetailVO;
 import com.foodadvisor.dto.fraud.FraudCaseListVO;
 import com.foodadvisor.dto.fraud.ReviewRequest;
 import com.foodadvisor.entity.ReviewFraudCase;
 import com.foodadvisor.exception.ApiException;
+import com.foodadvisor.mapper.FraudCaseQueryMapper;
 import com.foodadvisor.mapper.ReviewFraudCaseMapper;
 import com.foodadvisor.mapper.ReviewMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -28,8 +28,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class FraudCaseService extends ServiceImpl<ReviewFraudCaseMapper, ReviewFraudCase> {
+public class FraudCaseService {
 
+    private final FraudCaseQueryMapper queryMapper;
     private final ReviewFraudCaseMapper fraudCaseMapper;
     private final ReviewMapper reviewMapper;
     private final AuditLogService auditLogService;
@@ -59,70 +60,93 @@ public class FraudCaseService extends ServiceImpl<ReviewFraudCaseMapper, ReviewF
 
     // ---- 列表 ----
 
-    public Page<FraudCaseListVO> listCases(String status, String riskLevel, String ruleType,
+    public Map<String, Object> listCases(String status, String riskLevel, String ruleType,
                                             Long merchantId, OffsetDateTime startTime,
                                             OffsetDateTime endTime, int pageNum, int pageSize) {
-        LambdaQueryWrapper<ReviewFraudCase> wrapper = new LambdaQueryWrapper<>();
-        if (status != null && !status.isBlank()) {
-            wrapper.eq(ReviewFraudCase::getStatus, status);
-        }
-        if (riskLevel != null && !riskLevel.isBlank()) {
-            wrapper.eq(ReviewFraudCase::getRiskLevel, riskLevel);
-        }
-        if (ruleType != null && !ruleType.isBlank()) {
-            wrapper.eq(ReviewFraudCase::getRuleType, ruleType);
-        }
-        if (merchantId != null) {
-            wrapper.eq(ReviewFraudCase::getMerchantId, merchantId);
-        }
-        if (startTime != null) {
-            wrapper.ge(ReviewFraudCase::getDetectedAt, startTime);
-        }
-        if (endTime != null) {
-            wrapper.le(ReviewFraudCase::getDetectedAt, endTime);
-        }
-        wrapper.orderByDesc(ReviewFraudCase::getDetectedAt);
+        int offset = (pageNum - 1) * pageSize;
 
-        Page<ReviewFraudCase> page = fraudCaseMapper.selectPage(
-                new Page<>(pageNum, pageSize), wrapper);
+        // 用 FraudCaseQueryMapper（纯 MyBatis，不触发 MP 实体解析）
+        List<Map<String, Object>> rows = queryMapper.findCaseMaps(
+                blankToNull(status), blankToNull(riskLevel), blankToNull(ruleType),
+                merchantId, pageSize, offset);
 
-        // 收集所有 merchantId 批量查询商家名称
-        Set<Long> merchantIds = page.getRecords().stream()
-                .map(ReviewFraudCase::getMerchantId)
-                .collect(Collectors.toSet());
+        long total = queryMapper.countCases(
+                blankToNull(status), blankToNull(riskLevel), blankToNull(ruleType),
+                merchantId);
+
+        Set<Long> merchantIds = new HashSet<>();
+        for (Map<String, Object> row : rows) {
+            Object mid = row.get("merchant_id");
+            if (mid instanceof Number n) merchantIds.add(n.longValue());
+        }
         Map<Long, String> merchantNames = loadMerchantNames(merchantIds);
 
-        List<FraudCaseListVO> vos = page.getRecords().stream()
-                .map(c -> toListVO(c, merchantNames))
-                .collect(Collectors.toList());
+        List<FraudCaseListVO> vos = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            vos.add(toListVO(row, merchantNames));
+        }
 
-        Page<FraudCaseListVO> resultPage = new Page<>(pageNum, pageSize, page.getTotal());
-        resultPage.setRecords(vos);
-        return resultPage;
+        Map<String, Object> result = new HashMap<>();
+        result.put("pageNum", pageNum);
+        result.put("pageSize", pageSize);
+        result.put("total", total);
+        result.put("records", vos);
+        return result;
     }
 
-    private FraudCaseListVO toListVO(ReviewFraudCase c, Map<Long, String> merchantNames) {
-        List<Long> reviewIds = parseReviewIds(c.getMatchedReviewIds());
-        Object snapshot = parseJsonSafely(c.getMatchedRuleSnapshot());
+    private String blankToNull(String s) {
+        return (s != null && !s.isBlank()) ? s : null;
+    }
 
+    /** 从 Map 行构建列表 VO */
+    private FraudCaseListVO toListVO(Map<String, Object> row, Map<Long, String> merchantNames) {
+        Long merchantId = toLong(row.get("merchant_id"));
+        String ruleType = (String) row.get("rule_type");
+        String status = (String) row.get("status");
+
+        // JSONB 字段在 SQL 中用 ::text 已转为 String
+        List<Long> reviewIds = parseReviewIds((String) row.get("matched_review_ids"));
+        Object snapshot = parseJsonSafely((String) row.get("matched_rule_snapshot"));
+
+        String reviewConclusion = (String) row.get("review_conclusion");
         return FraudCaseListVO.builder()
-                .caseId(c.getId())
-                .merchantId(c.getMerchantId())
-                .merchantName(merchantNames.getOrDefault(c.getMerchantId(), "未知商家"))
-                .ruleType(c.getRuleType())
-                .ruleTypeText(RULE_TYPE_TEXT.getOrDefault(c.getRuleType(), c.getRuleType()))
-                .riskLevel(c.getRiskLevel())
-                .status(c.getStatus())
-                .statusText(STATUS_TEXT.getOrDefault(c.getStatus(), c.getStatus()))
+                .caseId(toLong(row.get("case_id")))
+                .merchantId(merchantId)
+                .merchantName(merchantNames.getOrDefault(merchantId, "未知商家"))
+                .ruleType(ruleType)
+                .ruleTypeText(ruleType != null
+                        ? RULE_TYPE_TEXT.getOrDefault(ruleType, ruleType) : null)
+                .riskLevel((String) row.get("risk_level"))
+                .status(status)
+                .statusText(status != null
+                        ? STATUS_TEXT.getOrDefault(status, status) : null)
                 .matchedRuleSnapshot(snapshot)
+                .matchedReviewIds(reviewIds)
                 .relatedReviewCount(reviewIds.size())
-                .summary(c.getSummary())
-                .detectedAt(c.getDetectedAt())
-                .reviewedByName(null) // 详情页可单独加载
-                .reviewedAt(c.getReviewedAt())
-                .reviewConclusion(c.getReviewConclusion())
-                .reviewConclusionText(CONCLUSION_TEXT.getOrDefault(c.getReviewConclusion(), null))
+                .summary((String) row.get("summary"))
+                .detectedAt(toOffsetDateTime(row.get("detected_at")))
+                .reviewedByName(null)
+                .reviewedAt(toOffsetDateTime(row.get("reviewed_at")))
+                .reviewConclusion(reviewConclusion)
+                .reviewConclusionText(reviewConclusion != null
+                        ? CONCLUSION_TEXT.getOrDefault(reviewConclusion, null) : null)
                 .build();
+    }
+
+    /** JSONB 字段 JDBC 返回 PGobject，需转 String */
+    private String jsonbString(Map<String, Object> row, String key) {
+        Object v = row.get(key);
+        if (v == null) return null;
+        return v.toString();
+    }
+
+    private Long toLong(Object v) {
+        return v instanceof Number n ? n.longValue() : null;
+    }
+
+    private OffsetDateTime toOffsetDateTime(Object v) {
+        if (v instanceof OffsetDateTime odt) return odt;
+        return null;
     }
 
     // ---- 详情 ----
@@ -141,13 +165,18 @@ public class FraudCaseService extends ServiceImpl<ReviewFraudCaseMapper, ReviewF
 
         Map<Long, String> merchantNames = loadMerchantNames(Set.of(c.getMerchantId()));
 
+        String conclusion = c.getReviewConclusion();
+        String ruleType = c.getRuleType();
+        String status = c.getStatus();
+
         // 复核历史
         FraudCaseDetailVO.ReviewHistory history = FraudCaseDetailVO.ReviewHistory.builder()
                 .reviewedBy(c.getReviewedBy())
                 .reviewedByName(null)
                 .reviewedAt(c.getReviewedAt())
-                .reviewConclusion(c.getReviewConclusion())
-                .reviewConclusionText(CONCLUSION_TEXT.getOrDefault(c.getReviewConclusion(), null))
+                .reviewConclusion(conclusion)
+                .reviewConclusionText(conclusion != null
+                        ? CONCLUSION_TEXT.getOrDefault(conclusion, null) : null)
                 .reviewRemark(c.getReviewRemark())
                 .build();
 
@@ -155,11 +184,13 @@ public class FraudCaseService extends ServiceImpl<ReviewFraudCaseMapper, ReviewF
                 .caseId(c.getId())
                 .merchantId(c.getMerchantId())
                 .merchantName(merchantNames.getOrDefault(c.getMerchantId(), "未知商家"))
-                .ruleType(c.getRuleType())
-                .ruleTypeText(RULE_TYPE_TEXT.getOrDefault(c.getRuleType(), c.getRuleType()))
+                .ruleType(ruleType)
+                .ruleTypeText(ruleType != null
+                        ? RULE_TYPE_TEXT.getOrDefault(ruleType, ruleType) : null)
                 .riskLevel(c.getRiskLevel())
-                .status(c.getStatus())
-                .statusText(STATUS_TEXT.getOrDefault(c.getStatus(), c.getStatus()))
+                .status(status)
+                .statusText(status != null
+                        ? STATUS_TEXT.getOrDefault(status, status) : null)
                 .matchedRuleSnapshot(snapshot)
                 .summary(c.getSummary())
                 .relatedReviews(relatedReviews)
@@ -177,17 +208,20 @@ public class FraudCaseService extends ServiceImpl<ReviewFraudCaseMapper, ReviewF
         if (c == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "案例不存在");
         }
-        if (!"PENDING_REVIEW".equals(c.getStatus())) {
+        String currentStatus = c.getStatus();
+        if ("REVIEWED".equals(currentStatus) || "DISMISSED".equals(currentStatus)) {
             throw new ApiException(HttpStatus.CONFLICT, "STATUS_CONFLICT",
-                    "该案例当前状态为" + STATUS_TEXT.getOrDefault(c.getStatus(), c.getStatus()) + "，不允许重复复核");
+                    "该案例已处理完成，不允许重复复核");
         }
 
         String conclusion = request.getConclusion().toUpperCase();
         String newStatus;
         switch (conclusion) {
             case "CONFIRMED_FRAUD":
-            case "DISMISSED":
                 newStatus = "REVIEWED";
+                break;
+            case "DISMISSED":
+                newStatus = "DISMISSED";
                 break;
             case "NEED_FURTHER_CHECK":
                 newStatus = "PENDING_REVIEW";
@@ -204,6 +238,14 @@ public class FraudCaseService extends ServiceImpl<ReviewFraudCaseMapper, ReviewF
         c.setReviewedAt(OffsetDateTime.now());
 
         fraudCaseMapper.updateById(c);
+
+        // 确认刷评 → 批量隐藏关联评价
+        if ("CONFIRMED_FRAUD".equals(conclusion)) {
+            List<Long> reviewIds = parseReviewIds(c.getMatchedReviewIds());
+            if (!reviewIds.isEmpty()) {
+                reviewMapper.batchUpdateReviewStatus(reviewIds, "HIDDEN");
+            }
+        }
 
         // 审计日志
         auditLogService.recordSafely(buildAuditLog(caseId, conclusion, request.getRemark(),
@@ -236,20 +278,16 @@ public class FraudCaseService extends ServiceImpl<ReviewFraudCaseMapper, ReviewF
 
     private Map<Long, String> loadMerchantNames(Set<Long> merchantIds) {
         if (merchantIds.isEmpty()) return Map.of();
-        // 复用 ReviewMapper 中的 getActiveMerchants 或者直接写一个简单查询
-        // 这里用简单的方式：逐条查
-        Map<Long, String> result = new HashMap<>();
-        for (Long id : merchantIds) {
-            List<Map<String, Object>> merchants = reviewMapper.getActiveMerchants();
-            for (Map<String, Object> m : merchants) {
-                Long mId = ((Number) m.get("id")).longValue();
-                if (mId.equals(id)) {
-                    result.put(id, (String) m.get("name"));
-                    break;
-                }
+        // 一次性查询所有活跃商家，避免N+1问题
+        List<Map<String, Object>> allMerchants = reviewMapper.getActiveMerchants();
+        Map<Long, String> nameMap = new HashMap<>();
+        for (Map<String, Object> m : allMerchants) {
+            Long mId = ((Number) m.get("id")).longValue();
+            if (merchantIds.contains(mId)) {
+                nameMap.put(mId, (String) m.get("name"));
             }
         }
-        return result;
+        return nameMap;
     }
 
     private List<FraudCaseDetailVO.RelatedReview> loadRelatedReviews(List<Long> reviewIds) {
@@ -264,6 +302,7 @@ public class FraudCaseService extends ServiceImpl<ReviewFraudCaseMapper, ReviewF
                         .userNickname((String) detail.get("user_nickname"))
                         .rating(detail.get("rating") instanceof Number n ? n.doubleValue() : null)
                         .content((String) detail.get("content"))
+                        .reviewStatus((String) detail.get("status"))
                         .riskLevel((String) detail.get("risk_level"))
                         .createdAt(detail.get("created_at") instanceof java.time.OffsetDateTime odt
                                 ? odt : null)
@@ -289,5 +328,11 @@ public class FraudCaseService extends ServiceImpl<ReviewFraudCaseMapper, ReviewF
         log.setMetadata("{\"conclusion\":\"" + conclusion + "\",\"remark\":\""
                 + (remark != null ? remark.replace("\"", "\\\"") : "") + "\"}");
         return log;
+    }
+
+    /** 批量修改评论状态 */
+    public int batchUpdateReviewStatus(List<Long> reviewIds, String newStatus) {
+        if (reviewIds == null || reviewIds.isEmpty()) return 0;
+        return reviewMapper.batchUpdateReviewStatus(reviewIds, newStatus);
     }
 }

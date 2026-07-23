@@ -39,6 +39,31 @@ foodadvisor:
     # 单区域最多保留的热词数量，默认 100
     max-words-per-region: 100
 
+# 刷评检测规则配置
+fraud-detection:
+  rules:
+    concentration:
+      enabled: true
+      window-minutes: 60
+      threshold-count: 10
+      risk-level: HIGH
+    similarity:
+      enabled: true
+      threshold: 0.8
+      min-group-size: 10
+      risk-level: MEDIUM
+    frequency:
+      enabled: true
+      window-hours: 24
+      threshold-count: 100
+      risk-level: MEDIUM
+    rating-anomaly:
+      enabled: true
+      window-minutes: 60
+      min-count: 100
+      same-rating-ratio: 0.9
+      risk-level: LOW
+
 management:
   endpoints:
     web:
