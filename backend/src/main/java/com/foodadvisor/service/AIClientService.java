@@ -30,6 +30,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -603,6 +604,45 @@ public class AIClientService {
     }
 
     /**
+     * 调用经营改进建议生成接口（EPIC-02 Story 8）。
+     *
+     * @param merchantId 商家ID
+     * @param version    建议版本号
+     * @param dataPayload 聚合数据（口碑趋势、差评归因、亮点、竞品）
+     * @return AI 服务返回的 JSON，包含 suggestions 数组
+     */
+    public JsonNode generateBusinessSuggestions(
+            Long merchantId, Integer version,
+            Map<String, Object> dataPayload
+    ) {
+        String url = aiServiceBaseUrl
+                + "/internal/merchants/business-suggestions";
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("merchantId", merchantId);
+        request.put("version", version);
+        request.putAll(dataPayload);
+        return post(url, request, "BUSINESS_SUGGESTION_GENERATION");
+    }
+
+    /**
+     * 调用经营改进建议生成接口（带 AI 追踪上下文）。
+     */
+    public JsonNode generateBusinessSuggestions(
+            Long merchantId, Integer version,
+            Map<String, Object> dataPayload,
+            AiTraceContext context
+    ) {
+        String url = aiServiceBaseUrl
+                + "/internal/merchants/business-suggestions";
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("merchantId", merchantId);
+        request.put("version", version);
+        request.putAll(dataPayload);
+        return post(url, request, "BUSINESS_SUGGESTION_GENERATION",
+                context, "MODEL_CALL");
+    }
+
+    /**
      * 停用 OpenSearch 知识文档（内容状态变更时调用）。
      *
      * @param sourceType 来源类型：MERCHANT / MERCHANT_INTRO / MENU / REVIEW
@@ -624,15 +664,53 @@ public class AIClientService {
         return post(url, request, "KNOWLEDGE_DEACTIVATE");
     }
 
-    /**
-     * Read active OpenSearch document/source counts for administrator
-     * reconciliation. This endpoint never mutates the index.
+        /**
+     * 读取 OpenSearch 中当前有效的文档和来源数量，
+     * 供管理员执行数据对账。该接口不会修改索引。
      */
     public JsonNode getActiveKnowledgeCounts() {
         return post(
                 aiServiceBaseUrl + "/internal/knowledge/active-counts",
                 Map.of(),
                 "KNOWLEDGE_RECONCILIATION"
+        );
+    }
+
+    /**
+     * 调用违规文本检测接口（EPIC-03 故事3：违规文本识别）。
+     *
+     * <p>将文本内容发送给 AI 服务，由 LLM 判断是否包含
+     * 广告引流、恶意谩骂、虚假宣传、无关灌水等违规内容。</p>
+     *
+     * @param content     待检测的文本内容
+     * @param ruleVersion 检测规则版本
+     * @return AI 服务返回的 JSON，包含 riskType/riskLevel/riskScore/matchedRules
+     */
+    public JsonNode checkViolationText(
+            String content,
+            String ruleVersion
+    ) {
+        String url =
+                aiServiceBaseUrl
+                        + "/internal/content/violation-check";
+
+        Map<String, Object> request =
+                new LinkedHashMap<>();
+
+        request.put("content", content);
+
+        if (ruleVersion != null
+                && !ruleVersion.isBlank()) {
+            request.put(
+                    "ruleVersion",
+                    ruleVersion
+            );
+        }
+
+        return post(
+                url,
+                request,
+                "VIOLATION_TEXT_CHECK"
         );
     }
 
@@ -658,6 +736,21 @@ public class AIClientService {
         String url = aiServiceBaseUrl + "/internal/knowledge/upsert";
         Map<String, Object> request = Map.of("documents", documents);
         return post(url, request, "KNOWLEDGE_UPSERT");
+    }
+
+    /**
+     * 调用评论摘要忠实性测试接口（EPIC-06 Story 3）。
+     *
+     * 将已生成的商家口碑摘要和原始评价原文送入 AI 服务，
+     * 以 LLM-as-Judge 模式对摘要中的每个声明做忠实性验证。
+     *
+     * @param requestBody 包含 merchantId、summary（ReviewSummaryResponse 结构）、
+     *                    reviews（FaithfulnessReviewItem 列表）的 Map
+     * @return AI 服务返回的 JSON，包含 overallScore、claimResults、各类计数等
+     */
+    public JsonNode testSummaryFaithfulness(Map<String, Object> requestBody) {
+        String url = aiServiceBaseUrl + "/internal/reviews/summary-faithfulness-test";
+        return post(url, requestBody, "FAITHFULNESS_TEST");
     }
 
     public boolean isHealthy() {

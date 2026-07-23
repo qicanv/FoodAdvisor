@@ -197,10 +197,16 @@ const formatRuleSnapshot = (snapshot) => {
 const loadDetail = async () => {
   loading.value = true
   try {
-    const res = await getFraudCaseDetail(caseId)
-    detail.value = res.data || res
+    const response = await getFraudCaseDetail(caseId)
+    if (response.success && response.data) {
+      detail.value = response.data
+    } else {
+      ElMessage.error(response.message || '加载案例详情失败')
+      router.push('/admin/fraud-cases')
+    }
   } catch (e) {
     ElMessage.error('加载案例详情失败')
+    console.error('loadDetail error:', e)
     router.push('/admin/fraud-cases')
   } finally {
     loading.value = false
@@ -214,15 +220,19 @@ const handleSubmitReview = async () => {
   }
   submitting.value = true
   try {
-    await submitReview(caseId, {
+    const response = await submitReview(caseId, {
       conclusion: reviewForm.conclusion,
       remark: reviewForm.remark,
     })
-    ElMessage.success('复核完成')
-    await loadDetail()
+    if (response.success) {
+      ElMessage.success(response.message || '复核完成')
+      await loadDetail()
+    } else {
+      ElMessage.error(response.message || '复核提交失败')
+    }
   } catch (e) {
-    const msg = e.response?.data?.message || '复核提交失败'
-    ElMessage.error(msg)
+    console.error('submitReview error:', e)
+    ElMessage.error('复核提交失败')
   } finally {
     submitting.value = false
   }

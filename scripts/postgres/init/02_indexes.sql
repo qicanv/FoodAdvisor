@@ -279,11 +279,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_object
     ON audit_logs(object_type, object_id, created_at DESC);
 
 
-CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_user_merchant_original
-ON reviews(user_id, merchant_id)
-WHERE user_id IS NOT NULL
-  AND review_type = 'ORIGINAL'
-  AND status <> 'DELETED';
+-- 已移除 uk_reviews_user_merchant_original 唯一索引，允许用户对同一商家发表多条原始评价
+-- 普通复合索引替代，加速用户+商家维度的查询
+CREATE INDEX IF NOT EXISTS idx_reviews_user_merchant
+ON reviews(user_id, merchant_id);
 
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_reviews_parent_follow_up

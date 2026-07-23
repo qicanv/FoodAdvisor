@@ -28,6 +28,9 @@ public class FraudCaseListVO {
     /** 规则快照（含阈值、时间窗口、实际触发值等） */
     private Object matchedRuleSnapshot;
 
+    /** 关联的可疑评价ID列表 */
+    private java.util.List<Long> matchedReviewIds;
+
     /** 关联的可疑评价数量 */
     private int relatedReviewCount;
 

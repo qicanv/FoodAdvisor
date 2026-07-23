@@ -14,6 +14,7 @@ import com.foodadvisor.dto.review.ReviewImageVO;
 import com.foodadvisor.dto.review.ReviewReplyVO;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
+import com.foodadvisor.dto.violation.ViolationTextResult;
 import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
@@ -60,24 +61,18 @@ import java.util.Map;
 import java.util.Set;
 import java.time.LocalDate;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 评价服务
  */
+@Slf4j
 @Service
 public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
     private static final int MIN_CONTENT_LENGTH = 10;
     private static final int MAX_CONTENT_LENGTH = 2000;
     private static final int MAX_IMAGE_COUNT = 9;
-
-    private static final Set<String> HIGH_RISK_WORDS = Set.of(
-            "暴恐",
-            "涉政",
-            "色情",
-            "赌博",
-            "毒品"
-    );
 
     private final ReviewAnalysisMapper analysisMapper;
     private final ReviewTagRelationMapper tagRelationMapper;
@@ -93,8 +88,17 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final AuditLogService auditLogService;
     private final com.foodadvisor.mapper.ReviewReplyMapper replyMapper;
     private final NotificationService notificationService;
+    /**
+     * OpenSearch 同步服务采用可选注入，
+     * 避免未启用搜索同步能力时影响评价基础功能。
+     */
     @Autowired(required = false)
     private OpenSearchSyncService openSearchSyncService;
+
+    /**
+     * 评价违规文本检测服务。
+     */
+    private final ViolationTextService violationTextService;
 
     public ReviewService(
             ReviewAnalysisMapper analysisMapper,
@@ -110,7 +114,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             ReviewIssueCategoryMapper issueCategoryMapper,
             com.foodadvisor.mapper.ReviewReplyMapper replyMapper,
             NotificationService notificationService,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            ViolationTextService violationTextService
     ) {
         this.analysisMapper = analysisMapper;
         this.tagRelationMapper = tagRelationMapper;
@@ -126,6 +131,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         this.replyMapper = replyMapper;
         this.notificationService = notificationService;
         this.auditLogService = auditLogService;
+        this.violationTextService = violationTextService;
     }
 
     /**
@@ -251,43 +257,23 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         Merchant merchant = requireReviewableMerchant(merchantId);
 
-        Review review = findCurrentOriginalReview(
-                userId,
-                merchantId
-        );
-
-        boolean creating = review == null;
-        String beforeStatus = review == null ? null : review.getStatus();
-        String beforeModerationStatus =
-                review == null ? null : review.getModerationStatus();
-        String beforeRiskLevel =
-                review == null ? null : review.getRiskLevel();
-
-        if (creating) {
-            review = new Review();
-            review.setUserId(userId);
-            review.setMerchantId(merchantId);
-            review.setReviewType("ORIGINAL");
-            review.setSource("SYSTEM");
-            review.setCurrentVersion(1);
-            review.setCreatedAt(OffsetDateTime.now());
-        } else {
-            int currentVersion =
-                    review.getCurrentVersion() == null
-                            ? 1
-                            : review.getCurrentVersion();
-
-            review.setCurrentVersion(currentVersion + 1);
-            review.setEditedAt(OffsetDateTime.now());
-        }
+        // 每次都创建新评价，允许用户对同一商家发表多条评价
+        Review review = new Review();
+        review.setUserId(userId);
+        review.setMerchantId(merchantId);
+        review.setReviewType("ORIGINAL");
+        review.setSource("SYSTEM");
+        review.setCurrentVersion(1);
+        review.setReviewTime(OffsetDateTime.now());
 
         applyReviewFields(review, request);
-        int sensitiveHitCount = countSensitiveHits(review.getContent());
-        applyContentSafety(review);
+        ViolationTextResult violationResult = performViolationCheck(
+                review, "REVIEW");
 
-        boolean saved = creating
-                ? this.save(review)
-                : this.updateById(review);
+        // HIGH 风险 → 直接拦截，不保存评价，返回原因
+        requireNotHighRisk(review, "REVIEW", violationResult);
+
+        boolean saved = this.save(review);
         if (!saved) {
             throw new ApiException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
@@ -297,17 +283,16 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         }
         enqueueReviewSync(review);
 
+        // 评价持久化后保存违规检测记录
+        saveViolationRecord(review, "REVIEW", violationResult);
+
         List<ReviewImage> activeImages = replaceImages(
                 review.getId(),
                 request.getKeepImageIds(),
                 images
         );
 
-        saveVersion(
-                review,
-                activeImages,
-                creating ? "CREATE" : "EDIT"
-        );
+        saveVersion(review, activeImages, "CREATE");
 
         refreshMerchantRatingStats(merchant.getId());
         triggerAnalysisPlaceholder(review);
@@ -315,13 +300,11 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         recordContentModerationSafely(
                 review,
                 userId,
-                creating
-                        ? "AUTO_MODERATE_REVIEW_CREATE"
-                        : "AUTO_MODERATE_REVIEW_UPDATE",
-                beforeStatus,
-                beforeModerationStatus,
-                beforeRiskLevel,
-                sensitiveHitCount
+                "AUTO_MODERATE_REVIEW_CREATE",
+                null,
+                null,
+                null,
+                violationResult
         );
 
         return toSubmitResponse(review, activeImages);
@@ -397,10 +380,10 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 用前端传来的新内容覆盖旧字段（content、rating、tasteRating 等）
         applyReviewFields(review, request);
-        int sensitiveHitCount = countSensitiveHits(review.getContent());
+        ViolationTextResult violationResult = performViolationCheck(
+                review, "REVIEW");
 
-        // 内容安全审核：如果新内容包含敏感词，状态会变成 PENDING 待审核
-        applyContentSafety(review);
+        requireNotHighRisk(review, "REVIEW", violationResult);
 
         // 执行 UPDATE SQL，把改动持久化到 reviews 表
         if (!this.updateById(review)) {
@@ -411,6 +394,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             );
         }
         enqueueReviewSync(review);
+
+        saveViolationRecord(review, "REVIEW", violationResult);
 
         // 处理图片：保留 keepImageIds 中的旧图 + 上传新图，其余标记删除
         List<ReviewImage> activeImages = replaceImages(
@@ -435,7 +420,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 beforeStatus,
                 beforeModerationStatus,
                 beforeRiskLevel,
-                sensitiveHitCount
+                violationResult
         );
 
         // 把最终的 Review 对象 + 图片列表转成前端要的 JSON 格式
@@ -462,9 +447,10 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         review.setEditedAt(OffsetDateTime.now());
 
         applyReviewFields(review, request);
-        int sensitiveHitCount = countSensitiveHits(review.getContent());
+        ViolationTextResult violationResult = performViolationCheck(
+                review, "REVIEW");
 
-        applyContentSafety(review);
+        requireNotHighRisk(review, "REVIEW", violationResult);
 
         if (!this.updateById(review)) {
             throw new ApiException(
@@ -474,6 +460,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             );
         }
         enqueueReviewSync(review);
+
+        saveViolationRecord(review, "REVIEW", violationResult);
 
         List<ReviewImage> activeImages = List.of();
 
@@ -490,7 +478,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 beforeStatus,
                 beforeModerationStatus,
                 beforeRiskLevel,
-                sensitiveHitCount
+                violationResult
         );
 
         return toSubmitResponse(review, activeImages);
@@ -917,9 +905,11 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             followUp.setAverageSpend(request.getAverageSpend());
         }
 
-        // 5. 内容安全检测
-        int sensitiveHitCount = countSensitiveHits(followUp.getContent());
-        applyContentSafety(followUp);
+        // 5. 内容安全检测（违规文本识别）
+        ViolationTextResult violationResult = performViolationCheck(
+                followUp, "REVIEW_FOLLOW_UP");
+
+        requireNotHighRisk(followUp, "REVIEW_FOLLOW_UP", violationResult);
 
         // 6. 持久化
         if (!this.save(followUp)) {
@@ -930,6 +920,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             );
         }
 
+        saveViolationRecord(followUp, "REVIEW_FOLLOW_UP", violationResult);
+
         // 7. 记录版本快照
         saveVersion(followUp, List.of(), "CREATE");
 
@@ -937,7 +929,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         recordContentModerationSafely(
                 followUp, userId,
                 "AUTO_MODERATE_FOLLOW_UP_CREATE",
-                null, null, null, sensitiveHitCount
+                null, null, null, violationResult
         );
 
         return toSubmitResponse(followUp, List.of());
@@ -996,8 +988,10 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 ? BigDecimal.valueOf(request.getRating()) : null);
         followUp.setAverageSpend(request.getAverageSpend());
 
-        int sensitiveHitCount = countSensitiveHits(followUp.getContent());
-        applyContentSafety(followUp);
+        ViolationTextResult violationResult = performViolationCheck(
+                followUp, "REVIEW_FOLLOW_UP");
+
+        requireNotHighRisk(followUp, "REVIEW_FOLLOW_UP", violationResult);
 
         // 6. 保存
         if (!this.updateById(followUp)) {
@@ -1008,6 +1002,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             );
         }
 
+        saveViolationRecord(followUp, "REVIEW_FOLLOW_UP", violationResult);
+
         // 7. 版本快照 + 审计日志
         saveVersion(followUp, List.of(), "EDIT");
 
@@ -1015,7 +1011,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 followUp, userId,
                 "AUTO_MODERATE_FOLLOW_UP_UPDATE",
                 beforeStatus, beforeModerationStatus, beforeRiskLevel,
-                sensitiveHitCount
+                violationResult
         );
 
         return toSubmitResponse(followUp, List.of());
@@ -1803,20 +1799,6 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         return merchant;
     }
 
-    private Review findCurrentOriginalReview(
-            Long userId,
-            Long merchantId
-    ) {
-        return this.getOne(
-                new LambdaQueryWrapper<Review>()
-                        .eq(Review::getUserId, userId)
-                        .eq(Review::getMerchantId, merchantId)
-                        .eq(Review::getReviewType, "ORIGINAL")
-                        .ne(Review::getStatus, "DELETED")
-                        .last("LIMIT 1")
-        );
-    }
-
     private void applyReviewFields(
             Review review,
             ReviewSubmitRequest request
@@ -1842,36 +1824,180 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         review.setUpdatedAt(OffsetDateTime.now());
     }
 
-    private void applyContentSafety(Review review) {
-        boolean highRisk =
-                countSensitiveHits(review.getContent()) > 0;
+    private static final String DEFAULT_RULE_VERSION = "violation-detection:v1";
 
-        if (highRisk) {
+    /**
+     * 对评价内容执行违规检测并应用安全策略。
+     *
+     * <p>调用 ViolationTextService 进行智能违规检测（AI LLM），
+     * AI 服务不可用时自动降级到关键词匹配。</p>
+     *
+     * <p>注意：新建评价时 review.id 尚未生成，检测记录不会在此方法内写入；
+     * 调用方需要在 review 持久化后调用 {@link #saveViolationRecord}
+     * 将检测记录写入 content_risk_records 表。</p>
+     *
+     * @param review      评价对象（content 必须已设置）
+     * @param contentType 内容类型（REVIEW / REVIEW_FOLLOW_UP）
+     * @return ViolationTextResult 检测结果
+     */
+    private ViolationTextResult performViolationCheck(
+            Review review,
+            String contentType
+    ) {
+        ViolationTextResult result;
+        try {
+            result = violationTextService.detectViolation(
+                    review.getContent(),
+                    DEFAULT_RULE_VERSION
+            );
+        } catch (Exception e) {
+            // 违规检测失败时降级：将评价标记为待审核，确保安全
+            log.warn("违规文本检测失败，评价将进入待审核: reviewContent={}, error={}",
+                    review.getContent() != null
+                            ? review.getContent().substring(0, Math.min(50, review.getContent().length()))
+                            : "null",
+                    e.getMessage());
+            result = ViolationTextResult.builder()
+                    .violation(true)
+                    .riskLevel("MEDIUM")
+                    .riskScore(50)
+                    .riskType(null)
+                    .matchedRules(List.of())
+                    .detectionStatus("ERROR")
+                    .errorMessage("Detection failed: " + e.getMessage())
+                    .build();
+        }
+
+        // 根据检测结果设置评价状态
+        applyContentSafety(review, result);
+
+        return result;
+    }
+
+    /**
+     * 在评价持久化后保存违规检测记录。
+     *
+     * <p>安全方法 —— 任何异常都会被捕获并记录日志，
+     * 不会影响评价的正常提交流程。</p>
+     */
+    private void saveViolationRecord(
+            Review review,
+            String contentType,
+            ViolationTextResult result
+    ) {
+        if (review.getId() == null) {
+            return;
+        }
+        try {
+            violationTextService.saveRecord(
+                    review.getContent(),
+                    contentType,
+                    review.getId(),
+                    review.getCurrentVersion() != null ? review.getCurrentVersion() : 1,
+                    DEFAULT_RULE_VERSION,
+                    result
+            );
+        } catch (Exception e) {
+            // 保存检测记录失败不应影响评价提交
+            log.warn("保存违规检测记录失败（不影响评价提交）: reviewId={}, error={}",
+                    review.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * 根据违规检测结果设置评价的状态和审核信息。
+     *
+     * <p>风险等级映射（对齐 EPIC-03 故事3 验收准则）：</p>
+     * <ul>
+     *   <li>HIGH（score >= 70）：明显违规，直接拦截不保存 → 抛出 ApiException</li>
+     *   <li>MEDIUM（score 40~69）：无法确定，进入待审核 → status=PENDING</li>
+     *   <li>LOW（score < 40）：基本正常，自动通过 → status=PUBLISHED</li>
+     * </ul>
+     *
+     * <p>注意：HIGH 风险应在上层通过 {@link #requireNotHighRisk} 拦截，
+     * 本方法只处理 MEDIUM 和 LOW。</p>
+     *
+     * @param review 评价对象
+     * @param result 违规检测结果（riskLevel 不应为 HIGH）
+     */
+    private void applyContentSafety(Review review, ViolationTextResult result) {
+        if ("MEDIUM".equals(result.getRiskLevel()) || result.isViolation()) {
+            // 无法确定 → 进入待审核
             review.setStatus("PENDING");
             review.setModerationStatus("PENDING");
-            review.setRiskLevel("HIGH");
+            review.setRiskLevel("MEDIUM");
             review.setPublishedAt(null);
         } else {
+            // 低风险 → 自动通过
             review.setStatus("PUBLISHED");
             review.setModerationStatus("APPROVED");
             review.setRiskLevel("LOW");
 
             if (review.getPublishedAt() == null) {
-                review.setPublishedAt(
-                        OffsetDateTime.now()
-                );
+                review.setPublishedAt(OffsetDateTime.now());
             }
         }
     }
 
-    private int countSensitiveHits(String content) {
-        if (content == null || content.isBlank()) {
-            return 0;
+    /**
+     * 高风险内容直接拦截，不保存评价，返回明确原因。
+     *
+     * <p>对齐 EPIC-03 故事3 验收准则：
+     * "达到高风险阈值的内容无法直接发布，并返回明确原因"</p>
+     *
+     * <p>拦截前会尝试保存检测记录到 content_risk_records（用于统计分析），
+     * 保存失败不影响拦截逻辑。</p>
+     *
+     * @param review  评价对象（可能尚未持久化）
+     * @param contentType 内容类型
+     * @param result  违规检测结果
+     * @throws ApiException CONTENT_VIOLATION，含风险类型和命中规则描述
+     */
+    private void requireNotHighRisk(
+            Review review, String contentType, ViolationTextResult result) {
+        if (!"HIGH".equals(result.getRiskLevel())) {
+            return;
         }
 
-        return (int) HIGH_RISK_WORDS.stream()
-                .filter(content::contains)
-                .count();
+        // 尝试保存检测记录（即使评价被拦截，也记录用于统计分析）
+        try {
+            violationTextService.saveRecord(
+                    review.getContent(),
+                    contentType,
+                    review.getId(),  // 可能为 null（新建评价被拦截时）
+                    review.getCurrentVersion() != null ? review.getCurrentVersion() : 1,
+                    DEFAULT_RULE_VERSION,
+                    result
+            );
+        } catch (Exception e) {
+            log.warn("保存被拦截内容的检测记录失败: error={}", e.getMessage());
+        }
+
+        String riskTypeText = switch (result.getRiskType() != null ? result.getRiskType() : "") {
+            case "AD_SPAM" -> "广告引流";
+            case "ABUSE" -> "恶意谩骂";
+            case "FALSE_AD" -> "虚假宣传";
+            case "SPAM" -> "无关灌水";
+            case "OTHER" -> "其他违规";
+            default -> "违规内容";
+        };
+
+        StringBuilder reason = new StringBuilder();
+        reason.append("您的内容包含").append(riskTypeText).append("，无法发布。");
+
+        if (result.getMatchedRules() != null && !result.getMatchedRules().isEmpty()) {
+            reason.append(" 触发规则：");
+            for (int i = 0; i < result.getMatchedRules().size() && i < 3; i++) {
+                if (i > 0) reason.append("；");
+                reason.append(result.getMatchedRules().get(i).getRuleName());
+            }
+        }
+
+        throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "CONTENT_VIOLATION",
+                reason.toString()
+        );
     }
 
     private void recordContentModerationSafely(
@@ -1881,7 +2007,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             String beforeStatus,
             String beforeModerationStatus,
             String beforeRiskLevel,
-            int sensitiveHitCount
+            ViolationTextResult violationResult
     ) {
         if (review == null || review.getId() == null) {
             return;
@@ -1892,7 +2018,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         auditLog.setOperatorUserId(submitterUserId);
         auditLog.setOperatorRole("USER");
         auditLog.setModule("REVIEW_MODERATION");
-        auditLog.setLevel(moderationLevel(review, sensitiveHitCount));
+        auditLog.setLevel(moderationLevel(review, violationResult));
         auditLog.setResult("SUCCESS");
         auditLog.setObjectType("REVIEW");
         auditLog.setObjectId(String.valueOf(review.getId()));
@@ -1904,7 +2030,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                         beforeStatus,
                         beforeModerationStatus,
                         beforeRiskLevel,
-                        sensitiveHitCount
+                        violationResult
                 )
         );
 
@@ -1913,10 +2039,12 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
     private String moderationLevel(
             Review review,
-            int sensitiveHitCount
+            ViolationTextResult violationResult
     ) {
-        if (sensitiveHitCount > 0
-                || "PENDING".equals(review.getStatus())
+        if (violationResult != null && violationResult.isViolation()) {
+            return "WARN";
+        }
+        if ("PENDING".equals(review.getStatus())
                 || "PENDING".equals(review.getModerationStatus())
                 || !"LOW".equals(review.getRiskLevel())) {
             return "WARN";
@@ -1931,7 +2059,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             String beforeStatus,
             String beforeModerationStatus,
             String beforeRiskLevel,
-            int sensitiveHitCount
+            ViolationTextResult violationResult
     ) {
         StringBuilder metadata = new StringBuilder("{");
         appendJsonField(metadata, "operation", operation);
@@ -1944,10 +2072,16 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         appendJsonField(metadata, "afterStatus", review.getStatus());
         appendJsonField(metadata, "afterModerationStatus", review.getModerationStatus());
         appendJsonField(metadata, "riskLevel", review.getRiskLevel());
-        appendJsonField(metadata, "sensitiveHit", sensitiveHitCount > 0);
-        appendJsonField(metadata, "sensitiveHitCount", sensitiveHitCount);
-        appendJsonField(metadata, "moderationMode", "AUTO_RULE");
-        appendJsonField(metadata, "executor", "AUTO_RULE");
+        if (violationResult != null) {
+            appendJsonField(metadata, "violation", violationResult.isViolation());
+            appendJsonField(metadata, "riskScore", violationResult.getRiskScore());
+            appendJsonField(metadata, "riskType", violationResult.getRiskType());
+            appendJsonField(metadata, "detectionStatus", violationResult.getDetectionStatus());
+            appendJsonField(metadata, "modelName", violationResult.getModelName());
+            appendJsonField(metadata, "detectionMethod",
+                    "FALLBACK".equals(violationResult.getDetectionStatus()) ? "KEYWORD" : "AI_LLM");
+        }
+        appendJsonField(metadata, "executor", "VIOLATION_TEXT_SERVICE");
         appendJsonField(
                 metadata,
                 "textLength",

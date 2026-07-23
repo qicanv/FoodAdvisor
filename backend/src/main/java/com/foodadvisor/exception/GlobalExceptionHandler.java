@@ -204,7 +204,8 @@ public class GlobalExceptionHandler {
     ) {
         log.error(
                 "Unhandled server exception: {}",
-                errorSummary(exception)
+                errorSummary(exception),
+                exception
         );
 
         ApiResponse<Void> response = ApiResponse.failure(

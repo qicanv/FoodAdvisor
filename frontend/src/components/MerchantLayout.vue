@@ -147,6 +147,7 @@ const navItems = [
   // { path: '/merchant/review-sentiment', label: '评价情感分析', iconViewBox: '0 0 24 24', iconPath: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm-2 15l-3-3 1.41-1.41L10 14.17l5.59-5.59L17 10l-7 7z M9 9h6 M9 13h6' },
   { path: '/merchant/sentiment', label: '评论情感分析', iconViewBox: '0 0 24 24', iconPath: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z' },
   { path: '/merchant/competitor-comparison', label: '周边竞品对比', iconViewBox: '0 0 24 24', iconPath: 'M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z' },
+  { path: '/merchant/business-suggestions', label: '经营改进建议', iconViewBox: '0 0 24 24', iconPath: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z' },
 ]
 
 const handleLogout = () => {

@@ -1,7 +1,18 @@
 <template>
-  <AdminLayout title="内容审核工作台" subtitle="集中查看和处理待审核内容，提高审核效率">
+  <AdminLayout title="内容审核工作台" subtitle="集中查看和处理待审核内容 — 含违规文本识别与审核操作">
     <div class="filter-section">
       <div class="filter-row">
+        <div class="filter-item">
+          <label>风险类型</label>
+          <select v-model="filters.riskType" class="filter-select" @change="loadReviewList">
+            <option value="">全部</option>
+            <option value="AD_SPAM">广告引流</option>
+            <option value="ABUSE">恶意谩骂</option>
+            <option value="FALSE_AD">虚假宣传</option>
+            <option value="SPAM">无关灌水</option>
+            <option value="OTHER">其他违规</option>
+          </select>
+        </div>
         <div class="filter-item">
           <label>风险等级</label>
           <select v-model="filters.riskLevel" class="filter-select" @change="loadReviewList">
@@ -14,8 +25,8 @@
         <div class="filter-item">
           <label>处理状态</label>
           <select v-model="filters.moderationStatus" class="filter-select" @change="loadReviewList">
-            <option value="">全部</option>
             <option value="PENDING">待审核</option>
+            <option value="">全部</option>
             <option value="APPROVED">已通过</option>
             <option value="REJECTED">已驳回</option>
           </select>
@@ -44,6 +55,7 @@
       </div>
     </div>
 
+    <!-- 统计卡片：内容审核 + 违规检测 -->
     <div class="stats-cards">
       <div class="stat-card stat-card-pending">
         <div class="stat-icon">⏳</div>
@@ -52,27 +64,36 @@
           <div class="stat-label">待审核</div>
         </div>
       </div>
-      <div class="stat-card stat-card-high">
-        <div class="stat-icon">🔴</div>
+      <div class="stat-card stat-card-blocked">
+        <div class="stat-icon">🚫</div>
         <div class="stat-info">
-          <div class="stat-value">{{ stats.highRisk }}</div>
-          <div class="stat-label">高风险</div>
+          <div class="stat-value">{{ vStats.highBlocked }}</div>
+          <div class="stat-label">已拦截（30天）</div>
         </div>
       </div>
-      <div class="stat-card stat-card-medium">
-        <div class="stat-icon">🟡</div>
+      <div class="stat-card stat-card-ai">
+        <div class="stat-icon">🤖</div>
         <div class="stat-info">
-          <div class="stat-value">{{ stats.mediumRisk }}</div>
-          <div class="stat-label">中风险</div>
+          <div class="stat-value">{{ vStats.aiSuccess }}</div>
+          <div class="stat-label">AI 检测（30天）</div>
         </div>
       </div>
-      <div class="stat-card stat-card-low">
-        <div class="stat-icon">🟢</div>
+      <div class="stat-card stat-card-fallback-warn">
+        <div class="stat-icon">⚠️</div>
         <div class="stat-info">
-          <div class="stat-value">{{ stats.lowRisk }}</div>
-          <div class="stat-label">低风险</div>
+          <div class="stat-value">{{ vStats.fallback }}</div>
+          <div class="stat-label">降级检测（30天）</div>
         </div>
       </div>
+    </div>
+
+    <!-- 违规类型分布 -->
+    <div class="violation-summary" v-if="vStats.totalDetections > 0">
+      <span class="violation-summary-title">近30天违规类型：</span>
+      <span v-for="t in vStats.riskTypes" :key="t.riskType"
+        :class="['violation-tag', 'tag-' + t.riskType.toLowerCase()]">
+        {{ t.name }} {{ t.count }}
+      </span>
     </div>
 
     <div class="table-section">
@@ -111,18 +132,20 @@
                 </span>
               </td>
               <td>
-                <span :class="['status-badge', item.moderationStatus?.toLowerCase()]">
-                  {{ getModerationStatusText(item.moderationStatus) }}
+                <span :class="['status-badge', modStatus(item)?.toLowerCase()]">
+                  {{ getModerationStatusText(modStatus(item)) }}
                 </span>
               </td>
               <td class="cell-merchant">{{ item.merchantName || '-' }}</td>
               <td class="cell-user">{{ item.userNickname || item.username || '-' }}</td>
               <td class="cell-time">{{ formatTime(item.createdAt) }}</td>
-              <td class="cell-actions">
-                <button class="action-btn btn-detail" @click.stop="showDetail(item)">详情</button>
-                <button v-if="item.moderationStatus === 'PENDING'" class="action-btn btn-approve" @click.stop="handleAction(item, 'APPROVE')">通过</button>
-                <button v-if="item.moderationStatus === 'PENDING'" class="action-btn btn-reject" @click.stop="handleAction(item, 'REJECT')">驳回</button>
-                <button v-if="item.moderationStatus === 'PENDING'" class="action-btn btn-delete" @click.stop="handleAction(item, 'DELETE')">删除</button>
+              <td class="cell-actions" @click.stop>
+                <button class="action-btn btn-detail" @click="showDetail(item)">详情</button>
+                <template v-if="isPending(item)">
+                  <button class="action-btn btn-approve" @click="handleAction(item, 'APPROVE')">✓ 通过</button>
+                  <button class="action-btn btn-reject" @click="handleAction(item, 'REJECT')">✗ 驳回</button>
+                </template>
+                <span v-else class="action-done">{{ getModerationStatusText(modStatus(item)) }}</span>
               </td>
             </tr>
             <tr v-if="reviewList.length === 0" class="empty-row">
@@ -148,6 +171,17 @@
         <div class="modal-body">
           <div v-if="detailLoading" class="loading-state">加载中...</div>
           <div v-else-if="currentDetail" class="detail-content">
+            <!-- PENDING 状态：操作栏放在最显眼的位置 -->
+            <div v-if="modStatus(currentDetail) === 'PENDING'" class="detail-action-bar">
+              <span class="action-bar-title">⚠️ 待审核 — 请选择操作：</span>
+              <div class="action-bar-buttons">
+                <button class="footer-btn btn-approve" @click="handleAction(currentDetail, 'APPROVE')">✓ 通过</button>
+                <button class="footer-btn btn-reject" @click="handleAction(currentDetail, 'REJECT')">✗ 驳回</button>
+                <button class="footer-btn btn-delete" @click="handleAction(currentDetail, 'DELETE')">🗑 删除</button>
+                <button class="footer-btn btn-return" @click="handleAction(currentDetail, 'RETURN_FOR_MODIFICATION')">↩ 退回修改</button>
+              </div>
+              <textarea v-model="reviewRemark" class="remark-inline" placeholder="审核备注（可选）" rows="1"></textarea>
+            </div>
             <div class="detail-row">
               <span class="detail-label">风险等级</span>
               <span :class="['risk-badge', currentDetail.riskLevel?.toLowerCase()]">
@@ -156,8 +190,8 @@
             </div>
             <div class="detail-row">
               <span class="detail-label">审核状态</span>
-              <span :class="['status-badge', currentDetail.moderationStatus?.toLowerCase()]">
-                {{ getModerationStatusText(currentDetail.moderationStatus) }}
+              <span :class="['status-badge', modStatus(currentDetail)?.toLowerCase()]">
+                {{ getModerationStatusText(modStatus(currentDetail)) }}
               </span>
             </div>
             <div class="detail-row">
@@ -249,26 +283,75 @@
               <span class="detail-label">原始内容</span>
               <div class="content-box">{{ currentDetail.content || '-' }}</div>
             </div>
+            <!-- 违规检测详情（EPIC-03 故事3） -->
             <div class="detail-row detail-content-full">
-              <span class="detail-label">触发规则</span>
+              <span class="detail-label">违规检测</span>
               <div class="content-box">
-                <div v-if="currentDetail.riskLevel" class="rule-item">
-                  <span class="rule-icon">⚠️</span>
-                  <span class="rule-text">风险等级检测：{{ getRiskLevelText(currentDetail.riskLevel) }}</span>
+                <div v-if="riskRecords.length > 0">
+                  <div v-for="(record, idx) in riskRecords" :key="record.id" class="risk-record">
+                    <div class="risk-record-header">
+                      <span class="risk-record-ver">检测 #{{ riskRecords.length - idx }}</span>
+                      <span :class="['detection-badge', 'detection-' + (record.detectionStatus || '').toLowerCase()]">
+                        {{ detectionStatusText(record.detectionStatus) }}
+                      </span>
+                    </div>
+                    <div class="risk-record-body">
+                      <div class="risk-record-row">
+                        <span class="risk-record-label">风险类型</span>
+                        <span :class="['risk-type-tag', 'risk-type-' + (record.riskType || 'none').toLowerCase()]">
+                          {{ riskTypeText(record.riskType) }}
+                        </span>
+                      </div>
+                      <div class="risk-record-row">
+                        <span class="risk-record-label">风险分值</span>
+                        <span class="risk-score-bar-wrapper">
+                          <span class="risk-score-bar" :style="{ width: (record.riskScore || 0) + '%' }"
+                            :class="'score-' + (record.riskLevel || 'low').toLowerCase()"></span>
+                        </span>
+                        <span class="risk-score-value">{{ record.riskScore || 0 }} / 100</span>
+                      </div>
+                      <div class="risk-record-row">
+                        <span class="risk-record-label">检测方式</span>
+                        <span>{{ record.detectionStatus === 'FALLBACK' ? '关键词匹配（AI 服务不可用）' : 'AI 大模型检测' }}</span>
+                      </div>
+                      <div class="risk-record-row" v-if="record.modelName">
+                        <span class="risk-record-label">模型</span>
+                        <span>{{ record.modelName }}</span>
+                      </div>
+                      <div class="risk-record-row" v-if="record.ruleVersion">
+                        <span class="risk-record-label">规则版本</span>
+                        <span>{{ record.ruleVersion }}</span>
+                      </div>
+                      <div v-if="hasMatchedRules(record)" class="matched-rules">
+                        <div class="risk-record-label" style="margin-bottom: 6px">命中规则</div>
+                        <div v-for="(rule, ri) in parseMatchedRules(record.matchedRules)" :key="ri" class="matched-rule-item">
+                          <div class="matched-rule-header">
+                            <span class="rule-confidence">{{ Math.round(rule.confidence * 100) }}%</span>
+                            <span class="rule-code">{{ rule.ruleCode }}</span>
+                          </div>
+                          <div class="rule-name">{{ rule.ruleName }}</div>
+                          <div v-if="rule.evidenceExcerpt" class="rule-evidence">
+                            <span class="evidence-label">原文片段：</span>
+                            <span class="evidence-text">"{{ rule.evidenceExcerpt }}"</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div v-if="currentDetail.riskLevel === 'HIGH'" class="rule-item">
-                  <span class="rule-icon">🔍</span>
-                  <span class="rule-text">内容包含敏感词或疑似违规内容</span>
-                </div>
-                <div v-if="!currentDetail.riskLevel" class="rule-item">
+                <div v-else class="rule-item">
                   <span class="rule-icon">✅</span>
-                  <span class="rule-text">系统自动检测未触发风险规则</span>
+                  <span class="rule-text">
+                    暂无违规检测记录
+                    <template v-if="currentDetail.riskLevel === 'LOW'">（系统判定为低风险，自动通过）</template>
+                    <template v-else-if="currentDetail.riskLevel">（风险等级：{{ getRiskLevelText(currentDetail.riskLevel) }}）</template>
+                  </span>
                 </div>
               </div>
             </div>
           </div>
         </div>
-        <div v-if="currentDetail && currentDetail.moderationStatus === 'PENDING'" class="modal-footer">
+        <div v-if="currentDetail && modStatus(currentDetail) === 'PENDING'" class="modal-footer">
           <textarea v-model="reviewRemark" class="remark-input" placeholder="请输入审核备注（可选）" rows="3"></textarea>
           <div class="footer-actions">
             <button class="footer-btn btn-approve" @click="handleAction(currentDetail, 'APPROVE')">通过</button>
@@ -308,12 +391,14 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
 import { getReviewList, getReviewDetail, getActiveMerchants, getPendingCount, moderateReview } from '../../api/moderation'
+import { getRiskRecords, getViolationStats } from '../../api/violationText'
 
 const reviewList = ref([])
 const merchants = ref([])
 const loading = ref(false)
 const detailLoading = ref(false)
 const currentDetail = ref(null)
+const riskRecords = ref([])
 const showDetailModal = ref(false)
 const showActionModal = ref(false)
 const showMessage = ref(false)
@@ -324,9 +409,27 @@ const actionRemark = ref('')
 const actionType = ref('')
 const actionTarget = ref(null)
 
+const violationRaw = ref({})
+
+const vStats = computed(() => {
+  const raw = violationRaw.value
+  const byLevel = raw.byRiskLevel || []
+  const byStatus = raw.byDetectionStatus || []
+  const byType = (raw.byRiskType || []).filter(t => t.count > 0)
+
+  return {
+    totalDetections: raw.totalDetections || 0,
+    highBlocked: byLevel.find(l => l.riskLevel === 'HIGH')?.count || 0,
+    aiSuccess: byStatus.find(s => s.status === 'SUCCESS')?.count || 0,
+    fallback: byStatus.find(s => s.status === 'FALLBACK')?.count || 0,
+    riskTypes: byType
+  }
+})
+
 const filters = reactive({
+  riskType: '',
   riskLevel: '',
-  moderationStatus: '',
+  moderationStatus: 'PENDING',
   merchantId: '',
   startTime: '',
   endTime: ''
@@ -388,6 +491,13 @@ const getSourceText = (source) => {
   return map[source] || '未知'
 }
 
+// moderationStatus 可能以 moderationStatus 或 moderation_status 返回
+const modStatus = (item) => {
+  if (!item) return ''
+  return item.moderationStatus || item.moderation_status || ''
+}
+const isPending = (item) => modStatus(item) === 'PENDING'
+
 const getActionTitle = (type) => {
   const map = { APPROVE: '确认通过', REJECT: '确认驳回', DELETE: '确认删除', RETURN_FOR_MODIFICATION: '确认退回修改' }
   return map[type] || '确认操作'
@@ -417,14 +527,78 @@ const showToast = (text, type = 'success') => {
   }, 3000)
 }
 
+// ==================== 违规检测详情辅助方法 ====================
+
+const riskTypeText = (type) => {
+  const map = {
+    AD_SPAM: '广告引流',
+    ABUSE: '恶意谩骂',
+    FALSE_AD: '虚假宣传',
+    SPAM: '无关灌水',
+    OTHER: '其他违规'
+  }
+  return map[type] || (type || '无')
+}
+
+const detectionStatusText = (status) => {
+  const map = {
+    SUCCESS: 'AI 检测',
+    FALLBACK: '关键词降级',
+    ERROR: '检测异常',
+    TIMEOUT: '检测超时'
+  }
+  return map[status] || (status || '未知')
+}
+
+const hasMatchedRules = (record) => {
+  if (!record.matchedRules) return false
+  if (typeof record.matchedRules === 'string') {
+    try {
+      const parsed = JSON.parse(record.matchedRules)
+      return Array.isArray(parsed) && parsed.length > 0
+    } catch {
+      return false
+    }
+  }
+  if (Array.isArray(record.matchedRules)) {
+    return record.matchedRules.length > 0
+  }
+  return false
+}
+
+const parseMatchedRules = (matchedRules) => {
+  if (!matchedRules) return []
+  if (typeof matchedRules === 'string') {
+    try {
+      return JSON.parse(matchedRules)
+    } catch {
+      return []
+    }
+  }
+  if (Array.isArray(matchedRules)) return matchedRules
+  return []
+}
+
 const resetFilters = () => {
+  filters.riskType = ''
   filters.riskLevel = ''
-  filters.moderationStatus = ''
+  filters.moderationStatus = 'PENDING'
   filters.merchantId = ''
   filters.startTime = ''
   filters.endTime = ''
   pagination.pageNum = 1
   loadReviewList()
+}
+
+const loadViolationStats = async () => {
+  try {
+    const res = await getViolationStats()
+    if (res.data) {
+      violationRaw.value = res.data
+    }
+  } catch (e) {
+    console.error('加载违规统计失败:', e)
+  }
 }
 
 const loadReviewList = async () => {
@@ -455,7 +629,7 @@ const loadReviewList = async () => {
 }
 
 const calculateStats = () => {
-  stats.pending = reviewList.value.filter(item => item.moderationStatus === 'PENDING').length
+  stats.pending = reviewList.value.filter(item => modStatus(item) === 'PENDING').length
   stats.highRisk = reviewList.value.filter(item => item.riskLevel === 'HIGH').length
   stats.mediumRisk = reviewList.value.filter(item => item.riskLevel === 'MEDIUM').length
   stats.lowRisk = reviewList.value.filter(item => item.riskLevel === 'LOW').length
@@ -492,10 +666,20 @@ const changePage = (pageNum) => {
 const showDetail = async (item) => {
   detailLoading.value = true
   showDetailModal.value = true
+  riskRecords.value = []
   try {
     const response = await getReviewDetail(item.id)
     if (response.success && response.data) {
       currentDetail.value = response.data
+    }
+    // 同时加载违规检测记录
+    try {
+      const riskRes = await getRiskRecords('REVIEW', item.id)
+      if (riskRes.success && riskRes.data) {
+        riskRecords.value = riskRes.data
+      }
+    } catch (e) {
+      console.error('加载违规检测记录失败:', e)
     }
   } catch (error) {
     console.error('加载详情失败:', error)
@@ -513,7 +697,7 @@ const closeDetail = () => {
 }
 
 const handleAction = (item, action) => {
-  if (item.moderationStatus !== 'PENDING') {
+  if (modStatus(item) !== 'PENDING') {
     showToast('该评价已处理，无法重复操作', 'error')
     return
   }
@@ -554,6 +738,7 @@ onMounted(() => {
   loadMerchants()
   loadPendingCount()
   loadReviewList()
+  loadViolationStats()
 })
 </script>
 
@@ -777,6 +962,39 @@ onMounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 违规统计卡片 */
+.stat-card-blocked { border-left: 4px solid #f5222d; }
+.stat-card-ai { border-left: 4px solid #52c41a; }
+.stat-card-fallback-warn { border-left: 4px solid #fa8c16; }
+
+/* 违规类型摘要 */
+.violation-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: #fafafa;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.violation-summary-title {
+  color: #666;
+  font-weight: 500;
+}
+.violation-tag {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.tag-ad_spam { background: #fff1f0; color: #cf1322; }
+.tag-abuse { background: #fff7e6; color: #d46b08; }
+.tag-false_ad { background: #fff0f6; color: #c41d7f; }
+.tag-spam { background: #f6ffed; color: #389e0d; }
+.tag-other { background: #f5f5f5; color: #595959; }
 
 .rating-star {
   color: #faad14;
@@ -1214,5 +1432,180 @@ onMounted(() => {
     width: 95%;
     max-height: 95vh;
   }
+}
+
+/* 列表已处理标签 */
+.action-done {
+  font-size: 12px;
+  color: #bbb;
+  padding: 4px 8px;
+}
+
+/* 详情页操作栏 */
+.detail-action-bar {
+  background: linear-gradient(135deg, #fff7e6, #fffbe6);
+  border: 2px solid #ffd591;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.action-bar-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #d46b08;
+  margin-bottom: 12px;
+}
+.action-bar-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.remark-inline {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  font-size: 13px;
+  resize: none;
+  box-sizing: border-box;
+}
+
+/* ==================== 违规检测详情样式 ==================== */
+
+.risk-record {
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.risk-record:last-child { margin-bottom: 0; }
+.risk-record-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+}
+.risk-record-ver {
+  font-size: 12px;
+  color: #888;
+  font-weight: 500;
+}
+.detection-badge {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.detection-success { background: #f6ffed; color: #52c41a; }
+.detection-fallback { background: #fff7e6; color: #fa8c16; }
+.detection-error, .detection-timeout { background: #fff1f0; color: #f5222d; }
+
+.risk-record-body {
+  padding: 12px 14px;
+}
+.risk-record-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.risk-record-row:last-child { margin-bottom: 0; }
+.risk-record-label {
+  width: 70px;
+  flex-shrink: 0;
+  color: #888;
+  font-size: 12px;
+}
+
+.risk-type-tag {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.risk-type-ad_spam { background: #fff1f0; color: #cf1322; }
+.risk-type-abuse { background: #fff7e6; color: #d46b08; }
+.risk-type-false_ad { background: #fff0f6; color: #c41d7f; }
+.risk-type-spam { background: #f6ffed; color: #389e0d; }
+.risk-type-other { background: #f5f5f5; color: #595959; }
+.risk-type-none { background: #f6ffed; color: #52c41a; }
+
+.risk-score-bar-wrapper {
+  flex: 1;
+  height: 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.risk-score-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+.score-low { background: linear-gradient(90deg, #52c41a, #95de64); }
+.score-medium { background: linear-gradient(90deg, #fa8c16, #ffc069); }
+.score-high { background: linear-gradient(90deg, #f5222d, #ff7875); }
+.risk-score-value {
+  width: 60px;
+  flex-shrink: 0;
+  text-align: right;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.matched-rules {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e8e8e8;
+}
+.matched-rule-item {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: #fafafa;
+  border-radius: 6px;
+  border-left: 3px solid #667eea;
+}
+.matched-rule-item:last-child { margin-bottom: 0; }
+.matched-rule-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.rule-confidence {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f0f5ff;
+  color: #2f54eb;
+}
+.rule-code {
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+}
+.rule-name {
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 2px;
+}
+.rule-evidence {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: #fffbe6;
+  border-radius: 4px;
+}
+.evidence-label { color: #d46b08; }
+.evidence-text {
+  color: #d48806;
+  font-style: italic;
 }
 </style>

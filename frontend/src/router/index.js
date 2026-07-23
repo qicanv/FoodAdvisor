@@ -114,6 +114,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'merchant' },
   },
   {
+    path: '/merchant/business-suggestions',
+    name: 'merchant-business-suggestions',
+    component: () => import('../views/merchant/BusinessSuggestionsView.vue'),
+    meta: { requiresAuth: true, role: 'merchant' },
+  },
+  {
     path: '/admin',
     name: 'admin-login',
     component: () => import('../views/admin/LoginView.vue'),
@@ -214,6 +220,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin' },
   },
   {
+    path: '/admin/violation-text',
+    name: 'admin-violation-text',
+    component: () => import('../views/admin/ViolationTextView.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
+  },
+  {
     path: '/admin/behavior-analysis',
     name: 'admin-behavior-analysis',
     component: () => import('../views/admin/BehaviorAnalysisView.vue'),
@@ -231,6 +243,31 @@ const routes = [
       role: 'admin',
       allowedRoles: ['ADMIN', 'OPERATOR'],
     },
+  },
+  {
+    path: '/admin/faithfulness-test',
+    name: 'admin-faithfulness-test',
+    component: () =>
+      import(
+        '../views/admin/FaithfulnessTestView.vue'
+      ),
+    meta: {
+      requiresAuth: true,
+      role: 'admin',
+      allowedRoles: ['ADMIN', 'OPERATOR'],
+    },
+  },
+  {
+    path: '/admin/fraud-cases',
+    name: 'admin-fraud-cases',
+    component: () => import('../views/admin/fraud/FraudCaseList.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
+  },
+  {
+    path: '/admin/fraud-cases/:caseId',
+    name: 'admin-fraud-case-detail',
+    component: () => import('../views/admin/fraud/FraudCaseDetail.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
   },
 ]
 

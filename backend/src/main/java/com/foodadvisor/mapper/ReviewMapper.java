@@ -195,4 +195,18 @@ public interface ReviewMapper extends BaseMapper<Review> {
             @Param("id") Long id,
             @Param("riskLevel") String riskLevel
     );
+
+    /** 批量更新评价状态（刷评确认后批量隐藏/删除） */
+    @Update("<script>" +
+            "UPDATE reviews SET status = #{newStatus}, updated_at = CURRENT_TIMESTAMP " +
+            "WHERE id IN " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>" +
+            "#{id}" +
+            "</foreach>" +
+            " AND deleted_at IS NULL" +
+            "</script>")
+    int batchUpdateReviewStatus(
+            @Param("ids") java.util.List<Long> ids,
+            @Param("newStatus") String newStatus
+    );
 }

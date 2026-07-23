@@ -541,3 +541,98 @@ class FaithfulnessTestResponse(BaseModel):
         description="AI 调用追踪ID，用于排查问题"
     )
     errorMessage: Optional[str] = Field(default=None, description="测试过程中的错误信息")
+
+
+# ============================================
+# 经营改进建议生成（EPIC-02 Story 8）
+# ============================================
+
+class BusinessSuggestionDataSource(BaseModel):
+    """数据源状态"""
+    sourceType: str = Field(description="数据源类型：REPUTATION_TREND / NEGATIVE_ISSUE / HIGHLIGHT / COMPETITOR")
+    available: bool = Field(default=True)
+    dataCount: int = Field(default=0)
+    minimumRequired: int = Field(default=1)
+
+
+class BusinessSuggestionRequest(BaseModel):
+    """
+    经营改进建议生成请求
+
+    由 Spring Boot 聚合口碑趋势、差评归因、商家亮点和竞品对比数据后传入。
+    AI 基于这些数据生成结构化改进建议。
+    """
+    merchantId: int = Field(ge=1, description="商家ID")
+    version: int = Field(default=1, ge=1, description="建议版本号")
+    reviewCount: int = Field(default=0, ge=0, description="有效评价总数")
+    minimumReviewCount: int = Field(default=5, ge=1, description="最少需要评价数")
+
+    # 口碑趋势数据（可选）
+    reputationTrends: Optional[List[dict]] = Field(
+        default=None, description="口碑趋势统计点列表"
+    )
+
+    # 差评归因统计（可选）
+    issueStats: Optional[List[dict]] = Field(
+        default=None, description="差评类别统计列表"
+    )
+
+    # 商家亮点（可选）
+    highlights: Optional[List[dict]] = Field(
+        default=None, description="已有商家亮点列表"
+    )
+
+    # 竞品数据（可选）
+    competitors: Optional[List[dict]] = Field(
+        default=None, description="周边竞品基础数据"
+    )
+
+
+class BusinessSuggestionItem(BaseModel):
+    """单条经营改进建议"""
+    title: str = Field(..., min_length=1, max_length=500,
+                       description="建议标题，如'优化周末高峰期出餐速度'")
+    description: str = Field(..., min_length=1,
+                             description="建议详细描述，含问题分析和具体改进措施")
+    category: str = Field(
+        description="REPUTATION_TREND / NEGATIVE_ISSUE / HIGHLIGHT_GAP / COMPETITOR_GAP"
+    )
+    priority: str = Field(default="MEDIUM", description="HIGH / MEDIUM / LOW")
+    timeframe: str = Field(default="SHORT_TERM", description="SHORT_TERM / LONG_TERM")
+    expectedEffect: Optional[str] = Field(default=None, description="预期改进效果描述")
+    dataBasisType: Optional[str] = Field(default=None,
+                                         description="数据依据类型")
+    dataBasisSummary: Optional[str] = Field(default=None, description="数据依据摘要")
+    metricName: Optional[str] = Field(default=None, description="相关指标名称")
+    metricValue: Optional[str] = Field(default=None, description="指标数值")
+    confidence: str = Field(default="MEDIUM", description="HIGH / MEDIUM / LOW")
+
+    # 依据关联
+    evidences: Optional[List[dict]] = Field(
+        default=None,
+        description="建议依据列表，每项可含 sourceType/sourceId/reviewId/evidenceExcerpt/metricSnapshot"
+    )
+
+
+class BusinessSuggestionResponse(BaseModel):
+    """
+    经营改进建议生成响应
+    """
+    merchantId: int = Field(description="商家ID")
+    version: int = Field(description="建议版本号")
+    status: str = Field(default="SUCCESS",
+                        description="SUCCESS / FAILED / INSUFFICIENT_DATA")
+    suggestions: List[BusinessSuggestionItem] = Field(
+        default_factory=list, description="生成的改进建议列表，最多 10 条"
+    )
+    summaryText: Optional[str] = Field(
+        default=None, description="总体经营状况概述（2~3句话）"
+    )
+    dataSufficiency: Optional[str] = Field(
+        default=None, description="数据充足性评估：SUFFICIENT / INSUFFICIENT"
+    )
+    modelName: Optional[str] = Field(default=None)
+    modelVersion: Optional[str] = None
+    promptVersion: Optional[str] = Field(default="business-suggestion:v1")
+    businessTraceId: Optional[str] = Field(default=None, description="AI 调用追踪ID")
+    errorMessage: Optional[str] = Field(default=None)
