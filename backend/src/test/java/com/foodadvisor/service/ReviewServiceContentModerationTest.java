@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.foodadvisor.dto.review.ReviewSubmitRequest;
 import com.foodadvisor.dto.review.ReviewSubmitResponse;
+import com.foodadvisor.dto.violation.ViolationTextResult;
 import com.foodadvisor.entity.AuditLog;
 import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.Review;
@@ -90,6 +91,8 @@ class ReviewServiceContentModerationTest {
     private ReviewReplyMapper replyMapper;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private ViolationTextService violationTextService;
 
     private ReviewService reviewService;
 
@@ -135,7 +138,7 @@ class ReviewServiceContentModerationTest {
                 () -> assertTrue(auditLog.getMetadata()
                         .contains("\"merchantId\":" + MERCHANT_ID)),
                 () -> assertTrue(auditLog.getMetadata()
-                        .contains("\"moderationMode\":\"AUTO_RULE\""))
+                        .contains("\"executor\":\"VIOLATION_TEXT_SERVICE\""))
         );
         verify(auditLogService, times(1)).recordSafely(any(AuditLog.class));
     }
@@ -159,9 +162,9 @@ class ReviewServiceContentModerationTest {
                 () -> assertEquals("HIGH", response.getRiskLevel()),
                 () -> assertEquals("WARN", auditLog.getLevel()),
                 () -> assertTrue(auditLog.getMetadata()
-                        .contains("\"sensitiveHit\":true")),
+                        .contains("\"violation\":true")),
                 () -> assertTrue(auditLog.getMetadata()
-                        .contains("\"sensitiveHitCount\":1")),
+                        .contains("\"riskScore\":80")),
                 () -> assertFalse(auditLog.getMetadata().contains(content)),
                 () -> assertFalse(auditLog.getMetadata().contains(SENSITIVE_WORD))
         );
@@ -297,7 +300,8 @@ class ReviewServiceContentModerationTest {
                 issueCategoryMapper,
                 replyMapper,
                 notificationService,
-                auditLogService
+                auditLogService,
+                violationTextService
         );
         ReflectionTestUtils.setField(service, "baseMapper", reviewMapper);
         return service;
@@ -326,6 +330,41 @@ class ReviewServiceContentModerationTest {
                 .thenReturn(1);
         lenient().when(merchantMapper.update(any(), any()))
                 .thenReturn(1);
+
+        // ViolationTextService stubs:
+        // detectViolation responds based on content keywords
+        lenient().when(violationTextService.detectViolation(anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    String content = invocation.getArgument(0);
+                    if (!isBlank(content) && content.contains(SENSITIVE_WORD)) {
+                        return ViolationTextResult.builder()
+                                .violation(true)
+                                .riskLevel("HIGH")
+                                .riskScore(80)
+                                .riskType(null)
+                                .matchedRules(List.of())
+                                .detectionStatus("SUCCESS")
+                                .modelName("mock-model")
+                                .build();
+                    }
+                    return ViolationTextResult.builder()
+                            .violation(false)
+                            .riskLevel("LOW")
+                            .riskScore(5)
+                            .riskType(null)
+                            .matchedRules(List.of())
+                            .detectionStatus("SUCCESS")
+                            .modelName("mock-model")
+                            .build();
+                });
+
+        // saveRecord is lenient (no-op for most tests)
+        lenient().doNothing().when(violationTextService)
+                .saveRecord(anyString(), anyString(), any(), any(), anyString(), any());
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     private AuditLog capturedAuditLog() {

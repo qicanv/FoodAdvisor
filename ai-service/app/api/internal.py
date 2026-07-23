@@ -11,6 +11,7 @@ FastAPI 内部接口 — 供 Spring Boot 后端调用
 - POST /internal/knowledge/deactivate      停用知识文档
 - POST /internal/search/semantic                    语义检索
 - POST /internal/reviews/summary-faithfulness-test  摘要忠实性测试（EPIC-06 S3，LLM-as-Judge）
+- POST /internal/content/violation-check        违规文本检测（EPIC-03 S3）
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,6 +30,9 @@ from app.schemas.knowledge import (
     KnowledgeUpsertRequest, KnowledgeUpsertResponse,
     KnowledgeDeactivateRequest, KnowledgeDeactivateResponse,
 )
+from app.schemas.violation_check import (
+    ViolationCheckRequest, ViolationCheckResponse,
+)
 from app.services.dialogue_extraction_service import dialogue_extraction_service
 from app.services.review_analysis_service import review_analysis_service
 from app.models.schemas import ReviewSummaryRequest, ReviewSummaryResponse
@@ -45,6 +49,7 @@ from app.models.schemas import CompetitorComparisonRequest, CompetitorComparison
 from app.services.competitor_comparison_service import competitor_comparison_service
 from app.models.schemas import FaithfulnessTestRequest, FaithfulnessTestResponse
 from app.services.faithfulness_test_service import faithfulness_test_service
+from app.services.violation_detection_service import violation_detection_service
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +184,58 @@ async def query_content(request: QueryRequest):
     当前返回占位 — 后续可对接 OpenSearch 或数据库进行持久化查询。
     """
     raise HTTPException(status_code=501, detail="内容查询功能将在数据持久化后实现（可对接 OpenSearch）")
+
+
+# ---- 违规文本检测（EPIC-03 故事3） ----
+
+@router.post(
+    "/content/violation-check",
+    response_model=ViolationCheckResponse,
+    summary="违规文本检测",
+)
+async def check_violation_text(request: ViolationCheckRequest):
+    """
+    对用户提交的文本内容进行违规检测。
+
+    检测类型：
+    - AD_SPAM：广告引流（联系方式、链接推广、刷单等）
+    - ABUSE：恶意谩骂（人身攻击、侮辱性言论）
+    - FALSE_AD：虚假宣传（夸大功效、虚假承诺）
+    - SPAM：无关灌水（无意义内容、重复刷屏）
+    - OTHER：其他违反平台规则的内容
+
+    风险等级：
+    - HIGH（score >= 70）：明显违规，应阻止发布
+    - MEDIUM（score 40~69）：疑似违规，应进入人工审核
+    - LOW（score < 40）：基本正常，可自动通过
+
+    确定性：相同 content + ruleVersion → 一致结果（LLM temperature=0）
+
+    容错：LLM 调用失败时返回 detectionStatus=ERROR 及 errorMessage，
+    调用方应降级到本地关键词匹配。
+    """
+    if not request.content or not request.content.strip():
+        raise HTTPException(status_code=422, detail="检测内容不能为空")
+    if len(request.content) > 5000:
+        raise HTTPException(status_code=422, detail="检测内容不能超过5000字")
+
+    logger.info(
+        "违规文本检测请求: content_length=%d, rule_version=%s",
+        len(request.content),
+        request.ruleVersion or "default",
+    )
+
+    result = await violation_detection_service.check(request)
+
+    logger.info(
+        "违规文本检测完成: risk_level=%s, risk_score=%d, risk_type=%s, status=%s",
+        result.riskLevel.value,
+        result.riskScore,
+        result.riskType.value if result.riskType else "NONE",
+        result.detectionStatus.value,
+    )
+
+    return result
 
 
 # ---- 知识向量化与存储 ----

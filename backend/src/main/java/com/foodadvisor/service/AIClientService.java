@@ -657,6 +657,28 @@ public class AIClientService {
     }
 
     /**
+     * 调用违规文本检测接口（EPIC-03 故事3：违规文本识别）。
+     *
+     * <p>将文本内容发送给 AI 服务，由 LLM 判断是否包含
+     * 广告引流、恶意谩骂、虚假宣传、无关灌水等违规内容。</p>
+     *
+     * @param content     待检测的文本内容
+     * @param ruleVersion 检测规则版本
+     * @return AI 服务返回的 JSON，包含 riskType/riskLevel/riskScore/matchedRules
+     */
+    public JsonNode checkViolationText(String content, String ruleVersion) {
+        String url = aiServiceBaseUrl + "/internal/content/violation-check";
+
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("content", content);
+        if (ruleVersion != null && !ruleVersion.isBlank()) {
+            request.put("ruleVersion", ruleVersion);
+        }
+
+        return post(url, request, "VIOLATION_TEXT_CHECK");
+    }
+
+    /**
      * 调用内容清洗与切分接口。
      *
      * @param items 待处理内容列表，每项包含 merchantId/sourceType/sourceId/content
