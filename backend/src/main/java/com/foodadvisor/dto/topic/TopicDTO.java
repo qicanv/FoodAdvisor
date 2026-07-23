@@ -26,4 +26,5 @@ public class TopicDTO {
     private OffsetDateTime updatedAt;
     private Integer merchantCount;
     private List<String> tags;
+    private List<TopicMerchantDTO> merchants;
 }

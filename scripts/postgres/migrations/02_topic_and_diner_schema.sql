@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS topic_merchants (
     CONSTRAINT uk_topic_merchants UNIQUE (topic_id, merchant_id)
 );
 
+CREATE TABLE IF NOT EXISTS topic_tags (
+    id BIGSERIAL PRIMARY KEY,
+    topic_id BIGINT NOT NULL,
+    tag_id BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_topic_tags_topic FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE,
+    CONSTRAINT fk_topic_tags_tag FOREIGN KEY (tag_id) REFERENCES content_tags(id) ON DELETE CASCADE,
+    CONSTRAINT uk_topic_tags UNIQUE (topic_id, tag_id)
+);
+
 -- =========================================================
 -- 添加索引
 -- =========================================================
@@ -84,6 +94,8 @@ CREATE INDEX IF NOT EXISTS idx_topics_status ON topics (status);
 CREATE INDEX IF NOT EXISTS idx_topics_created_by ON topics (created_by);
 CREATE INDEX IF NOT EXISTS idx_topic_merchants_topic ON topic_merchants (topic_id);
 CREATE INDEX IF NOT EXISTS idx_topic_merchants_merchant ON topic_merchants (merchant_id);
+CREATE INDEX IF NOT EXISTS idx_topic_tags_topic ON topic_tags (topic_id);
+CREATE INDEX IF NOT EXISTS idx_topic_tags_tag ON topic_tags (tag_id);
 
 COMMIT;
 
@@ -106,6 +118,7 @@ INSERT INTO content_tags (code, name, category, status) VALUES
     ('cat-dessert', '甜品', 'category', 'ACTIVE'),
     ('cat-noodle', '面食', 'category', 'ACTIVE'),
     ('cat-rice', '米饭', 'category', 'ACTIVE'),
+    ('cat-value', '性价比', 'category', 'ACTIVE'),
     
     -- 菜系 (cuisine)
     ('cui-sichuan', '川菜', 'cuisine', 'ACTIVE'),
@@ -207,29 +220,50 @@ ON CONFLICT DO NOTHING;
 -- =========================================================
 
 INSERT INTO topic_merchants (topic_id, merchant_id, sort_order) VALUES
-    -- 夜宵好去处 - 关联烧烤、火锅类商家
-    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM merchants WHERE category = '烧烤' LIMIT 1), 1),
-    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM merchants WHERE category = '烧烤' LIMIT 1 OFFSET 1), 2),
-    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM merchants WHERE category = '火锅' LIMIT 1), 3),
+    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM merchants WHERE category = '火锅' LIMIT 1), 1),
+    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM merchants WHERE category = '火锅' LIMIT 1 OFFSET 1), 2),
+    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM merchants WHERE category = '火锅' LIMIT 1 OFFSET 2), 3),
     
-    -- 网红打卡餐厅 - 关联西餐、甜品类商家
-    ((SELECT id FROM topics WHERE name = '网红打卡餐厅'), (SELECT id FROM merchants WHERE category = '西餐' LIMIT 1), 1),
-    ((SELECT id FROM topics WHERE name = '网红打卡餐厅'), (SELECT id FROM merchants WHERE category = '甜品' LIMIT 1), 2),
+    ((SELECT id FROM topics WHERE name = '网红打卡餐厅'), (SELECT id FROM merchants WHERE category = '休闲餐饮' LIMIT 1), 1),
+    ((SELECT id FROM topics WHERE name = '网红打卡餐厅'), (SELECT id FROM merchants WHERE category = '休闲餐饮' LIMIT 1 OFFSET 1), 2),
     
-    -- 浪漫约会餐厅 - 关联西餐、日料类商家
-    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM merchants WHERE category = '西餐' LIMIT 1), 1),
-    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM merchants WHERE cuisine = '日料' LIMIT 1), 2),
-    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM merchants WHERE category = '西餐' LIMIT 1 OFFSET 1), 3),
+    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM merchants WHERE category = '休闲餐饮' LIMIT 1), 1),
+    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM merchants WHERE cuisine = '粤菜' LIMIT 1), 2),
+    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM merchants WHERE category = '休闲餐饮' LIMIT 1 OFFSET 1), 3),
     
-    -- 商务宴请精选 - 关联粤菜、海鲜类商家
-    ((SELECT id FROM topics WHERE name = '商务宴请精选'), (SELECT id FROM merchants WHERE category = '粤菜' LIMIT 1), 1),
-    ((SELECT id FROM topics WHERE name = '商务宴请精选'), (SELECT id FROM merchants WHERE category = '海鲜' LIMIT 1), 2),
+    ((SELECT id FROM topics WHERE name = '商务宴请精选'), (SELECT id FROM merchants WHERE cuisine = '粤菜' LIMIT 1), 1),
+    ((SELECT id FROM topics WHERE name = '商务宴请精选'), (SELECT id FROM merchants WHERE cuisine = '粤菜' LIMIT 1 OFFSET 1), 2),
     
-    -- 高性价比美食 - 关联快餐、面食类商家
-    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM merchants WHERE category = '快餐' LIMIT 1), 1),
-    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM merchants WHERE category = '面食' LIMIT 1), 2),
-    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM merchants WHERE average_price < 50 LIMIT 1), 3),
-    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM merchants WHERE average_price < 50 LIMIT 1 OFFSET 1), 4)
+    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM merchants WHERE average_price < 50 LIMIT 1), 1),
+    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM merchants WHERE average_price < 50 LIMIT 1 OFFSET 1), 2),
+    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM merchants WHERE average_price < 50 LIMIT 1 OFFSET 2), 3),
+    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM merchants WHERE average_price < 50 LIMIT 1 OFFSET 3), 4)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO topic_tags (topic_id, tag_id) VALUES
+    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM content_tags WHERE name = '夜宵')),
+    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM content_tags WHERE name = '火锅')),
+    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM content_tags WHERE name = '川菜')),
+    ((SELECT id FROM topics WHERE name = '夜宵好去处'), (SELECT id FROM content_tags WHERE name = '人均50-100')),
+    
+    ((SELECT id FROM topics WHERE name = '网红打卡餐厅'), (SELECT id FROM content_tags WHERE name = '网红')),
+    ((SELECT id FROM topics WHERE name = '网红打卡餐厅'), (SELECT id FROM content_tags WHERE name = '环境优雅')),
+    ((SELECT id FROM topics WHERE name = '网红打卡餐厅'), (SELECT id FROM content_tags WHERE name = '人均50-100')),
+    
+    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM content_tags WHERE name = '约会')),
+    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM content_tags WHERE name = '环境优雅')),
+    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM content_tags WHERE name = '粤菜')),
+    ((SELECT id FROM topics WHERE name = '浪漫约会餐厅'), (SELECT id FROM content_tags WHERE name = '人均100-200')),
+    
+    ((SELECT id FROM topics WHERE name = '商务宴请精选'), (SELECT id FROM content_tags WHERE name = '商务宴请')),
+    ((SELECT id FROM topics WHERE name = '商务宴请精选'), (SELECT id FROM content_tags WHERE name = '粤菜')),
+    ((SELECT id FROM topics WHERE name = '商务宴请精选'), (SELECT id FROM content_tags WHERE name = '环境优雅')),
+    ((SELECT id FROM topics WHERE name = '商务宴请精选'), (SELECT id FROM content_tags WHERE name = '人均100-200')),
+    
+    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM content_tags WHERE name = '性价比')),
+    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM content_tags WHERE name = '川菜')),
+    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM content_tags WHERE name = '火锅')),
+    ((SELECT id FROM topics WHERE name = '高性价比美食'), (SELECT id FROM content_tags WHERE name = '人均50以下'))
 ON CONFLICT DO NOTHING;
 
 -- =========================================================

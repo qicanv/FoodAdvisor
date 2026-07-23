@@ -10,12 +10,14 @@ import com.foodadvisor.entity.Merchant;
 import com.foodadvisor.entity.MerchantTagRelation;
 import com.foodadvisor.entity.Topic;
 import com.foodadvisor.entity.TopicMerchant;
+import com.foodadvisor.entity.TopicTag;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.mapper.ContentTagMapper;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.MerchantTagRelationMapper;
 import com.foodadvisor.mapper.TopicMapper;
 import com.foodadvisor.mapper.TopicMerchantMapper;
+import com.foodadvisor.mapper.TopicTagMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +31,7 @@ public class TopicService {
 
     private final TopicMapper topicMapper;
     private final TopicMerchantMapper topicMerchantMapper;
+    private final TopicTagMapper topicTagMapper;
     private final ContentTagMapper contentTagMapper;
     private final MerchantMapper merchantMapper;
     private final MerchantTagRelationMapper merchantTagRelationMapper;
@@ -36,12 +39,14 @@ public class TopicService {
     public TopicService(
             TopicMapper topicMapper,
             TopicMerchantMapper topicMerchantMapper,
+            TopicTagMapper topicTagMapper,
             ContentTagMapper contentTagMapper,
             MerchantMapper merchantMapper,
             MerchantTagRelationMapper merchantTagRelationMapper
     ) {
         this.topicMapper = topicMapper;
         this.topicMerchantMapper = topicMerchantMapper;
+        this.topicTagMapper = topicTagMapper;
         this.contentTagMapper = contentTagMapper;
         this.merchantMapper = merchantMapper;
         this.merchantTagRelationMapper = merchantTagRelationMapper;
@@ -64,20 +69,38 @@ public class TopicService {
                 .stream()
                 .collect(Collectors.groupingBy(TopicMerchant::getTopicId, Collectors.counting()));
 
+        Map<Long, List<TopicTag>> topicTagsMap = topicTagMapper.selectList(null)
+                .stream()
+                .collect(Collectors.groupingBy(TopicTag::getTopicId));
+
+        Map<Long, ContentTag> tagMap = contentTagMapper.selectList(null)
+                .stream()
+                .collect(Collectors.toMap(ContentTag::getId, t -> t));
+
         return topics.stream()
-                .map(topic -> TopicDTO.builder()
-                        .id(topic.getId())
-                        .name(topic.getName())
-                        .description(topic.getDescription())
-                        .coverUrl(topic.getCoverUrl())
-                        .status(topic.getStatus())
-                        .startAt(topic.getStartAt())
-                        .endAt(topic.getEndAt())
-                        .createdBy(topic.getCreatedBy())
-                        .createdAt(topic.getCreatedAt())
-                        .updatedAt(topic.getUpdatedAt())
-                        .merchantCount(merchantCountMap.getOrDefault(topic.getId(), 0L).intValue())
-                        .build())
+                .map(topic -> {
+                    List<String> tagNames = topicTagsMap.getOrDefault(topic.getId(), Collections.emptyList())
+                            .stream()
+                            .map(tt -> tagMap.get(tt.getTagId()))
+                            .filter(Objects::nonNull)
+                            .map(ContentTag::getName)
+                            .collect(Collectors.toList());
+                    
+                    return TopicDTO.builder()
+                            .id(topic.getId())
+                            .name(topic.getName())
+                            .description(topic.getDescription())
+                            .coverUrl(topic.getCoverUrl())
+                            .status(topic.getStatus())
+                            .startAt(topic.getStartAt())
+                            .endAt(topic.getEndAt())
+                            .createdBy(topic.getCreatedBy())
+                            .createdAt(topic.getCreatedAt())
+                            .updatedAt(topic.getUpdatedAt())
+                            .merchantCount(merchantCountMap.getOrDefault(topic.getId(), 0L).intValue())
+                            .tags(tagNames)
+                            .build();
+                })
                 .collect(Collectors.toList());
     }
 
@@ -91,6 +114,18 @@ public class TopicService {
                 new LambdaQueryWrapper<TopicMerchant>().eq(TopicMerchant::getTopicId, id)
         );
 
+        List<TopicTag> topicTags = topicTagMapper.selectList(
+                new LambdaQueryWrapper<TopicTag>().eq(TopicTag::getTopicId, id)
+        );
+
+        List<String> tagNames = topicTags.stream()
+                .map(tt -> contentTagMapper.selectById(tt.getTagId()))
+                .filter(Objects::nonNull)
+                .map(ContentTag::getName)
+                .collect(Collectors.toList());
+
+        List<TopicMerchantDTO> merchantDTOs = getTopicMerchants(id);
+
         return TopicDTO.builder()
                 .id(topic.getId())
                 .name(topic.getName())
@@ -103,6 +138,8 @@ public class TopicService {
                 .createdAt(topic.getCreatedAt())
                 .updatedAt(topic.getUpdatedAt())
                 .merchantCount(merchantCount.intValue())
+                .tags(tagNames)
+                .merchants(merchantDTOs)
                 .build();
     }
 
@@ -125,6 +162,10 @@ public class TopicService {
 
         if (request.getMerchantIds() != null && !request.getMerchantIds().isEmpty()) {
             saveTopicMerchants(topic.getId(), request.getMerchantIds());
+        }
+
+        if (request.getTagNames() != null && !request.getTagNames().isEmpty()) {
+            saveTopicTags(topic.getId(), request.getTagNames());
         }
 
         return getTopic(topic.getId());
@@ -155,6 +196,13 @@ public class TopicService {
                     new LambdaQueryWrapper<TopicMerchant>().eq(TopicMerchant::getTopicId, id)
             );
             saveTopicMerchants(id, request.getMerchantIds());
+        }
+
+        if (request.getTagNames() != null) {
+            topicTagMapper.delete(
+                    new LambdaQueryWrapper<TopicTag>().eq(TopicTag::getTopicId, id)
+            );
+            saveTopicTags(id, request.getTagNames());
         }
 
         return getTopic(id);
@@ -279,9 +327,26 @@ public class TopicService {
 
         List<ContentTag> tags = contentTagMapper.selectList(wrapper);
 
-        Map<Long, Long> tagCountMap = merchantTagRelationMapper.selectList(null)
+        Map<Long, Set<Long>> tagMerchantMap = new HashMap<>();
+
+        List<MerchantTagRelation> directRelations = merchantTagRelationMapper.selectList(null);
+        for (MerchantTagRelation relation : directRelations) {
+            tagMerchantMap.computeIfAbsent(relation.getTagId(), k -> new HashSet<>()).add(relation.getMerchantId());
+        }
+
+        List<TopicTag> topicTags = topicTagMapper.selectList(null);
+        Map<Long, Set<Long>> topicMerchantMap = topicMerchantMapper.selectList(null)
                 .stream()
-                .collect(Collectors.groupingBy(MerchantTagRelation::getTagId, Collectors.counting()));
+                .collect(Collectors.groupingBy(TopicMerchant::getTopicId, 
+                        Collectors.mapping(TopicMerchant::getMerchantId, Collectors.toSet())));
+
+        for (TopicTag tt : topicTags) {
+            Set<Long> merchants = topicMerchantMap.getOrDefault(tt.getTopicId(), Collections.emptySet());
+            tagMerchantMap.computeIfAbsent(tt.getTagId(), k -> new HashSet<>()).addAll(merchants);
+        }
+
+        Map<Long, Integer> tagCountMap = tagMerchantMap.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
 
         Set<String> seenNames = new HashSet<>();
         return tags.stream()
@@ -294,7 +359,7 @@ public class TopicService {
                         .status(tag.getStatus())
                         .createdAt(tag.getCreatedAt())
                         .updatedAt(tag.getUpdatedAt())
-                        .count(tagCountMap.getOrDefault(tag.getId(), 0L).intValue())
+                        .count(tagCountMap.getOrDefault(tag.getId(), 0))
                         .build())
                 .collect(Collectors.toList());
     }
@@ -398,39 +463,49 @@ public class TopicService {
             throw new ApiException(HttpStatus.NOT_FOUND, "TAG_NOT_FOUND", "标签不存在");
         }
 
-        List<MerchantTagRelation> relations = merchantTagRelationMapper.selectList(
+        Set<Long> merchantIds = new HashSet<>();
+
+        List<MerchantTagRelation> directRelations = merchantTagRelationMapper.selectList(
                 new LambdaQueryWrapper<MerchantTagRelation>().eq(MerchantTagRelation::getTagId, tagId)
         );
-
-        if (relations.isEmpty()) {
-            return Collections.emptyList();
+        for (MerchantTagRelation relation : directRelations) {
+            merchantIds.add(relation.getMerchantId());
         }
 
-        List<Long> merchantIds = relations.stream()
-                .map(MerchantTagRelation::getMerchantId)
-                .collect(Collectors.toList());
+        List<TopicTag> topicTags = topicTagMapper.selectList(
+                new LambdaQueryWrapper<TopicTag>().eq(TopicTag::getTagId, tagId)
+        );
+        for (TopicTag tt : topicTags) {
+            List<TopicMerchant> topicMerchants = topicMerchantMapper.selectList(
+                    new LambdaQueryWrapper<TopicMerchant>().eq(TopicMerchant::getTopicId, tt.getTopicId())
+            );
+            for (TopicMerchant tm : topicMerchants) {
+                merchantIds.add(tm.getMerchantId());
+            }
+        }
+
+        if (merchantIds.isEmpty()) {
+            return Collections.emptyList();
+        }
 
         List<Merchant> merchants = merchantMapper.selectBatchIds(merchantIds);
         Map<Long, Merchant> merchantMap = merchants.stream()
                 .collect(Collectors.toMap(Merchant::getId, m -> m));
 
-        return relations.stream()
-                .map(relation -> {
-                    Merchant m = merchantMap.get(relation.getMerchantId());
-                    if (m == null) return null;
-                    return TopicMerchantDTO.builder()
-                            .id(m.getId())
-                            .merchantCode(m.getMerchantCode())
-                            .name(m.getName())
-                            .category(m.getCategory())
-                            .cuisine(m.getCuisine())
-                            .rating(m.getRating())
-                            .averagePrice(m.getAveragePrice())
-                            .operationStatus(m.getOperationStatus())
-                            .description(m.getDescription())
-                            .build();
-                })
+        return merchantIds.stream()
+                .map(id -> merchantMap.get(id))
                 .filter(Objects::nonNull)
+                .map(m -> TopicMerchantDTO.builder()
+                        .id(m.getId())
+                        .merchantCode(m.getMerchantCode())
+                        .name(m.getName())
+                        .category(m.getCategory())
+                        .cuisine(m.getCuisine())
+                        .rating(m.getRating())
+                        .averagePrice(m.getAveragePrice())
+                        .operationStatus(m.getOperationStatus())
+                        .description(m.getDescription())
+                        .build())
                 .collect(Collectors.toList());
     }
 
@@ -463,6 +538,30 @@ public class TopicService {
             tm.setSortOrder(sortOrder++);
             tm.setCreatedAt(now);
             topicMerchantMapper.insert(tm);
+        }
+    }
+
+    private void saveTopicTags(Long topicId, List<String> tagNames) {
+        OffsetDateTime now = OffsetDateTime.now();
+        for (String tagName : tagNames) {
+            ContentTag tag = contentTagMapper.selectOne(
+                    new LambdaQueryWrapper<ContentTag>()
+                            .eq(ContentTag::getName, tagName)
+            );
+            if (tag == null) continue;
+
+            TopicTag existing = topicTagMapper.selectOne(
+                    new LambdaQueryWrapper<TopicTag>()
+                            .eq(TopicTag::getTopicId, topicId)
+                            .eq(TopicTag::getTagId, tag.getId())
+            );
+            if (existing != null) continue;
+
+            TopicTag tt = new TopicTag();
+            tt.setTopicId(topicId);
+            tt.setTagId(tag.getId());
+            tt.setCreatedAt(now);
+            topicTagMapper.insert(tt);
         }
     }
 }

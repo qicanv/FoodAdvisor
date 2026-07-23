@@ -89,3 +89,11 @@ export const getTagMerchants = (id) => {
     method: 'get'
   })
 }
+
+export const searchMerchants = (keyword) => {
+  return request({
+    url: '/api/merchants',
+    method: 'get',
+    params: { keyword, pageSize: 50 }
+  })
+}

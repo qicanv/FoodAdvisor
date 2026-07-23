@@ -217,6 +217,12 @@
           <div class="form-group">
             <label>关联标签</label>
             <div class="tags-select">
+              <input 
+                type="text" 
+                v-model="tagSearchText" 
+                placeholder="搜索标签..."
+                class="tag-search-input"
+              />
               <div 
                 v-for="tag in availableTags" 
                 :key="tag.id"
@@ -532,7 +538,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
-import { getTopics, getTopic, createTopic, updateTopic, deleteTopic, getTopicMerchants, addTopicMerchant, removeTopicMerchant, getTags, createTag, deleteTag, getTagMerchants } from '../../api/topic'
+import { getTopics, getTopic, createTopic, updateTopic, deleteTopic, getTopicMerchants, addTopicMerchant, removeTopicMerchant, getTags, createTag, deleteTag, getTagMerchants, searchMerchants as apiSearchMerchants } from '../../api/topic'
 
 const activeTab = ref('topics')
 const sidebarItems = [
@@ -561,6 +567,7 @@ const topicForm = ref({
   status: 'DRAFT'
 })
 
+const tagSearchText = ref('')
 const merchantSearch = ref('')
 const searchResults = ref([])
 const showMerchantSearch = ref(false)
@@ -603,7 +610,13 @@ const tagTypes = [
   { key: 'price', label: '价格区间' },
 ]
 
-const availableTags = computed(() => tags.value)
+const availableTags = computed(() => {
+  if (!tagSearchText.value) {
+    return tags.value
+  }
+  const keyword = tagSearchText.value.toLowerCase()
+  return tags.value.filter(tag => tag.name.toLowerCase().includes(keyword))
+})
 
 const getTagsByType = (type) => {
   return tags.value.filter(tag => tag.type === type)
@@ -798,38 +811,25 @@ const toggleTag = (tagName) => {
   }
 }
 
-const allMerchants = [
-  { id: 1, name: '老北京火锅店', operationStatus: 'OPERATING', description: '地道老北京铜锅涮肉', category: '火锅', cuisine: '京菜' },
-  { id: 2, name: '川湘人家', operationStatus: 'OPERATING', description: '正宗川菜湘菜，麻辣鲜香', category: '川菜', cuisine: '川菜' },
-  { id: 3, name: '深夜食堂', operationStatus: 'OPERATING', description: '24小时营业的日式居酒屋', category: '日料', cuisine: '日式' },
-  { id: 4, name: '网红打卡餐厅', operationStatus: 'SUSPENDED', description: '刷爆朋友圈的高颜值餐厅', category: '西餐', cuisine: '西式' },
-  { id: 5, name: '浪漫西餐厅', operationStatus: 'OPERATING', description: '法式浪漫氛围，适合约会', category: '西餐', cuisine: '法式' },
-  { id: 6, name: '粤港茶餐厅', operationStatus: 'OPERATING', description: '正宗港式茶点，早茶首选', category: '粤菜', cuisine: '港式' },
-  { id: 7, name: '日式居酒屋', operationStatus: 'OPERATING', description: '日式清酒、烤串，深夜小酌', category: '日料', cuisine: '日式' },
-  { id: 8, name: '韩式烤肉店', operationStatus: 'OPERATING', description: '炭火烤肉，正宗韩式风味', category: '韩式', cuisine: '韩式' },
-  { id: 9, name: '泰式料理', operationStatus: 'OPERATING', description: '酸辣开胃，正宗东南亚风味', category: '东南亚', cuisine: '泰式' },
-  { id: 10, name: '意大利餐厅', operationStatus: 'OPERATING', description: '手工意面，正宗意式风味', category: '西餐', cuisine: '意式' },
-  { id: 11, name: '法式甜品店', operationStatus: 'OPERATING', description: '精致法式甜点，下午茶首选', category: '甜品', cuisine: '法式' },
-  { id: 12, name: '川菜小馆', operationStatus: 'OPERATING', description: '家常川菜，价格实惠', category: '川菜', cuisine: '川菜' },
-  { id: 13, name: '云南风味', operationStatus: 'OPERATING', description: '特色滇菜，酸辣鲜香', category: '滇菜', cuisine: '云南' },
-  { id: 14, name: '新疆大盘鸡', operationStatus: 'OPERATING', description: '正宗新疆风味，分量十足', category: '西北菜', cuisine: '新疆' },
-  { id: 15, name: '东北铁锅炖', operationStatus: 'OPERATING', description: '东北特色，铁锅炖一切', category: '东北菜', cuisine: '东北' },
-  { id: 16, name: '潮汕牛肉火锅', operationStatus: 'OPERATING', description: '鲜切牛肉，清汤锅底', category: '火锅', cuisine: '潮汕' },
-  { id: 17, name: '海鲜大排档', operationStatus: 'OPERATING', description: '新鲜海鲜，现点现做', category: '海鲜', cuisine: '海鲜' },
-  { id: 18, name: '贵州酸汤鱼', operationStatus: 'OPERATING', description: '正宗酸汤鱼，酸爽开胃', category: '黔菜', cuisine: '贵州' },
-  { id: 19, name: '陕西肉夹馍', operationStatus: 'OPERATING', description: '正宗陕西风味，馍酥肉香', category: '西北菜', cuisine: '陕西' },
-  { id: 20, name: '台式卤肉饭', operationStatus: 'OPERATING', description: '地道台湾风味，下饭神器', category: '小吃', cuisine: '台式' },
-]
-
-const searchMerchants = () => {
-  const keyword = merchantSearch.value.trim().toLowerCase()
-  searchResults.value = allMerchants.filter(merchant => {
-    if (!keyword) return true
-    return merchant.name.toLowerCase().includes(keyword) ||
-           merchant.description.toLowerCase().includes(keyword) ||
-           merchant.category.toLowerCase().includes(keyword) ||
-           merchant.cuisine.toLowerCase().includes(keyword)
-  })
+const searchMerchants = async () => {
+  try {
+    const response = await apiSearchMerchants(merchantSearch.value.trim())
+    if (response.success && response.data && response.data.records) {
+      searchResults.value = response.data.records.map(m => ({
+        id: m.id,
+        name: m.name,
+        operationStatus: m.operationStatus || 'OPERATING',
+        description: m.description,
+        category: m.category,
+        cuisine: m.cuisine
+      }))
+    } else {
+      searchResults.value = []
+    }
+  } catch (error) {
+    console.error('搜索商家失败:', error)
+    searchResults.value = []
+  }
 }
 
 const toggleMerchantSearch = () => {
@@ -1547,6 +1547,8 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: 20px;
+  max-height: 100vh;
 }
 
 .modal-content {
@@ -1555,6 +1557,9 @@ onMounted(() => {
   background: #fff;
   border-radius: 16px;
   overflow: hidden;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-header {
@@ -1581,6 +1586,9 @@ onMounted(() => {
 
 .modal-body {
   padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .form-group {
@@ -1619,12 +1627,29 @@ onMounted(() => {
 
 .tags-select {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
   padding: 12px;
   background: #fafafa;
   border-radius: 8px;
   border: 1px solid #e8e8e8;
+}
+
+.tag-search-input {
+  padding: 8px 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  outline: none;
+}
+
+.tag-search-input:focus {
+  border-color: #1890ff;
+}
+
+.tag-search-input::placeholder {
+  color: #bbb;
 }
 
 .tag-option {
