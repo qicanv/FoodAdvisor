@@ -33,14 +33,18 @@ class SearchResultItem(BaseModel):
     sourceType: str = Field(description="来源类型")
     sourceId: int = Field(description="原始记录编号")
     text: str = Field(description="匹配文本内容")
-    score: float = Field(description="相似度分数（0~1）")
+    score: float = Field(description="最终相关性分数（0~1），rerank 启用时为 rerankScore")
+    rerankScore: Optional[float] = Field(
+        default=None,
+        description="Reranker 给出的相关性分数（0~1）。仅在 rerank 启用时有值；未启用时为 null",
+    )
     updatedAt: Optional[str] = Field(default=None, description="更新时间（ISO 格式）")
 
 
 class SearchData(BaseModel):
     """检索结果数据体"""
     searchMode: str = Field(
-        default="VECTOR", description="检索模式：VECTOR / KEYWORD_FALLBACK"
+        default="VECTOR", description="检索模式：VECTOR / RERANKED / KEYWORD_FALLBACK"
     )
     results: list[SearchResultItem] = Field(default_factory=list)
 
