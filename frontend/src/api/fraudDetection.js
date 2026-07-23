@@ -19,3 +19,8 @@ export const getFraudCaseDetail = (caseId) => {
 export const submitReview = (caseId, data) => {
   return request.post(`/api/admin/fraud-detection/cases/${caseId}/review`, data)
 }
+
+// 批量修改评论状态
+export const batchUpdateReviewStatus = (data) => {
+  return request.put('/api/admin/fraud-detection/reviews/status', data)
+}

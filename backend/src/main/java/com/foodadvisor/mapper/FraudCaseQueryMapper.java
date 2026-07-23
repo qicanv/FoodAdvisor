@@ -1,7 +1,5 @@
 package com.foodadvisor.mapper;
 
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.foodadvisor.entity.ReviewFraudCase;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -10,23 +8,22 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 刷评案例 Mapper
+ * 刷评案例查询 Mapper（纯 MyBatis，不继承 BaseMapper，不触发 MP 实体 PK 解析）
  */
 @Mapper
-public interface ReviewFraudCaseMapper extends BaseMapper<ReviewFraudCase> {
+public interface FraudCaseQueryMapper {
 
-    /** 分页查列表 — 直接返回 Map，绕过 MyBatis-Plus 实体 PK 解析 */
     @Select("<script>" +
             "SELECT id AS case_id, merchant_id, rule_type, risk_level, status, " +
-            "matched_rule_snapshot, matched_review_ids, summary, detected_at, " +
-            "reviewed_by, reviewed_at, review_conclusion, review_remark " +
+            "matched_rule_snapshot::text AS matched_rule_snapshot, " +
+            "matched_review_ids::text AS matched_review_ids, " +
+            "summary, detected_at, reviewed_by, reviewed_at, " +
+            "review_conclusion, review_remark " +
             "FROM review_fraud_cases WHERE 1=1 " +
             "<if test='status != null and status != \"\"'>AND status = #{status}</if> " +
             "<if test='riskLevel != null and riskLevel != \"\"'>AND risk_level = #{riskLevel}</if> " +
             "<if test='ruleType != null and ruleType != \"\"'>AND rule_type = #{ruleType}</if> " +
             "<if test='merchantId != null'>AND merchant_id = #{merchantId}</if> " +
-            "<if test='startTime != null'>AND detected_at >= #{startTime}</if> " +
-            "<if test='endTime != null'>AND detected_at &lt;= #{endTime}</if> " +
             "ORDER BY detected_at DESC " +
             "LIMIT #{limit} OFFSET #{offset}" +
             "</script>")
@@ -35,26 +32,19 @@ public interface ReviewFraudCaseMapper extends BaseMapper<ReviewFraudCase> {
             @Param("riskLevel") String riskLevel,
             @Param("ruleType") String ruleType,
             @Param("merchantId") Long merchantId,
-            @Param("startTime") java.time.OffsetDateTime startTime,
-            @Param("endTime") java.time.OffsetDateTime endTime,
             @Param("limit") int limit,
             @Param("offset") int offset);
 
-    /** 计数 */
     @Select("<script>" +
             "SELECT COUNT(*) FROM review_fraud_cases WHERE 1=1 " +
             "<if test='status != null and status != \"\"'>AND status = #{status}</if> " +
             "<if test='riskLevel != null and riskLevel != \"\"'>AND risk_level = #{riskLevel}</if> " +
             "<if test='ruleType != null and ruleType != \"\"'>AND rule_type = #{ruleType}</if> " +
-            "<if test='merchantId != null'>AND merchant_id = #{merchantId}</if> " +
-            "<if test='startTime != null'>AND detected_at >= #{startTime}</if> " +
-            "<if test='endTime != null'>AND detected_at &lt;= #{endTime}</if>" +
+            "<if test='merchantId != null'>AND merchant_id = #{merchantId}</if>" +
             "</script>")
     long countCases(
             @Param("status") String status,
             @Param("riskLevel") String riskLevel,
             @Param("ruleType") String ruleType,
-            @Param("merchantId") Long merchantId,
-            @Param("startTime") java.time.OffsetDateTime startTime,
-            @Param("endTime") java.time.OffsetDateTime endTime);
+            @Param("merchantId") Long merchantId);
 }

@@ -247,43 +247,20 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         Merchant merchant = requireReviewableMerchant(merchantId);
 
-        Review review = findCurrentOriginalReview(
-                userId,
-                merchantId
-        );
-
-        boolean creating = review == null;
-        String beforeStatus = review == null ? null : review.getStatus();
-        String beforeModerationStatus =
-                review == null ? null : review.getModerationStatus();
-        String beforeRiskLevel =
-                review == null ? null : review.getRiskLevel();
-
-        if (creating) {
-            review = new Review();
-            review.setUserId(userId);
-            review.setMerchantId(merchantId);
-            review.setReviewType("ORIGINAL");
-            review.setSource("SYSTEM");
-            review.setCurrentVersion(1);
-            review.setCreatedAt(OffsetDateTime.now());
-        } else {
-            int currentVersion =
-                    review.getCurrentVersion() == null
-                            ? 1
-                            : review.getCurrentVersion();
-
-            review.setCurrentVersion(currentVersion + 1);
-            review.setEditedAt(OffsetDateTime.now());
-        }
+        // 每次都创建新评价，允许用户对同一商家发表多条评价
+        Review review = new Review();
+        review.setUserId(userId);
+        review.setMerchantId(merchantId);
+        review.setReviewType("ORIGINAL");
+        review.setSource("SYSTEM");
+        review.setCurrentVersion(1);
+        review.setReviewTime(OffsetDateTime.now());
 
         applyReviewFields(review, request);
         int sensitiveHitCount = countSensitiveHits(review.getContent());
         applyContentSafety(review);
 
-        boolean saved = creating
-                ? this.save(review)
-                : this.updateById(review);
+        boolean saved = this.save(review);
         if (!saved) {
             throw new ApiException(
                     HttpStatus.INTERNAL_SERVER_ERROR,
@@ -298,11 +275,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                 images
         );
 
-        saveVersion(
-                review,
-                activeImages,
-                creating ? "CREATE" : "EDIT"
-        );
+        saveVersion(review, activeImages, "CREATE");
 
         refreshMerchantRatingStats(merchant.getId());
         triggerAnalysisPlaceholder(review);
@@ -310,12 +283,10 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         recordContentModerationSafely(
                 review,
                 userId,
-                creating
-                        ? "AUTO_MODERATE_REVIEW_CREATE"
-                        : "AUTO_MODERATE_REVIEW_UPDATE",
-                beforeStatus,
-                beforeModerationStatus,
-                beforeRiskLevel,
+                "AUTO_MODERATE_REVIEW_CREATE",
+                null,
+                null,
+                null,
                 sensitiveHitCount
         );
 
@@ -1773,20 +1744,6 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         }
 
         return merchant;
-    }
-
-    private Review findCurrentOriginalReview(
-            Long userId,
-            Long merchantId
-    ) {
-        return this.getOne(
-                new LambdaQueryWrapper<Review>()
-                        .eq(Review::getUserId, userId)
-                        .eq(Review::getMerchantId, merchantId)
-                        .eq(Review::getReviewType, "ORIGINAL")
-                        .ne(Review::getStatus, "DELETED")
-                        .last("LIMIT 1")
-        );
     }
 
     private void applyReviewFields(

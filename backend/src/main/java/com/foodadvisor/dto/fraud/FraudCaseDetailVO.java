@@ -50,6 +50,7 @@ public class FraudCaseDetailVO {
         private String userNickname;
         private Double rating;
         private String content;
+        private String reviewStatus;
         private String riskLevel;
         private OffsetDateTime createdAt;
     }
