@@ -254,11 +254,18 @@ class BusinessSuggestionService:
                 system_prompt=BUSINESS_SUGGESTION_PROMPT,
                 user_message=user_message,
                 temperature=0.3,
-                max_tokens=6000,
+                max_tokens=3000,
+                request_timeout_seconds=150,
+            )
+            logger.info(
+                f"LLM raw result type={type(result).__name__}, "
+                f"keys={list(result.keys()) if isinstance(result, dict) else 'N/A'}"
             )
         except Exception as e:
+            import traceback
             logger.error(
-                f"经营建议生成LLM调用失败 merchantId={request.merchantId}: {e}"
+                f"经营建议生成LLM调用失败 merchantId={request.merchantId}: "
+                f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
             )
             return BusinessSuggestionResponse(
                 merchantId=request.merchantId,

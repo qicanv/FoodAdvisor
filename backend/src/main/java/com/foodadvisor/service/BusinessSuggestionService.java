@@ -54,9 +54,9 @@ public class BusinessSuggestionService {
 
     // ---- 数据充足性阈值 ----
     /** 生成建议所需的最少有效评价数 */
-    private static final int MIN_REVIEW_COUNT = 5;
+    private static final int MIN_REVIEW_COUNT = 3;
     /** 生成建议所需的最少口碑统计周期数 */
-    private static final int MIN_REPUTATION_PERIODS = 2;
+    private static final int MIN_REPUTATION_PERIODS = 1;
     /** 建议缓存有效期（天） */
     private static final int REFRESH_MAX_AGE_DAYS = 7;
     /** 最近N天的数据窗口 */
