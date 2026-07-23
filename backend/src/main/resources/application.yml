@@ -51,7 +51,6 @@ management:
 mybatis-plus:
   type-aliases-package: com.foodadvisor.entity
   mapper-locations: classpath*:/mapper/**/*.xml
-  type-handlers-package: com.baomidou.mybatisplus.extension.handlers
   configuration:
     map-underscore-to-camel-case: true
   global-config:
@@ -64,7 +63,7 @@ ai-service:
   base-url: ${AI_SERVICE_BASE_URL:http://localhost:${AI_SERVICE_PORT:8000}}
   internal-token: ${INTERNAL_API_TOKEN:}
   connect-timeout: 5000
-  read-timeout: 60000
+  read-timeout: 120000
 
 rate-limit:
   enabled: true

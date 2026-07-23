@@ -38,17 +38,21 @@ public interface CompetitorComparisonMapper {
      * @param limit      返回数量上限
      * @return 候选竞品基础信息列表
      */
-    @Select("SELECT m.id, m.name, m.category, m.cuisine, m.address, " +
+    @Select("<script>" +
+            "SELECT m.id, m.name, m.category, m.cuisine, m.address, " +
             "m.average_price, m.rating, m.review_count " +
             "FROM merchants m " +
             "WHERE m.platform_status = 'ACTIVE' " +
             "AND m.operation_status = 'OPERATING' " +
             "AND m.region_code = #{regionCode} " +
             "AND (m.category = #{category} " +
-            "     OR (#{cuisine} IS NOT NULL AND m.cuisine = #{cuisine})) " +
+            "     <if test=\"cuisine != null\">" +
+            "     OR m.cuisine = #{cuisine}" +
+            "     </if>)" +
             "AND m.id != #{merchantId} " +
             "ORDER BY m.rating DESC NULLS LAST " +
-            "LIMIT #{limit}")
+            "LIMIT #{limit}" +
+            "</script>")
     List<Map<String, Object>> findNearbyCompetitors(
             @Param("merchantId") Long merchantId,
             @Param("regionCode") String regionCode,
@@ -110,14 +114,14 @@ public interface CompetitorComparisonMapper {
      * @param merchantId 商家 ID
      * @return 标签名称列表
      */
-    @Select("SELECT rt.tag_name, COUNT(rtr.id) AS cnt " +
+    @Select("SELECT rt.name AS tag_name, COUNT(rtr.id) AS cnt " +
             "FROM review_tag_relations rtr " +
             "JOIN review_tags rt ON rt.id = rtr.tag_id " +
             "JOIN reviews r ON r.id = rtr.review_id " +
             "WHERE r.merchant_id = #{merchantId} " +
             "AND r.status = 'PUBLISHED' " +
-            "AND rt.sentiment = 'POSITIVE' " +
-            "GROUP BY rt.tag_name " +
+            "AND rtr.sentiment = 'POSITIVE' " +
+            "GROUP BY rt.name " +
             "ORDER BY cnt DESC " +
             "LIMIT 5")
     List<Map<String, Object>> getTopPositiveTags(@Param("merchantId") Long merchantId);
@@ -131,13 +135,13 @@ public interface CompetitorComparisonMapper {
      * @param merchantId 商家 ID
      * @return 问题类别名称列表
      */
-    @Select("SELECT ric.category_name, COUNT(rir.id) AS cnt " +
+    @Select("SELECT ric.name AS category_name, COUNT(rir.id) AS cnt " +
             "FROM review_issue_relations rir " +
             "JOIN review_issue_categories ric ON ric.id = rir.issue_category_id " +
             "JOIN reviews r ON r.id = rir.review_id " +
             "WHERE r.merchant_id = #{merchantId} " +
             "AND r.status = 'PUBLISHED' " +
-            "GROUP BY ric.category_name " +
+            "GROUP BY ric.name " +
             "ORDER BY cnt DESC " +
             "LIMIT 5")
     List<Map<String, Object>> getTopNegativeIssues(@Param("merchantId") Long merchantId);

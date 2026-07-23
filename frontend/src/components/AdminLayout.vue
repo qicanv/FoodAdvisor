@@ -29,7 +29,7 @@
       <div class="sidebar-footer">
         <button class="logout-btn" @click="handleLogout">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12v-a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path>
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M17 16l4-4-4-4"></path>
           </svg>
