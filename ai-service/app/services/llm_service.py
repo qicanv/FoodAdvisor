@@ -95,8 +95,14 @@ class LLMService:
         user_message: str,
         temperature: float = 0.3,
         max_tokens: int = 2000,
+        request_timeout_seconds: float | None = None,
     ) -> str:
         """发送对话请求，返回模型的文本响应。"""
+        effective_timeout = (
+            request_timeout_seconds
+            if request_timeout_seconds is not None
+            else self.request_timeout_seconds
+        )
         if not self.is_configured():
             raise RuntimeError(
                 "LLM 配置不完整，请检查 LLM_API_KEY、"
@@ -127,7 +133,7 @@ class LLMService:
         }
 
         async with httpx.AsyncClient(
-                timeout=self.request_timeout_seconds
+                timeout=effective_timeout
         ) as client:
             response = await client.post(
                 url,
@@ -151,6 +157,7 @@ class LLMService:
         user_message: str,
         temperature: float = 0.1,
         max_tokens: int = 3000,
+        request_timeout_seconds: float | None = None,
     ) -> dict:
         """发送对话请求，并将模型响应解析为 JSON 对象。"""
         json_system_prompt = (
@@ -166,6 +173,7 @@ class LLMService:
             user_message,
             temperature,
             max_tokens,
+            request_timeout_seconds=request_timeout_seconds,
         )
         text = text.strip()
 

@@ -139,6 +139,7 @@ class CompetitorComparisonService:
                 user_message=user_message,
                 temperature=0.3,  # 适中温度，允许一定表达多样性但要忠实数据
                 max_tokens=6000,
+                request_timeout_seconds=120.0,
             )
         except Exception as e:
             logger.error(

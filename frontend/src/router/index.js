@@ -108,6 +108,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'merchant' },
   },
   {
+    path: '/merchant/competitor-comparison',
+    name: 'merchant-competitor-comparison',
+    component: () => import('../views/merchant/CompetitorComparisonView.vue'),
+    meta: { requiresAuth: true, role: 'merchant' },
+  },
+  {
     path: '/admin',
     name: 'admin-login',
     component: () => import('../views/admin/LoginView.vue'),
