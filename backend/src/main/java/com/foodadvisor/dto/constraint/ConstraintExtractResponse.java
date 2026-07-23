@@ -47,4 +47,5 @@ public class ConstraintExtractResponse {
     private Boolean degraded = true;
     private String modelName;
     private String promptVersion;
+    private Boolean directRecommend = false;
 }

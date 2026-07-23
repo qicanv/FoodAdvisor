@@ -15,10 +15,12 @@ import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.dto.constraint.ConstraintConflictVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.foodadvisor.entity.ChatSessionState;
 import com.foodadvisor.mapper.ChatSessionStateMapper;
 import com.foodadvisor.dto.constraint.ConstraintExtractResponse;
+import com.foodadvisor.dto.constraint.ConstraintPatch;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.foodadvisor.trace.AiTraceContext;
@@ -34,6 +36,7 @@ import java.util.LinkedHashSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.Map;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -223,6 +226,7 @@ public class ConstraintExtractionService {
     private final ConstraintExtractionMapper constraintExtractionMapper;
     private final AIClientService aiClientService;
     private final ObjectMapper objectMapper;
+    private final ConstraintPatchApplier patchApplier;
     @Autowired(required = false)
     private AiRequestTraceService traceService;
 
@@ -241,6 +245,7 @@ public class ConstraintExtractionService {
                 constraintExtractionMapper;
         this.aiClientService = aiClientService;
         this.objectMapper = objectMapper;
+        this.patchApplier = new ConstraintPatchApplier(objectMapper);
     }
 
     /**
@@ -346,7 +351,12 @@ public class ConstraintExtractionService {
          * 5. 检测本轮消息是否存在自相矛盾的条件。
          */
         List<ConstraintConflictVO> conflicts =
-                detectConflicts(message);
+                aiExtraction != null
+                        && aiExtraction.patch() != null
+                        && aiExtraction.patch().getConflicts() != null
+                        && !aiExtraction.patch().getConflicts().isEmpty()
+                        ? aiExtraction.patch().getConflicts()
+                        : detectConflicts(message);
 
         ConstraintState merged;
         List<String> changes;
@@ -355,7 +365,13 @@ public class ConstraintExtractionService {
          * 有冲突时不自动修改当前约束。
          * 仍然保存 extracted 和 conflicts，等待后续追问确认。
          */
-        if (conflicts.isEmpty()) {
+        if (aiExtraction != null && aiExtraction.patch() != null) {
+            ConstraintPatchApplier.PatchResult result =
+                    patchApplier.apply(oldState, aiExtraction.patch());
+            merged = result.state();
+            changes = result.changedFields();
+            conflicts = result.conflicts();
+        } else if (conflicts.isEmpty()) {
             merged = merge(
                     oldState,
                     extracted,
@@ -392,8 +408,15 @@ public class ConstraintExtractionService {
                 changes,
                 conflicts,
                 extractor,
-                aiExtraction == null ? null : aiExtraction.modelName()
+                aiExtraction == null ? null : aiExtraction.modelName(),
+                aiExtraction == null ? null : aiExtraction.patch(),
+                aiExtraction == null ? "AI_EXTRACTION_FAILED" : null,
+                aiExtraction == null ? "NOT_APPLICABLE" : aiExtraction.promptVersion()
         );
+        updateUserMessageMetadata(savedMessage, requestId, extractor, degraded,
+                aiExtraction == null ? "RULE_ENGINE" : aiExtraction.modelName(),
+                aiExtraction == null ? "NOT_APPLICABLE" : aiExtraction.promptVersion(),
+                aiExtraction == null ? "AI_EXTRACTION_FAILED" : null);
 
         /*
          * 8. 组装接口响应。
@@ -466,7 +489,9 @@ public class ConstraintExtractionService {
                     true,
                     null,
                     "NOT_APPLICABLE",
-                    detectConflicts(message)
+                    detectConflicts(message),
+                    null,
+                    "AI_EXTRACTION_FAILED"
             );
         }
 
@@ -478,7 +503,13 @@ public class ConstraintExtractionService {
                 aiExtraction.degraded(),
                 aiExtraction.modelName(),
                 aiExtraction.promptVersion(),
-                detectConflicts(message)
+                aiExtraction.patch() != null
+                        && aiExtraction.patch().getConflicts() != null
+                        && !aiExtraction.patch().getConflicts().isEmpty()
+                        ? aiExtraction.patch().getConflicts()
+                        : detectConflicts(message),
+                aiExtraction.patch(),
+                null
         );
     }
 
@@ -510,7 +541,9 @@ public class ConstraintExtractionService {
                 true,
                 null,
                 "NOT_APPLICABLE",
-                detectConflicts(message)
+                detectConflicts(message),
+                null,
+                "EVALUATION_RULE_BASELINE"
         );
     }
 
@@ -560,7 +593,13 @@ public class ConstraintExtractionService {
         ConstraintState merged;
         List<String> changes;
 
-        if (conflicts.isEmpty()) {
+        if (prepared.patch() != null) {
+            ConstraintPatchApplier.PatchResult result =
+                    patchApplier.apply(oldState, prepared.patch());
+            merged = result.state();
+            changes = result.changedFields();
+            conflicts = result.conflicts();
+        } else if (conflicts.isEmpty()) {
             merged = merge(oldState, extracted, message);
             applyClearedFields(
                     merged,
@@ -581,8 +620,15 @@ public class ConstraintExtractionService {
                 changes,
                 conflicts,
                 prepared.extractor(),
-                prepared.modelName()
+                prepared.modelName(),
+                prepared.patch(),
+                prepared.degradationReason(),
+                prepared.promptVersion()
         );
+        updateUserMessageMetadata(savedMessage, requestId, prepared.extractor(),
+                prepared.degraded(),
+                prepared.degraded() ? "RULE_ENGINE" : prepared.modelName(),
+                prepared.promptVersion(), prepared.degradationReason());
 
         ConstraintExtractResponse response =
                 new ConstraintExtractResponse();
@@ -598,6 +644,8 @@ public class ConstraintExtractionService {
         response.setModelName(prepared.degraded()
                 ? "RULE_ENGINE" : prepared.modelName());
         response.setPromptVersion(prepared.promptVersion());
+        response.setDirectRecommend(prepared.patch() != null
+                && Boolean.TRUE.equals(prepared.patch().getDirectRecommend()));
         if (context != null) {
             response.setTraceId(context.traceId());
             updateTrace(context, response);
@@ -741,7 +789,9 @@ public class ConstraintExtractionService {
             boolean degraded,
             String modelName,
             String promptVersion,
-            List<ConstraintConflictVO> conflicts
+            List<ConstraintConflictVO> conflicts,
+            ConstraintPatch patch,
+            String degradationReason
     ) {
         public PreparedExtraction(
                 ConstraintState extracted,
@@ -755,7 +805,23 @@ public class ConstraintExtractionService {
             this(extracted, clearedFields, intent, extractor, degraded,
                     modelName,
                     degraded ? "NOT_APPLICABLE" : "dialogue-extraction:v1",
-                    conflicts);
+                    conflicts, null,
+                    degraded ? "AI_EXTRACTION_FAILED" : null);
+        }
+
+        public PreparedExtraction(
+                ConstraintState extracted,
+                List<String> clearedFields,
+                String intent,
+                String extractor,
+                boolean degraded,
+                String modelName,
+                String promptVersion,
+                List<ConstraintConflictVO> conflicts
+        ) {
+            this(extracted, clearedFields, intent, extractor, degraded,
+                    modelName, promptVersion, conflicts, null,
+                    degraded ? "AI_EXTRACTION_FAILED" : null);
         }
     }
 
@@ -782,6 +848,20 @@ public class ConstraintExtractionService {
                             ? new ConstraintState()
                             : currentConstraints
             );
+            request.setRecentMessages(loadRecentMessages(sessionId));
+            ChatSessionState storedState = chatSessionStateMapper.selectOne(
+                    new LambdaQueryWrapper<ChatSessionState>()
+                            .eq(ChatSessionState::getSessionId, sessionId)
+                            .last("LIMIT 1"));
+            if (storedState != null) {
+                request.setRejectedFields(readStringList(
+                        storedState.getRejectedFields()));
+                request.setPendingConflicts(readObjectList(
+                        storedState.getPendingConfirmation()));
+            }
+            request.setTimezone(currentConstraints == null
+                    || currentConstraints.getTimezone() == null
+                    ? "Asia/Shanghai" : currentConstraints.getTimezone());
 
             DialogueExtractAiResponse response =
                     context == null || traceService == null
@@ -814,7 +894,8 @@ public class ConstraintExtractionService {
                 "AI_MODEL",
                 false,
                 response.getModelName(),
-                response.getPromptVersion()
+                response.getPromptVersion(),
+                response.getPatch()
         );
     }
 
@@ -918,6 +999,11 @@ public class ConstraintExtractionService {
         target.setBusinessTargetNextDay(
                 source.getBusinessTargetNextDay()
         );
+        target.setBusinessTargetDate(source.getBusinessTargetDate());
+        target.setBusinessTargetDayOfWeek(
+                source.getBusinessTargetDayOfWeek());
+        target.setBusinessTimeWindow(source.getBusinessTimeWindow());
+        target.setTimezone(source.getTimezone());
 
         calculatePerCapitaBudget(target);
         return target;
@@ -982,7 +1068,11 @@ public class ConstraintExtractionService {
                         "environmentRequirements",
                         "businessTime",
                         "businessTargetTime",
-                        "businessTargetNextDay"
+                        "businessTargetNextDay",
+                        "businessTargetDate",
+                        "businessTargetDayOfWeek",
+                        "businessTimeWindow",
+                        "timezone"
                 );
 
         LinkedHashSet<String> result = new LinkedHashSet<>();
@@ -1043,6 +1133,12 @@ public class ConstraintExtractionService {
                         state.setBusinessTargetTime(null);
                 case "businessTargetNextDay" ->
                         state.setBusinessTargetNextDay(null);
+                case "businessTargetDate" ->
+                        state.setBusinessTargetDate(null);
+                case "businessTargetDayOfWeek" ->
+                        state.setBusinessTargetDayOfWeek(null);
+                case "businessTimeWindow" ->
+                        state.setBusinessTimeWindow(null);
                 default -> {
                 }
             }
@@ -1056,7 +1152,8 @@ public class ConstraintExtractionService {
             String extractor,
             boolean degraded,
             String modelName,
-            String promptVersion
+            String promptVersion,
+            ConstraintPatch patch
     ) {
     }
 
@@ -1511,6 +1608,29 @@ public class ConstraintExtractionService {
 
         String compactMessage =
                 message.replaceAll("\\s+", "");
+
+        if (compactMessage.contains("周末")) {
+            // “周末”固定解析为从今天起最近的周六。
+            state.setBusinessTargetDayOfWeek(6);
+            state.setBusinessTargetTime(
+                    compactMessage.contains("中午") ? "12:00"
+                            : compactMessage.contains("夜宵") ? "23:00"
+                            : "19:00");
+            state.setBusinessTimeWindow(
+                    compactMessage.contains("中午") ? "LUNCH"
+                            : compactMessage.contains("夜宵")
+                            ? "LATE_NIGHT" : "EVENING");
+            state.setTimezone("Asia/Shanghai");
+            return;
+        }
+
+        if (compactMessage.contains("明天中午")) {
+            state.setBusinessTargetTime("12:00");
+            state.setBusinessTargetNextDay(true);
+            state.setBusinessTimeWindow("LUNCH");
+            state.setTimezone("Asia/Shanghai");
+            return;
+        }
 
         if (extractBusinessTargetTime(compactMessage, state)) {
             return;
@@ -2150,6 +2270,14 @@ public class ConstraintExtractionService {
         copy.setBusinessTargetNextDay(
                 source.getBusinessTargetNextDay()
         );
+        copy.setBusinessTargetDate(source.getBusinessTargetDate());
+        copy.setBusinessTargetDayOfWeek(source.getBusinessTargetDayOfWeek());
+        copy.setBusinessTimeWindow(source.getBusinessTimeWindow());
+        copy.setTimezone(source.getTimezone());
+        copy.setConstraintStrengths(source.getConstraintStrengths() == null
+                ? new java.util.LinkedHashMap<>()
+                : new java.util.LinkedHashMap<>(
+                source.getConstraintStrengths()));
 
         return copy;
     }
@@ -2235,6 +2363,19 @@ public class ConstraintExtractionService {
         } else if (extracted.getBusinessTime() != null) {
             merged.setBusinessTargetTime(null);
             merged.setBusinessTargetNextDay(null);
+        }
+        if (extracted.getBusinessTargetDate() != null) {
+            merged.setBusinessTargetDate(extracted.getBusinessTargetDate());
+        }
+        if (extracted.getBusinessTargetDayOfWeek() != null) {
+            merged.setBusinessTargetDayOfWeek(
+                    extracted.getBusinessTargetDayOfWeek());
+        }
+        if (extracted.getBusinessTimeWindow() != null) {
+            merged.setBusinessTimeWindow(extracted.getBusinessTimeWindow());
+        }
+        if (extracted.getTimezone() != null) {
+            merged.setTimezone(extracted.getTimezone());
         }
 
         recalculateMergedPerCapitaBudget(
@@ -2696,6 +2837,21 @@ public class ConstraintExtractionService {
                 safeOld.getBusinessTime(),
                 safeMerged.getBusinessTime()
         );
+        addChangeIfDifferent(changes, "businessTargetTime",
+                safeOld.getBusinessTargetTime(),
+                safeMerged.getBusinessTargetTime());
+        addChangeIfDifferent(changes, "businessTargetNextDay",
+                safeOld.getBusinessTargetNextDay(),
+                safeMerged.getBusinessTargetNextDay());
+        addChangeIfDifferent(changes, "businessTargetDate",
+                safeOld.getBusinessTargetDate(),
+                safeMerged.getBusinessTargetDate());
+        addChangeIfDifferent(changes, "businessTargetDayOfWeek",
+                safeOld.getBusinessTargetDayOfWeek(),
+                safeMerged.getBusinessTargetDayOfWeek());
+        addChangeIfDifferent(changes, "businessTimeWindow",
+                safeOld.getBusinessTimeWindow(),
+                safeMerged.getBusinessTimeWindow());
 
         return changes;
     }
@@ -2907,7 +3063,10 @@ public class ConstraintExtractionService {
             List<String> changes,
             List<ConstraintConflictVO> conflicts,
             String extractor,
-            String modelName
+            String modelName,
+            ConstraintPatch patch,
+            String degradationReason,
+            String promptVersion
     ) {
         if (messageId == null) {
             throw new ApiException(
@@ -2969,6 +3128,12 @@ public class ConstraintExtractionService {
         extraction.setModelVersion(
                 modelExtraction ? null : "v1"
         );
+        extraction.setConstraintPatch(toJson(
+                patch == null ? Map.of() : patch));
+        extraction.setExtractor(extractor);
+        extraction.setDegraded(!modelExtraction);
+        extraction.setPromptVersion(promptVersion);
+        extraction.setDegradationReason(degradationReason);
         extraction.setCreatedAt(OffsetDateTime.now());
 
         int affectedRows =
@@ -2986,5 +3151,71 @@ public class ConstraintExtractionService {
         }
 
         return extraction;
+    }
+
+    private List<Map<String, String>> loadRecentMessages(Long sessionId) {
+        List<ChatMessage> messages = chatMessageMapper.selectList(
+                new LambdaQueryWrapper<ChatMessage>()
+                        .eq(ChatMessage::getSessionId, sessionId)
+                        .orderByDesc(ChatMessage::getId)
+                        .last("LIMIT 6"));
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+        Collections.reverse(messages);
+        List<Map<String, String>> result = new ArrayList<>();
+        for (ChatMessage item : messages) {
+            result.add(Map.of(
+                    "role", item.getRole() == null ? "USER" : item.getRole(),
+                    "content", item.getContent() == null ? "" : item.getContent()
+            ));
+        }
+        return result;
+    }
+
+    private List<String> readStringList(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(
+                    json, new TypeReference<List<String>>() { });
+        } catch (JsonProcessingException ignored) {
+            return List.of();
+        }
+    }
+
+    private List<Map<String, Object>> readObjectList(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(
+                    json,
+                    new TypeReference<List<Map<String, Object>>>() { });
+        } catch (JsonProcessingException ignored) {
+            return List.of();
+        }
+    }
+
+    private void updateUserMessageMetadata(
+            ChatMessage message,
+            String requestId,
+            String extractor,
+            boolean degraded,
+            String modelName,
+            String promptVersion,
+            String degradationReason
+    ) {
+        if (message == null || message.getId() == null) return;
+        Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("requestId", requestId == null ? "" : requestId);
+        metadata.put("extractor", extractor);
+        metadata.put("degraded", degraded);
+        metadata.put("modelName", modelName);
+        metadata.put("promptVersion", promptVersion);
+        if (degradationReason != null && !degradationReason.isBlank()) {
+            metadata.put("degradationReason", degradationReason);
+        }
+        message.setMetadata(toJson(metadata));
+        // Metadata is observability data. A stale/no-op update must not roll
+        // back an otherwise valid dialogue transaction.
+        chatMessageMapper.updateById(message);
     }
 }

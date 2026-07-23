@@ -253,6 +253,14 @@ public class AIClientService {
     }
 
     /**
+     * 调用受控的探店自然语言回复链。请求中只允许包含 Java 已验证的事实。
+     */
+    public JsonNode generateDiningReply(Map<String, Object> request) {
+        String url = aiServiceBaseUrl + "/internal/dialogue/reply";
+        return post(url, request, "DINING_RECOMMENDATION");
+    }
+
+    /**
      * 调用评价摘要生成接口（EPIC-01 Story 7）
      */
     public JsonNode generateReviewSummary(
@@ -656,6 +664,18 @@ public class AIClientService {
         return post(url, request, "KNOWLEDGE_DEACTIVATE");
     }
 
+        /**
+     * 读取 OpenSearch 中当前有效的文档和来源数量，
+     * 供管理员执行数据对账。该接口不会修改索引。
+     */
+    public JsonNode getActiveKnowledgeCounts() {
+        return post(
+                aiServiceBaseUrl + "/internal/knowledge/active-counts",
+                Map.of(),
+                "KNOWLEDGE_RECONCILIATION"
+        );
+    }
+
     /**
      * 调用违规文本检测接口（EPIC-03 故事3：违规文本识别）。
      *
@@ -666,16 +686,32 @@ public class AIClientService {
      * @param ruleVersion 检测规则版本
      * @return AI 服务返回的 JSON，包含 riskType/riskLevel/riskScore/matchedRules
      */
-    public JsonNode checkViolationText(String content, String ruleVersion) {
-        String url = aiServiceBaseUrl + "/internal/content/violation-check";
+    public JsonNode checkViolationText(
+            String content,
+            String ruleVersion
+    ) {
+        String url =
+                aiServiceBaseUrl
+                        + "/internal/content/violation-check";
 
-        Map<String, Object> request = new LinkedHashMap<>();
+        Map<String, Object> request =
+                new LinkedHashMap<>();
+
         request.put("content", content);
-        if (ruleVersion != null && !ruleVersion.isBlank()) {
-            request.put("ruleVersion", ruleVersion);
+
+        if (ruleVersion != null
+                && !ruleVersion.isBlank()) {
+            request.put(
+                    "ruleVersion",
+                    ruleVersion
+            );
         }
 
-        return post(url, request, "VIOLATION_TEXT_CHECK");
+        return post(
+                url,
+                request,
+                "VIOLATION_TEXT_CHECK"
+        );
     }
 
     /**
@@ -969,7 +1005,7 @@ public class AIClientService {
     }
 
     /**
-     * 为探店条件提取请求附加数据库中绑定的运行时模型配置。
+     * 为探店条件提取与探店推荐回复请求附加数据库中绑定的运行时模型配置。
      *
      * 请求摘要在本方法执行前已经生成，因此明文 API Key 不会进入
      * ai_call_logs 或审计日志。
@@ -978,10 +1014,9 @@ public class AIClientService {
             Object body,
             String functionType
     ) {
-        if (!"DIALOGUE_CONSTRAINT_EXTRACTION".equals(
-                functionType
-        )) {
-            return body;
+        if (!"DIALOGUE_CONSTRAINT_EXTRACTION".equals(functionType)
+                && !"DINING_RECOMMENDATION".equals(functionType)) {
+        return body;
         }
 
         if (runtimeModelConfigResolver == null) {
@@ -1099,6 +1134,9 @@ public class AIClientService {
 
             case "DIALOGUE_CONSTRAINT_EXTRACTION" ->
                     PromptScene.CONSTRAINT_EXTRACTION;
+
+            case "DINING_RECOMMENDATION" ->
+                    PromptScene.DINING_RECOMMENDATION;
 
             case "REVIEW_SUMMARY_GENERATION" ->
                     PromptScene.REVIEW_SUMMARY;
@@ -1326,6 +1364,7 @@ public class AIClientService {
         return switch (functionType) {
             case "SEMANTIC_SEARCH" -> "KNOWLEDGE_RETRIEVAL";
             case "DIALOGUE_CONSTRAINT_EXTRACTION" -> "CONSTRAINT_EXTRACTION";
+            case "DINING_RECOMMENDATION" -> "REPLY_GENERATION";
             default -> "MODEL_CALL";
         };
     }

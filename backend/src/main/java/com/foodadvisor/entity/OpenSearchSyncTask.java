@@ -1,6 +1,7 @@
 package com.foodadvisor.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.foodadvisor.config.JsonbTypeHandler;
 import lombok.Data;
 import java.time.OffsetDateTime;
 
@@ -9,7 +10,7 @@ import java.time.OffsetDateTime;
  * 对应数据库表 opensearch_sync_tasks
  */
 @Data
-@TableName("opensearch_sync_tasks")
+@TableName(value = "opensearch_sync_tasks", autoResultMap = true)
 public class OpenSearchSyncTask {
 
     /** 同步状态常量 */
@@ -50,6 +51,11 @@ public class OpenSearchSyncTask {
 
     /** 错误信息 */
     private String errorMessage;
+
+    @TableField(typeHandler = JsonbTypeHandler.class)
+    private String payload;
+
+    private String contentHash;
 
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;

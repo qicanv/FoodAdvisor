@@ -23,6 +23,7 @@ import com.foodadvisor.entity.ReviewImage;
 import com.foodadvisor.entity.ReviewReply;
 import com.foodadvisor.entity.ReviewTagRelation;
 import com.foodadvisor.entity.ReviewVersion;
+import com.foodadvisor.entity.OpenSearchSyncTask;
 import com.foodadvisor.mapper.MerchantMapper;
 import com.foodadvisor.mapper.ReviewAnalysisMapper;
 import com.foodadvisor.mapper.ReviewImageMapper;
@@ -39,6 +40,7 @@ import com.foodadvisor.mapper.TagSentimentCount;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import com.foodadvisor.entity.ReviewIssueCategory;
@@ -86,6 +88,16 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     private final AuditLogService auditLogService;
     private final com.foodadvisor.mapper.ReviewReplyMapper replyMapper;
     private final NotificationService notificationService;
+    /**
+     * OpenSearch 同步服务采用可选注入，
+     * 避免未启用搜索同步能力时影响评价基础功能。
+     */
+    @Autowired(required = false)
+    private OpenSearchSyncService openSearchSyncService;
+
+    /**
+     * 评价违规文本检测服务。
+     */
     private final ViolationTextService violationTextService;
 
     public ReviewService(
@@ -269,6 +281,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     "评价保存失败"
             );
         }
+        enqueueReviewSync(review);
 
         // 评价持久化后保存违规检测记录
         saveViolationRecord(review, "REVIEW", violationResult);
@@ -380,6 +393,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     "评价更新失败"
             );
         }
+        enqueueReviewSync(review);
 
         saveViolationRecord(review, "REVIEW", violationResult);
 
@@ -445,6 +459,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                     "评价更新失败"
             );
         }
+        enqueueReviewSync(review);
 
         saveViolationRecord(review, "REVIEW", violationResult);
 
@@ -494,6 +509,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 执行 UPDATE
         this.updateById(review);
+        enqueueReviewDisable(review);
 
         // 记录版本快照，changeType = "EDIT"（数据库约束不允许DELETE）
         // List.of() 表示删除后没有保留任何图片
@@ -506,6 +522,26 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         // 删掉的评价不再计入商家评分，重新算一次
         refreshMerchantRatingStats(review.getMerchantId());
+    }
+
+    private void enqueueReviewSync(Review review) {
+        if (openSearchSyncService == null || review == null
+                || review.getId() == null) return;
+        boolean visible = "PUBLISHED".equals(review.getStatus())
+                && "APPROVED".equals(review.getModerationStatus())
+                && review.getDeletedAt() == null;
+        openSearchSyncService.createSyncTask(
+                "REVIEW", review.getId(),
+                visible ? OpenSearchSyncTask.OP_UPSERT
+                        : OpenSearchSyncTask.OP_DISABLE);
+    }
+
+    private void enqueueReviewDisable(Review review) {
+        if (openSearchSyncService != null && review != null
+                && review.getId() != null) {
+            openSearchSyncService.createSyncTask(
+                    "REVIEW", review.getId(), OpenSearchSyncTask.OP_DISABLE);
+        }
     }
 
     /**

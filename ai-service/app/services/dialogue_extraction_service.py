@@ -1,14 +1,25 @@
 import json
+import logging
 from typing import Any
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableLambda
 
 from app.schemas.dialogue import (
     DialogueExtractRequest,
     DialogueExtractResponse,
 )
-from app.services.llm_service import LLMService
+from app.chains.dining_constraint_chain import DiningConstraintChain
+from app.schemas.constraint_patch import ConstraintPatch
+from app.services.langchain_model_factory import create_runtime_chat_model
+
+logger = logging.getLogger(__name__)
+
+# Compatibility seam for existing tests and legacy embedders. Production keeps
+# this as None and always uses the official LangChain provider.
+LLMService = None
 
 
 SYSTEM_PROMPT = """
@@ -102,30 +113,14 @@ class DialogueExtractionService:
         system_prompt = (
             request.systemPrompt
             if request.systemPrompt and request.systemPrompt.strip()
-            else SYSTEM_PROMPT
+            else None
         )
         prompt_version = (
             request.promptVersion.strip()
             if request.promptVersion and request.promptVersion.strip()
-            else "dialogue-extraction:v1"
+            else "constraint-extraction:v2"
         )
         runtime_model = request.runtimeModel
-
-        model_client = LLMService(
-            api_key=runtime_model.apiKey.get_secret_value(),
-            base_url=runtime_model.baseUrl,
-            model=runtime_model.modelName,
-            provider=runtime_model.provider,
-            request_timeout_seconds=(
-                runtime_model.timeoutMs / 1000.0
-            ),
-        )
-
-        if not model_client.is_configured():
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Runtime LLM model is not configured",
-            )
 
         payload = {
             "sessionId": request.sessionId,
@@ -134,36 +129,42 @@ class DialogueExtractionService:
             "currentConstraints": request.currentConstraints.model_dump(
                 exclude_none=True
             ),
+            "recentMessages": request.recentMessages,
+            "rejectedFields": request.rejectedFields,
+            "pendingConflicts": request.pendingConflicts,
+            "timezone": request.timezone,
         }
 
         try:
-            result = await model_client.chat_json(
+            model = _model_for_request(runtime_model, system_prompt)
+            patch = await DiningConstraintChain(
+                model=model,
                 system_prompt=system_prompt,
-                user_message=json.dumps(
-                    payload,
-                    ensure_ascii=False,
-                ),
-                temperature=runtime_model.temperature,
-                max_tokens=runtime_model.maxOutputTokens,
-            )
-
-            normalized_result = normalize_model_result(result)
-
-            response = DialogueExtractResponse.model_validate(
-                normalized_result
+            ).ainvoke(payload)
+            legacy_constraints, cleared_fields = _legacy_projection(patch)
+            response = DialogueExtractResponse(
+                intent=patch.intent,
+                extractedConstraints=legacy_constraints,
+                clearedFields=cleared_fields,
+                confidence=_overall_confidence(patch),
+                patch=patch,
             )
 
             # These fields are controlled by the service rather than trusted
             # from model-generated output.
             response.extractor = "AI_MODEL"
             response.degraded = False
-            response.modelName = model_client.model
-            response.provider = model_client.provider
+            response.modelName = runtime_model.modelName
+            response.provider = runtime_model.provider
             response.promptVersion = prompt_version
 
             return response
 
         except (ValueError, ValidationError) as exception:
+            logger.exception(
+                "Invalid dialogue extraction result: %s",
+                exception,
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=(
@@ -176,6 +177,10 @@ class DialogueExtractionService:
             raise
 
         except Exception as exception:
+            logger.exception(
+                "Dialogue extraction model call failed: %s",
+                exception,
+            )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Dialogue extraction model call failed",
@@ -183,3 +188,96 @@ class DialogueExtractionService:
 
 
 dialogue_extraction_service = DialogueExtractionService()
+
+
+def _overall_confidence(patch: ConstraintPatch) -> float:
+    if not patch.confidence:
+        return 0.0
+    return sum(patch.confidence.values()) / len(patch.confidence)
+
+
+def _legacy_projection(patch: ConstraintPatch) -> tuple[dict[str, Any], list[str]]:
+    """Keep old Java clients functional while ConstraintPatch rolls out."""
+    operations = patch.operations
+    extracted: dict[str, Any] = dict(operations.set_values)
+    for field, values in operations.add.items():
+        extracted[field] = list(values)
+    for field, values in operations.exclude.items():
+        target = {
+            "cuisines": "excludedCuisines",
+            "merchantTypes": "excludedMerchantTypes",
+        }.get(field, field)
+        extracted[target] = list(values)
+    return extracted, list(operations.clear)
+
+
+def _model_for_request(runtime_model, system_prompt: str | None = None):
+    if LLMService is None:
+        return create_runtime_chat_model(runtime_model)
+
+    legacy = LLMService(
+        api_key=runtime_model.apiKey.get_secret_value(),
+        base_url=runtime_model.baseUrl,
+        model=runtime_model.modelName,
+        provider=runtime_model.provider,
+        request_timeout_seconds=runtime_model.timeoutMs / 1000.0,
+    )
+    if not legacy.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Dialogue extraction model is not configured",
+        )
+
+    async def invoke(_prompt):
+        result = await legacy.chat_json(
+            system_prompt=system_prompt,
+            temperature=runtime_model.temperature,
+            max_tokens=runtime_model.maxOutputTokens,
+        )
+        return AIMessage(content=json.dumps(
+            _legacy_result_to_patch(result), ensure_ascii=False
+        ))
+
+    return RunnableLambda(invoke)
+
+
+def _legacy_result_to_patch(result: Any) -> dict[str, Any]:
+    result = normalize_model_result(result)
+    constraints = result.get("extractedConstraints", {})
+    if not isinstance(constraints, dict):
+        raise ValueError("extractedConstraints must be an object")
+    operations: dict[str, Any] = {
+        "set": {},
+        "add": {},
+        "remove": {},
+        "clear": result.get("clearedFields", []),
+        "exclude": {},
+        "unexclude": {},
+    }
+    list_fields = {
+        "merchantTypes", "cuisines", "tastePreferences",
+        "tasteRestrictions", "dishKeywords", "scenes",
+        "environmentRequirements",
+    }
+    for field, value in constraints.items():
+        if field == "excludedCuisines":
+            operations["exclude"]["cuisines"] = value
+        elif field == "excludedMerchantTypes":
+            operations["exclude"]["merchantTypes"] = value
+        elif field in list_fields:
+            operations["add"][field] = value
+        else:
+            operations["set"][field] = value
+    confidence = result.get("confidence", 0.0)
+    return {
+        "intent": result.get("intent", "UNKNOWN"),
+        "directRecommend": False,
+        "operations": operations,
+        "conflicts": [],
+        "followUpHints": [],
+        "confidence": (
+            {next(iter(constraints)): confidence}
+            if constraints and isinstance(confidence, (int, float))
+            else confidence if isinstance(confidence, dict) else {}
+        ),
+    }

@@ -10,7 +10,10 @@ import com.foodadvisor.entity.MerchantBusinessHours;
 import com.foodadvisor.exception.ApiException;
 import com.foodadvisor.mapper.BusinessHoursMapper;
 import com.foodadvisor.mapper.MerchantMapper;
+import com.foodadvisor.entity.OpenSearchSyncTask;
+import com.foodadvisor.service.OpenSearchSyncService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -25,6 +28,7 @@ import java.util.Set;
 
 @RestController
 @RequestMapping("/api/merchant-console/merchants")
+@Transactional
 public class MerchantConsoleController {
 
     private static final Logger log =
@@ -36,6 +40,8 @@ public class MerchantConsoleController {
     private final MerchantMapper merchantMapper;
     private final BusinessHoursMapper businessHoursMapper;
     private final JdbcTemplate jdbcTemplate;
+    @Autowired(required = false)
+    private OpenSearchSyncService openSearchSyncService;
 
     public MerchantConsoleController(
             MerchantMapper merchantMapper,
@@ -139,6 +145,7 @@ public class MerchantConsoleController {
         merchant.setReviewCount(0);
 
         merchantMapper.insert(merchant);
+        enqueueMerchantSync(merchant);
 
         jdbcTemplate.update(
                 "INSERT INTO merchant_members (merchant_id, user_id, member_role, status, created_at, updated_at) " +
@@ -204,6 +211,7 @@ public class MerchantConsoleController {
         }
 
         merchantMapper.updateById(merchant);
+        enqueueMerchantSync(merchant);
 
         log.info("商户 userId={} 修改店铺 merchantId={}", userId, merchantId);
         return ApiResponse.success("店铺信息已更新", merchant);
@@ -239,6 +247,7 @@ public class MerchantConsoleController {
         String oldStatus = merchant.getOperationStatus();
         merchant.setOperationStatus(body.getOperationStatus());
         merchantMapper.updateById(merchant);
+        enqueueMerchantSync(merchant);
 
         log.info("商户 userId={} 修改店铺 merchantId={} 经营状态: {} -> {}",
                 userId, merchantId, oldStatus, body.getOperationStatus());
@@ -286,6 +295,7 @@ public class MerchantConsoleController {
             hour.setMerchantId(merchantId);
             businessHoursMapper.insert(hour);
         }
+        enqueueMerchantSync(merchantMapper.selectById(merchantId));
 
         log.info("商户 userId={} 修改店铺 merchantId={} 营业时间", userId, merchantId);
         List<MerchantBusinessHours> updated = businessHoursMapper.selectByMerchantId(merchantId);
@@ -315,6 +325,20 @@ public class MerchantConsoleController {
             throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN",
                     "您不是该店铺的管理者，无权操作");
         }
+    }
+
+    private void enqueueMerchantSync(Merchant merchant) {
+        if (openSearchSyncService == null || merchant == null || merchant.getId() == null) {
+            return;
+        }
+        boolean searchable = "ACTIVE".equals(merchant.getPlatformStatus())
+                && "OPERATING".equals(merchant.getOperationStatus())
+                && merchant.getDeletedAt() == null;
+        openSearchSyncService.createSyncTask(
+                "MERCHANT",
+                merchant.getId(),
+                searchable ? OpenSearchSyncTask.OP_UPSERT
+                        : OpenSearchSyncTask.OP_DISABLE);
     }
 
     private String generateMerchantCode() {

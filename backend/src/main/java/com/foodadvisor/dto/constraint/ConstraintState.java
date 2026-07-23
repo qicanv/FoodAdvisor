@@ -5,6 +5,8 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 当前会话中的结构化消费需求。
@@ -114,4 +116,27 @@ public class ConstraintState {
      * 明确目标时间是否指向次日，例如“凌晨1点”。
      */
     private Boolean businessTargetNextDay;
+
+    /**
+     * Explicit local target date, in ISO yyyy-MM-dd form.
+     */
+    private String businessTargetDate;
+
+    /**
+     * ISO day of week, Monday=1 through Sunday=7.
+     */
+    private Integer businessTargetDayOfWeek;
+
+    /**
+     * Named target window such as LUNCH, EVENING or LATE_NIGHT.
+     */
+    private String businessTimeWindow;
+
+    private String timezone = "Asia/Shanghai";
+
+    /**
+     * Optional PREFERRED/REQUIRED strengths for list constraints.
+     */
+    private Map<String, String> constraintStrengths =
+            new LinkedHashMap<>();
 }

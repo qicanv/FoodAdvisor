@@ -247,21 +247,6 @@ public class MatchScoreCalculator {
             }
         }
 
-        /*
-         * 优先保留菜系、价格、评分、距离、环境等用户需求匹配项。
-         *
-         * 当实际匹配项不足两项时，
-         * 再使用平台有效和正常经营状态作为补充，
-         * 保证每个结果至少展示两项匹配条件。
-         */
-        if (matchedConditions.size() < 2) {
-            matchedConditions.add("商家平台状态有效");
-        }
-
-        if (matchedConditions.size() < 2) {
-            matchedConditions.add("商家当前处于正常经营状态");
-        }
-
         result.setFinalScore(
                 finalScore.setScale(2, RoundingMode.HALF_UP)
         );

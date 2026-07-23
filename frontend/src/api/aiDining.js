@@ -29,7 +29,7 @@ export const sendDiningMessage = (
   return request.post(
     `/api/diner/sessions/${sessionId}/messages`,
     body,
-    { timeout: 60000 }
+    { timeout: 120000 }
   )
 }
 
@@ -51,7 +51,7 @@ export const adjustDiningRecommendation = (
   return request.post(
     `/api/diner/sessions/${sessionId}/recommendations/adjust`,
     body,
-    { timeout: 60000 }
+    { timeout: 120000 }
   )
 }
 

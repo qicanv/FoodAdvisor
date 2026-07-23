@@ -29,5 +29,12 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      pool: 'threads',
+      maxWorkers: 1,
+      fileParallelism: false,
+    },
   }
 })

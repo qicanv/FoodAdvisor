@@ -1,6 +1,7 @@
 package com.foodadvisor.dto.ai;
 
 import com.foodadvisor.dto.constraint.ConstraintState;
+import com.foodadvisor.dto.constraint.ConstraintPatch;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -27,4 +28,6 @@ public class DialogueExtractAiResponse {
     private String promptVersion;
 
     private String provider;
+
+    private ConstraintPatch patch;
 }
