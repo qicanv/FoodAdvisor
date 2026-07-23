@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     sentiment_low_confidence_threshold: float = 0.6
 
-    sentiment_analysis_mode: str = "local"  # local / llm / hybrid
+    sentiment_analysis_mode: str = "hybrid"  # local / llm / hybrid（默认 hybrid：本地模型优先，LLM 降级+丰富化）
     ml_model_path: str = "../train/model/best"
     ml_device: str = "auto"  # auto / cpu / cuda
 

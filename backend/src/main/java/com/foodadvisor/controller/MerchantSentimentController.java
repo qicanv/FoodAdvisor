@@ -76,7 +76,12 @@ public class MerchantSentimentController {
      *
      * 请求示例：
      *   POST /api/merchant-console/reviews/batch-analyze
-     *   Body: { "merchantId": 1, "timeRange": "30d" }
+     *   Body: { "merchantId": 1, "timeRange": "30d", "analysisMode": "hybrid" }
+     *
+     * analysisMode 可选值：
+     *   - "local":  仅用微调模型（快速，维度精准，无关键词/标签）
+     *   - "llm":    仅用云端大模型（全面，但较慢）
+     *   - "hybrid": 微调模型 + 大模型丰富化（推荐默认值）
      */
     @PostMapping("/api/merchant-console/reviews/batch-analyze")
     public ApiResponse<Map<String, Object>> triggerBatchAnalysis(
@@ -86,13 +91,15 @@ public class MerchantSentimentController {
                 ? Long.valueOf(body.get("merchantId").toString()) : null;
         String timeRange = body.get("timeRange") != null
                 ? body.get("timeRange").toString() : "30d";
+        String analysisMode = body.get("analysisMode") != null
+                ? body.get("analysisMode").toString() : null;
 
         if (merchantId == null) {
             return ApiResponse.failure("INVALID_PARAM", "merchantId 不能为空");
         }
 
-        log.info("触发批量分析: merchantId={}, timeRange={}", merchantId, timeRange);
-        Map<String, Object> result = sentimentService.triggerBatchAnalysis(merchantId, timeRange);
+        log.info("触发批量分析: merchantId={}, timeRange={}, analysisMode={}", merchantId, timeRange, analysisMode);
+        Map<String, Object> result = sentimentService.triggerBatchAnalysis(merchantId, timeRange, analysisMode);
         return ApiResponse.success("批量分析完成", result);
     }
 }

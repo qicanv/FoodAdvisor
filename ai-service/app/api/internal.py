@@ -99,11 +99,12 @@ async def batch_analyze_reviews(request: BatchAnalyzeRequest):
     if len(request.reviews) > 100:
         raise HTTPException(status_code=422, detail="单次最多分析100条评价")
 
-    logger.info(f"批量分析 {len(request.reviews)} 条评价")
+    logger.info(f"批量分析 {len(request.reviews)} 条评价, analysisMode={request.analysisMode or 'default'}")
     results, errors = await review_analysis_service.batch_analyze(
         request.reviews,
         system_prompt=request.systemPrompt,
         prompt_version=request.promptVersion,
+        mode_override=request.analysisMode,
     )
 
     return BatchAnalyzeResponse(

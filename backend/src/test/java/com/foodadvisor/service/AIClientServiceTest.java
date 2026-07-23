@@ -288,7 +288,8 @@ class AIClientServiceTest {
                 java.util.List.of(
                         Map.of("reviewId", 1, "content", "first"),
                         Map.of("reviewId", 2, "content", "second")
-                )
+                ),
+                null  // analysisMode: null = use server default
         );
 
         verify(aiCallLogService, times(1))

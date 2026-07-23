@@ -129,3 +129,4 @@ train/datasets/datasets_temp/processed/val_processed.csv
 train/datasets/processed/test_processed.csv
 train/datasets/processed/train_processed.csv
 train/datasets/processed/val_processed.csv
+ai-service/app/local_models.zip
