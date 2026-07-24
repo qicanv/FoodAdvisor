@@ -1074,9 +1074,12 @@ async function loadSummary() {
       }
       // 差评问题
       for (const iss of (d.complaintIssues || [])) {
-        issueAgg[iss.category] = (issueAgg[iss.category] || 0) + iss.count
-        if (!topIssue.categoryName || issueAgg[iss.category] > topIssue.count) {
-          topIssue = { categoryName: iss.categoryName, count: issueAgg[iss.category] }
+        if (!issueAgg[iss.category]) {
+          issueAgg[iss.category] = { count: 0, categoryName: iss.categoryName }
+        }
+        issueAgg[iss.category].count += iss.count
+        if (!topIssue.categoryName || issueAgg[iss.category].count > topIssue.count) {
+          topIssue = { categoryName: iss.categoryName, count: issueAgg[iss.category].count }
         }
       }
     }
@@ -1113,12 +1116,12 @@ async function loadSummary() {
     positiveKeywords.value = kwSorted.map(([w, c]) => ({ word: w, count: c }))
     maxPositiveKwCount.value = Math.max(1, ...kwSorted.map(e => e[1]))
 
-    const issueSorted = Object.entries(issueAgg).sort((a, b) => b[1] - a[1])
-    complaintIssues.value = issueSorted.map(([cat, cnt]) => ({
+    const issueEntries = Object.entries(issueAgg).sort((a, b) => b[1].count - a[1].count)
+    complaintIssues.value = issueEntries.map(([cat, info]) => ({
       category: cat,
-      categoryName: cat,
-      count: cnt,
-      percentage: Math.round(cnt * 1000 / analyzedTotal) / 10,
+      categoryName: info.categoryName || cat,
+      count: info.count,
+      percentage: Math.round(info.count * 1000 / analyzedTotal) / 10,
     }))
 
     lastUpdateTime.value = new Date().toLocaleString('zh-CN')
@@ -1172,7 +1175,7 @@ async function triggerAnalysis() {
   try {
     const ids = getEffectiveIds()
     if (ids.length === 0) return
-    let totalOk = 0, totalFail = 0
+    let totalOk = 0, totalFail = 0, backfilledTotal = 0
     for (const id of ids) {
       const res = await triggerBatchAnalysis({
         merchantId: id,
@@ -1183,14 +1186,20 @@ async function triggerAnalysis() {
         const d = res.data
         totalOk += d.analyzedCount || 0
         totalFail += d.failCount || 0
+        backfilledTotal += d.backfilledIssueRelations || 0
       } else {
         totalFail++
       }
     }
-    const msg = totalOk > 0
-      ? `分析完成！成功 ${totalOk} 条，失败 ${totalFail} 条`
-      : '所有评价已分析完成'
-    showMessage(msg, totalOk > 0 ? 'success' : 'info')
+    let msg
+    if (totalOk > 0) {
+      msg = `分析完成！成功 ${totalOk} 条` + (totalFail > 0 ? `，失败 ${totalFail} 条` : '')
+    } else if (backfilledTotal > 0) {
+      msg = `差评归因数据已补充 ${backfilledTotal} 条，可刷新页面查看`
+    } else {
+      msg = '所有评价已分析完成'
+    }
+    showMessage(msg, (totalOk > 0 || backfilledTotal > 0) ? 'success' : 'info')
     lastUpdateTime.value = new Date().toLocaleString('zh-CN')
     await loadAll()
   } catch (e) {

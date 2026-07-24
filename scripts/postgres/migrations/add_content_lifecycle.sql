@@ -47,11 +47,13 @@ CREATE TABLE IF NOT EXISTS opensearch_sync_tasks (
     retry_count INTEGER NOT NULL DEFAULT 0,
     next_retry_at TIMESTAMPTZ,
     error_message TEXT,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    content_hash VARCHAR(128),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT ck_ost_source_type
-        CHECK (source_type IN ('MERCHANT', 'DISH', 'REVIEW', 'TOPIC')),
+        CHECK (source_type IN ('MERCHANT', 'MERCHANT_INTRO', 'MENU', 'REVIEW')),
 
     CONSTRAINT ck_ost_operation_type
         CHECK (operation_type IN ('UPSERT', 'DISABLE', 'DELETE', 'REINDEX')),

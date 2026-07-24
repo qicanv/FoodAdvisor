@@ -1,6 +1,7 @@
 package com.foodadvisor.controller;
 
 import com.foodadvisor.common.ApiResponse;
+import com.foodadvisor.dto.sentiment.SentimentReviewItemVO;
 import com.foodadvisor.dto.sentiment.SentimentReviewPageVO;
 import com.foodadvisor.dto.sentiment.SentimentSummaryVO;
 import com.foodadvisor.service.MerchantSentimentService;
@@ -101,5 +102,23 @@ public class MerchantSentimentController {
         log.info("触发批量分析: merchantId={}, timeRange={}, analysisMode={}", merchantId, timeRange, analysisMode);
         Map<String, Object> result = sentimentService.triggerBatchAnalysis(merchantId, timeRange, analysisMode);
         return ApiResponse.success("批量分析完成", result);
+    }
+
+    /**
+     * 获取单条评论的详细情感分析结果。
+     *
+     * 请求示例：
+     *   GET /api/merchant-console/reviews/123/sentiment
+     */
+    @GetMapping("/api/merchant-console/reviews/{reviewId}/sentiment")
+    public ApiResponse<SentimentReviewItemVO> getReviewDetail(
+            @PathVariable Long reviewId,
+            @RequestParam Long merchantId
+    ) {
+        SentimentReviewItemVO item = sentimentService.getReviewItem(merchantId, reviewId);
+        if (item == null) {
+            return ApiResponse.notFound("评价不存在或尚未分析");
+        }
+        return ApiResponse.success(item);
     }
 }

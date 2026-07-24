@@ -8,10 +8,14 @@ import com.foodadvisor.dto.sentiment.*;
 import com.foodadvisor.dto.ReviewAnalysisResultVO;
 import com.foodadvisor.entity.Review;
 import com.foodadvisor.entity.ReviewAnalysis;
+import com.foodadvisor.entity.ReviewIssueCategory;
 import com.foodadvisor.mapper.ReviewAnalysisMapper;
+import com.foodadvisor.mapper.ReviewIssueCategoryMapper;
+import com.foodadvisor.mapper.ReviewIssueRelationMapper;
 import com.foodadvisor.mapper.ReviewMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -37,6 +41,9 @@ public class MerchantSentimentService {
     private final ReviewAnalysisMapper reviewAnalysisMapper;
     private final AIClientService aiClientService;
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbcTemplate;
+    private final ReviewIssueCategoryMapper issueCategoryMapper;
+    private final ReviewIssueRelationMapper issueRelationMapper;
 
     /** 维度中文名 */
     private static final Map<String, String> DIM_NAMES = Map.of(
@@ -68,12 +75,18 @@ public class MerchantSentimentService {
             ReviewMapper reviewMapper,
             ReviewAnalysisMapper reviewAnalysisMapper,
             AIClientService aiClientService,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            JdbcTemplate jdbcTemplate,
+            ReviewIssueCategoryMapper issueCategoryMapper,
+            ReviewIssueRelationMapper issueRelationMapper
     ) {
         this.reviewMapper = reviewMapper;
         this.reviewAnalysisMapper = reviewAnalysisMapper;
         this.aiClientService = aiClientService;
         this.objectMapper = objectMapper;
+        this.jdbcTemplate = jdbcTemplate;
+        this.issueCategoryMapper = issueCategoryMapper;
+        this.issueRelationMapper = issueRelationMapper;
     }
 
     // ============================================
@@ -254,47 +267,83 @@ public class MerchantSentimentService {
                 .filter(r -> !analysisMap.containsKey(r.getId()))
                 .collect(Collectors.toList());
 
-        if (unanalyzed.isEmpty()) {
-            return Map.of("analyzedCount", 0, "message", "所有评价已分析完成");
-        }
-
-        // 分批（每批最多 100 条）
-        int batchSize = 100;
         int successCount = 0;
         int failCount = 0;
 
-        for (int i = 0; i < unanalyzed.size(); i += batchSize) {
-            int end = Math.min(i + batchSize, unanalyzed.size());
-            List<Review> batch = unanalyzed.subList(i, end);
+        if (!unanalyzed.isEmpty()) {
+            // 分批（每批最多 100 条）
+            int batchSize = 100;
 
-            List<Map<String, Object>> batchRequests = batch.stream()
-                    .map(r -> {
-                        Map<String, Object> req = new LinkedHashMap<>();
-                        req.put("reviewId", r.getId());
-                        req.put("merchantId", r.getMerchantId());
-                        req.put("reviewVersion", r.getCurrentVersion() != null ? r.getCurrentVersion() : 1);
-                        req.put("content", r.getContent());
-                        return req;
-                    })
-                    .collect(Collectors.toList());
+            for (int i = 0; i < unanalyzed.size(); i += batchSize) {
+                int end = Math.min(i + batchSize, unanalyzed.size());
+                List<Review> batch = unanalyzed.subList(i, end);
 
-            try {
-                JsonNode response = aiClientService.batchAnalyzeReviews(batchRequests, analysisMode);
-                // 解析并持久化分析结果
-                int persisted = persistBatchResults(response, batch);
-                successCount += persisted;
-                failCount += (batch.size() - persisted);
-            } catch (Exception e) {
-                log.error("批量分析失败: merchantId={}, batch={}-{}", merchantId, i, end, e);
-                failCount += batch.size();
+                List<Map<String, Object>> batchRequests = batch.stream()
+                        .map(r -> {
+                            Map<String, Object> req = new LinkedHashMap<>();
+                            req.put("reviewId", r.getId());
+                            req.put("merchantId", r.getMerchantId());
+                            req.put("reviewVersion", r.getCurrentVersion() != null ? r.getCurrentVersion() : 1);
+                            req.put("content", r.getContent());
+                            return req;
+                        })
+                        .collect(Collectors.toList());
+
+                try {
+                    JsonNode response = aiClientService.batchAnalyzeReviews(batchRequests, analysisMode);
+                    int persisted = persistBatchResults(response, batch);
+                    successCount += persisted;
+                    failCount += (batch.size() - persisted);
+                } catch (Exception e) {
+                    log.error("批量分析失败: merchantId={}, batch={}-{}", merchantId, i, end, e);
+                    failCount += batch.size();
+                }
             }
         }
 
+        // 对于已分析但缺少 issue_relations 的评价，从已有分析结果中补充归因关联。
+        // 这些评价之前由旧版流程分析，analysis 数据已存在但未写入 review_issue_relations。
+        int backfilled = backfillMissingIssueRelations(merchantId, since);
+
+        if (unanalyzed.isEmpty() && backfilled == 0) {
+            return Map.of("analyzedCount", 0, "message", "所有评价已分析完成");
+        }
+
+        String message = successCount > 0
+                ? "分析完成！成功 " + successCount + " 条"
+                : "差评归因数据已补充 " + backfilled + " 条";
         return Map.of(
                 "analyzedCount", successCount,
                 "failCount", failCount,
-                "totalUnanalyzed", unanalyzed.size()
+                "totalUnanalyzed", unanalyzed.size(),
+                "backfilledIssueRelations", backfilled,
+                "message", message
         );
+    }
+
+    // ============================================
+    // 单条评论详情
+    // ============================================
+
+    /**
+     * 获取单条评论的情感分析结果，供详情弹窗使用。
+     *
+     * @param merchantId 商家 ID（安全校验）
+     * @param reviewId   评价 ID
+     * @return 分析结果 VO，评价不存在或不属于该商家时返回 null
+     */
+    public SentimentReviewItemVO getReviewItem(Long merchantId, Long reviewId) {
+        Review rv = reviewMapper.selectOne(
+                new LambdaQueryWrapper<Review>()
+                        .eq(Review::getId, reviewId)
+                        .eq(Review::getMerchantId, merchantId)
+                        .eq(Review::getStatus, "PUBLISHED")
+        );
+        if (rv == null) return null;
+
+        Map<Long, ReviewAnalysis> analysisMap = queryAnalysisMap(List.of(reviewId));
+        ReviewAnalysis ra = analysisMap.get(reviewId);
+        return toItemVO(rv, ra);
     }
 
     // ============================================
@@ -541,13 +590,26 @@ public class MerchantSentimentService {
     /**
      * 解析批量分析返回的 JSON，将每条结果持久化到 review_analysis 表。
      * 返回成功持久化的条数。
+     *
+     * 使用原生 SQL 以确保 PostgreSQL JSONB 字段正确处理，
+     * 与 {@link ReviewService#saveAnalysis(ReviewAnalysis)} 保持一致。
      */
     private int persistBatchResults(JsonNode response, List<Review> batch) {
         JsonNode results = response.path("results");
-        if (!results.isArray()) return 0;
+        if (!results.isArray()) {
+            log.warn("AI 批量分析返回结果缺少 results 数组，response keys: {}",
+                    response.fieldNames().hasNext()
+                            ? response.fieldNames().next() : "empty");
+            return 0;
+        }
 
         Map<Long, Review> reviewMap = batch.stream()
                 .collect(Collectors.toMap(Review::getId, r -> r, (a, b) -> a));
+
+        // 预先查询这批评价的现有分析记录（包含所有状态，不只是 SUCCESS），
+        // 用于正确计算 analysisVersion，避免唯一约束冲突。
+        List<Long> reviewIds = batch.stream().map(Review::getId).collect(Collectors.toList());
+        Map<Long, ReviewAnalysis> existingAnalysisMap = queryAllAnalysisMap(reviewIds);
 
         int count = 0;
         for (JsonNode item : results) {
@@ -556,33 +618,270 @@ public class MerchantSentimentService {
                 Review review = reviewMap.get(reviewId);
                 if (review == null) continue;
 
-                ReviewAnalysis existing = queryAnalysisMap(List.of(reviewId)).get(reviewId);
+                ReviewAnalysis existing = existingAnalysisMap.get(reviewId);
                 int nextVersion = existing != null ? existing.getAnalysisVersion() + 1 : 1;
+                int reviewVersion = review.getCurrentVersion() != null
+                        ? review.getCurrentVersion() : 1;
 
-                ReviewAnalysis ra = new ReviewAnalysis();
-                ra.setReviewId(reviewId);
-                ra.setReviewVersion(review.getCurrentVersion() != null
-                        ? review.getCurrentVersion() : 1);
-                ra.setAnalysisVersion(nextVersion);
-                ra.setSentiment(item.path("sentiment").asText("NEUTRAL"));
-                ra.setConfidence(BigDecimal.valueOf(item.path("confidence").asDouble(0.5)));
-                ra.setLowConfidence(item.path("lowConfidence").asBoolean(false));
-                ra.setKeywords(item.path("keywords").toString());
-                ra.setAspects(item.path("aspects").toString());
-                ra.setNegativeReason(item.path("negativeReason").asText(null));
-                ra.setModelName(item.path("modelName").asText(null));
-                ra.setModelVersion(item.path("modelVersion").asText(null));
-                ra.setBusinessTraceId(item.path("businessTraceId").asText(null));
-                ra.setStatus("SUCCESS");
-                ra.setCompletedAt(OffsetDateTime.now());
+                String sentiment = item.path("sentiment").asText("NEUTRAL");
+                BigDecimal confidence = BigDecimal.valueOf(
+                        item.path("confidence").asDouble(0.5));
+                boolean lowConfidence = item.path("lowConfidence").asBoolean(false);
+                String keywordsJson = item.path("keywords").toString();
+                String aspectsJson = item.path("aspects").toString();
+                String negativeReason = item.path("negativeReason").asText(null);
+                String modelName = item.path("modelName").asText(null);
+                String modelVersion = item.path("modelVersion").asText(null);
+                String businessTraceId = item.path("businessTraceId").asText(null);
 
-                reviewAnalysisMapper.insert(ra);
+                if (existing != null) {
+                    // 更新已有记录
+                    jdbcTemplate.update(
+                            """
+                            UPDATE review_analysis
+                            SET review_version = ?,
+                                analysis_version = ?,
+                                sentiment = ?,
+                                confidence = ?,
+                                low_confidence = ?,
+                                keywords = ?::jsonb,
+                                aspects = ?::jsonb,
+                                negative_reason = ?,
+                                model_name = ?,
+                                model_version = ?,
+                                business_trace_id = ?,
+                                status = 'SUCCESS',
+                                error_message = NULL,
+                                completed_at = CURRENT_TIMESTAMP,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE review_id = ?
+                              AND review_version = ?
+                              AND analysis_version = ?
+                            """,
+                            reviewVersion, nextVersion,
+                            sentiment, confidence, lowConfidence,
+                            keywordsJson, aspectsJson,
+                            negativeReason, modelName, modelVersion,
+                            businessTraceId,
+                            reviewId, existing.getReviewVersion(),
+                            existing.getAnalysisVersion()
+                    );
+                } else {
+                    // 插入新记录
+                    jdbcTemplate.update(
+                            """
+                            INSERT INTO review_analysis (
+                                review_id, review_version, analysis_version,
+                                sentiment, confidence, low_confidence,
+                                keywords, aspects, negative_reason,
+                                model_name, model_version,
+                                business_trace_id, status, completed_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, 'SUCCESS', CURRENT_TIMESTAMP)
+                            """,
+                            reviewId, reviewVersion, nextVersion,
+                            sentiment, confidence, lowConfidence,
+                            keywordsJson, aspectsJson,
+                            negativeReason, modelName, modelVersion,
+                            businessTraceId
+                    );
+                }
+                // 保存差评归因关联（与 ReviewController.analyzeReview 行为一致）
+                saveIssueRelationsFromResult(reviewId, reviewVersion, item);
                 count++;
             } catch (Exception e) {
                 log.warn("持久化分析结果失败: reviewId={}", item.path("reviewId").asText(), e);
             }
         }
         return count;
+    }
+
+    /**
+     * 从 AI 分析结果中解析 issueCategories，写入 review_issue_relations。
+     * 与 ReviewController.analyzeReview() 中的归因关联持久化逻辑保持一致，
+     * 确保商家端"差评归因钻取"功能能查到批量分析的评论。
+     */
+    private void saveIssueRelationsFromResult(
+            Long reviewId, int reviewVersion, JsonNode item
+    ) {
+        JsonNode issueCategories = item.path("issueCategories");
+        if (!issueCategories.isArray()) return;
+
+        // 删除旧关联（同一 review_id）
+        jdbcTemplate.update(
+                "DELETE FROM review_issue_relations WHERE review_id = ?",
+                reviewId);
+
+        for (JsonNode issueNode : issueCategories) {
+            try {
+                String catCode = issueNode.path("category").asText(null);
+                if (catCode == null || catCode.isBlank()) continue;
+
+                // 通过类别编码查字典表取得 ID
+                ReviewIssueCategory cat = issueCategoryMapper.selectOne(
+                        new LambdaQueryWrapper<ReviewIssueCategory>()
+                                .eq(ReviewIssueCategory::getCode, catCode)
+                                .eq(ReviewIssueCategory::getStatus, "ACTIVE")
+                );
+                if (cat == null) continue;
+
+                BigDecimal conf = issueNode.has("confidence")
+                        ? BigDecimal.valueOf(issueNode.path("confidence").asDouble(0.5))
+                        : BigDecimal.valueOf(0.5);
+                String evidence = issueNode.has("evidenceText")
+                        && !issueNode.path("evidenceText").isNull()
+                        ? issueNode.path("evidenceText").asText()
+                        : null;
+
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO review_issue_relations (
+                            review_id, review_version, issue_category_id,
+                            confidence, evidence_text
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        reviewId, reviewVersion, cat.getId(), conf, evidence);
+            } catch (Exception e) {
+                log.warn("保存差评归因关联失败: reviewId={}, category={}",
+                        reviewId, issueNode.path("category").asText(), e);
+            }
+        }
+    }
+
+    /**
+     * 从已有 review_analysis 数据中补充缺失的 review_issue_relations。
+     *
+     * 旧版批量分析或单条分析流程只写入 review_analysis 表，未写入
+     * review_issue_relations，导致商家端差评钻取为空。
+     * 本方法解析 aspects 中 NEGATIVE 维度和 negativeReason 字段，
+     * 生成对应的归因关联记录，无需再次调用 AI。
+     *
+     * @return 补充的归因关联条数
+     */
+    private int backfillMissingIssueRelations(Long merchantId, OffsetDateTime since) {
+        // 查询商家评价中已分析但缺少归因关联的 review_id
+        String findMissingSql = """
+                SELECT ra.review_id, ra.review_version, ra.aspects, ra.negative_reason
+                FROM review_analysis ra
+                JOIN reviews r ON r.id = ra.review_id
+                WHERE r.merchant_id = ?
+                  AND ra.status = 'SUCCESS'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM review_issue_relations rir
+                      WHERE rir.review_id = ra.review_id
+                  )
+                """;
+
+        List<Long> missingIds = new ArrayList<>();
+        if (since != null) {
+            findMissingSql += " AND r.review_time >= ?";
+            missingIds = jdbcTemplate.query(findMissingSql,
+                    (rs, rowNum) -> rs.getLong("review_id"),
+                    merchantId, since);
+        } else {
+            missingIds = jdbcTemplate.query(findMissingSql,
+                    (rs, rowNum) -> rs.getLong("review_id"),
+                    merchantId);
+        }
+
+        if (missingIds.isEmpty()) return 0;
+
+        int backfilled = 0;
+        for (Long reviewId : missingIds) {
+            try {
+                Map<Long, ReviewAnalysis> analysisMap = queryAllAnalysisMap(List.of(reviewId));
+                ReviewAnalysis ra = analysisMap.get(reviewId);
+                if (ra == null) continue;
+
+                int count = 0;
+
+                // 来源1：从 aspects 中提取 NEGATIVE 维度 → 归因类别
+                List<ReviewAnalysisResultVO.AspectVO> aspects = parseAspects(ra.getAspects());
+                if (aspects != null) {
+                    for (ReviewAnalysisResultVO.AspectVO asp : aspects) {
+                        if ("NEGATIVE".equalsIgnoreCase(asp.getSentiment())) {
+                            String issueCategory = aspectToIssueCategory(asp.getCategory());
+                            if (issueCategory != null) {
+                                ReviewIssueCategory cat = issueCategoryMapper.selectOne(
+                                        new LambdaQueryWrapper<ReviewIssueCategory>()
+                                                .eq(ReviewIssueCategory::getCode, issueCategory)
+                                                .eq(ReviewIssueCategory::getStatus, "ACTIVE")
+                                );
+                                if (cat != null) {
+                                    jdbcTemplate.update(
+                                            """
+                                            INSERT INTO review_issue_relations (
+                                                review_id, review_version, issue_category_id,
+                                                confidence, evidence_text
+                                            ) VALUES (?, ?, ?, ?, ?)
+                                            ON CONFLICT DO NOTHING
+                                            """,
+                                            reviewId,
+                                            ra.getReviewVersion() != null ? ra.getReviewVersion() : 1,
+                                            cat.getId(),
+                                            ra.getConfidence() != null ? ra.getConfidence() : BigDecimal.valueOf(0.5),
+                                            asp.getText()
+                                    );
+                                    count++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 来源2：从 negativeReason 字段提取归因类别
+                String negReason = ra.getNegativeReason();
+                if (count == 0 && negReason != null && !negReason.isBlank()) {
+                    ReviewIssueCategory cat = issueCategoryMapper.selectOne(
+                            new LambdaQueryWrapper<ReviewIssueCategory>()
+                                    .eq(ReviewIssueCategory::getCode, negReason)
+                                    .eq(ReviewIssueCategory::getStatus, "ACTIVE")
+                    );
+                    if (cat != null) {
+                        jdbcTemplate.update(
+                                """
+                                INSERT INTO review_issue_relations (
+                                    review_id, review_version, issue_category_id,
+                                    confidence, evidence_text
+                                ) VALUES (?, ?, ?, ?, NULL)
+                                ON CONFLICT DO NOTHING
+                                """,
+                                reviewId,
+                                ra.getReviewVersion() != null ? ra.getReviewVersion() : 1,
+                                cat.getId(),
+                                ra.getConfidence() != null ? ra.getConfidence() : BigDecimal.valueOf(0.5)
+                        );
+                        count++;
+                    }
+                }
+
+                backfilled += count;
+            } catch (Exception e) {
+                log.warn("补充差评归因关联失败: reviewId={}", reviewId, e);
+            }
+        }
+
+        if (backfilled > 0) {
+            log.info("补充差评归因关联完成: merchantId={}, backfilled={}条, 涉及{}条评价",
+                    merchantId, backfilled, missingIds.size());
+        }
+        return backfilled;
+    }
+
+    /**
+     * 查询评论的所有分析记录（包含所有状态，不限于 SUCCESS）。
+     * 用于确定 analysisVersion 以避免唯一约束冲突。
+     */
+    private Map<Long, ReviewAnalysis> queryAllAnalysisMap(List<Long> reviewIds) {
+        if (reviewIds.isEmpty()) return Map.of();
+        LambdaQueryWrapper<ReviewAnalysis> qw = new LambdaQueryWrapper<>();
+        qw.in(ReviewAnalysis::getReviewId, reviewIds);
+        List<ReviewAnalysis> list = reviewAnalysisMapper.selectList(qw);
+        return list.stream()
+                .collect(Collectors.toMap(
+                        ReviewAnalysis::getReviewId,
+                        ra -> ra,
+                        (a, b) -> a.getAnalysisVersion() >= b.getAnalysisVersion() ? a : b
+                ));
     }
 
     private OffsetDateTime parseTimeRange(String range) {
