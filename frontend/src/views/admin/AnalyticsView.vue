@@ -515,6 +515,12 @@ const setTimeRange = async (range) => {
   await loadStats()
 }
 
+watch(selectedYear, () => {
+  if (selectedWeek.value > 52) {
+    selectedWeek.value = 52
+  }
+})
+
 const handleDateChange = async () => {
   await loadStats()
 }
@@ -528,66 +534,32 @@ const handleMonthChange = async () => {
 }
 
 const buildTimeParams = () => {
-  let startTime, endTime
-
-  switch (timeRange.value) {
-    case 'day':
-      const dateParts = selectedDate.value.split('-')
-      startTime = new Date(dateParts[0], dateParts[1] - 1, dateParts[2])
-      endTime = new Date(dateParts[0], dateParts[1] - 1, parseInt(dateParts[2]) + 1)
-      break
-    case 'week':
-      startTime = getFirstDayOfWeek(selectedYear.value, selectedWeek.value)
-      endTime = new Date(startTime)
-      endTime.setDate(endTime.getDate() + 7)
-      break
-    case 'month':
-      const monthParts = selectedMonth.value.split('-')
-      startTime = new Date(monthParts[0], monthParts[1] - 1, 1)
-      endTime = new Date(monthParts[0], parseInt(monthParts[1]), 1)
-      break
-    default:
-      startTime = getFirstDayOfWeek(today.getFullYear(), getCurrentWeekNumber())
-      endTime = new Date(startTime)
-      endTime.setDate(endTime.getDate() + 7)
+  const params = {
+    timeRange: timeRange.value
   }
-
-  const params = {}
-  if (startTime) params.startTime = formatDateTime(startTime)
-  if (endTime) params.endTime = formatDateTime(endTime)
+  
+  if (timeRange.value === 'day') {
+    params.date = selectedDate.value
+  } else if (timeRange.value === 'week') {
+    params.week = `${selectedYear.value}-W${String(selectedWeek.value).padStart(2, '0')}`
+  } else {
+    params.month = selectedMonth.value
+  }
+  
   return params
-}
-
-const formatDateTime = (date) => {
-  const pad = (num) => String(num).padStart(2, '0')
-  const year = date.getUTCFullYear()
-  const month = pad(date.getUTCMonth() + 1)
-  const day = pad(date.getUTCDate())
-  const hours = pad(date.getUTCHours())
-  const minutes = pad(date.getUTCMinutes())
-  const seconds = pad(date.getUTCSeconds())
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}Z`
 }
 
 const loadStats = async () => {
   loading.value = true
   try {
     const params = buildTimeParams()
-    console.log('请求参数:', params)
+    
     const response = await getBehaviorStats(params)
-    console.log('API响应:', response)
     if (response.success && response.data) {
       stats.value = response.data
-      console.log('统计数据:', stats.value)
-    } else {
-      console.warn('API响应不成功:', response)
     }
   } catch (error) {
     console.error('加载统计数据失败:', error)
-    if (error.response) {
-      console.error('响应状态:', error.response.status)
-      console.error('响应数据:', JSON.stringify(error.response.data))
-    }
   } finally {
     loading.value = false
   }

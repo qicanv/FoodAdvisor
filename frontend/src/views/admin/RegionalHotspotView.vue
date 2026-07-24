@@ -543,50 +543,19 @@ const handleMonthChange = () => {
 }
 
 const buildTimeParams = () => {
-  let start, end
-
-  switch (timeRange.value) {
-    case 'all':
-      start = new Date('2020-01-01')
-      end = today
-      break
-    case 'day':
-      if (selectedDate.value) {
-        const dateParts = selectedDate.value.split('-')
-        start = new Date(dateParts[0], dateParts[1] - 1, dateParts[2])
-        end = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], 23, 59, 59, 999)
-      } else {
-        start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-        end = today
-      }
-      break
-    case 'week':
-      start = getFirstDayOfWeek(selectedYear.value, selectedWeek.value)
-      end = new Date(start)
-      end.setDate(start.getDate() + 6)
-      end.setHours(23, 59, 59, 999)
-      break
-    case 'month':
-      if (selectedMonth.value) {
-        const monthParts = selectedMonth.value.split('-')
-        start = new Date(monthParts[0], monthParts[1] - 1, 1)
-        end = new Date(monthParts[0], monthParts[1], 0, 23, 59, 59, 999)
-      } else {
-        start = new Date(today.getFullYear(), today.getMonth(), 1)
-        end = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
-      }
-      break
-    default:
-      start = getFirstDayOfWeek(today.getFullYear(), getCurrentWeekNumber())
-      end = new Date(start)
-      end.setDate(start.getDate() + 6)
-      end.setHours(23, 59, 59, 999)
+  const params = {
+    timeRange: timeRange.value
   }
-
-  return {
-    startTime: start.toISOString(),
-    endTime: end.toISOString()
+  
+  if (timeRange.value === 'day') {
+    params.date = selectedDate.value
+  } else if (timeRange.value === 'week') {
+    params.week = `${selectedYear.value}-W${String(selectedWeek.value).padStart(2, '0')}`
+  } else if (timeRange.value === 'month') {
+    params.month = selectedMonth.value
   }
+  
+  return params
 }
 
 const loadHotspots = async () => {
