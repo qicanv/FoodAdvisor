@@ -209,6 +209,60 @@
                     商家已回复
                   </span>
                 </div>
+
+                <div
+                  v-if="review.followUp"
+                  class="follow-up-preview"
+                >
+                  <div class="follow-up-preview-header">
+                    <div class="follow-up-title">
+                      <span class="follow-up-label">追加评价</span>
+
+                      <span
+                        v-if="review.followUp.rating"
+                        class="follow-up-score"
+                      >
+                        {{ Number(review.followUp.rating).toFixed(1) }} ★
+                      </span>
+                    </div>
+
+                    <span
+                      class="status-tag"
+                      :class="review.followUp.status"
+                    >
+                      {{ getStatusText(review.followUp.status) }}
+                    </span>
+                  </div>
+
+                  <p class="follow-up-preview-content">
+                    {{ review.followUp.content || '暂无追评内容' }}
+                  </p>
+
+                  <div class="follow-up-preview-meta">
+                    <span>
+                      🕒
+                      {{
+                        formatDate(
+                          review.followUp.publishedAt ||
+                          review.followUp.createdAt
+                        )
+                      }}
+                    </span>
+
+                    <span v-if="review.followUp.consumptionDate">
+                      🍽️ 本次消费：{{ review.followUp.consumptionDate }}
+                    </span>
+
+                    <span
+                      v-if="
+                        review.followUp.averageSpend !== null &&
+                        review.followUp.averageSpend !== undefined
+                      "
+                    >
+                      💰 人均 ¥{{ Number(review.followUp.averageSpend).toFixed(0) }}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <span class="detail-entry">
@@ -980,6 +1034,65 @@ onMounted(() => {
 
 .reply-badge {
   color: #2563eb;
+}
+
+.follow-up-preview {
+  margin-top: 16px;
+  padding: 14px 15px;
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #fb923c;
+  border-radius: 12px;
+  background: #fffaf5;
+}
+
+.follow-up-preview-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.follow-up-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.follow-up-label {
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.follow-up-score {
+  color: #d97706;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.follow-up-preview-content {
+  display: -webkit-box;
+  margin: 10px 0 0;
+  overflow: hidden;
+  color: #625951;
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.follow-up-preview-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  margin-top: 10px;
+  color: #9a8f85;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .detail-entry {

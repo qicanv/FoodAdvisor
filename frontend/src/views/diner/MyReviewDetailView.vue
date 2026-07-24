@@ -491,7 +491,10 @@
           </div>
         </section>
 
-        <section class="action-section">
+        <section
+          v-if="review.reviewType === 'ORIGINAL'"
+          class="action-section"
+        >
           <template v-if="review.status !== 'DELETED'">
             <button
               type="button"
@@ -587,6 +590,7 @@ const hasSubRatings = computed(() => {
 const canAddFollowUp = computed(() => {
   return Boolean(
     review.value &&
+    review.value.reviewType === 'ORIGINAL' &&
     review.value.status === 'PUBLISHED' &&
     !followUp.value
   )
@@ -598,6 +602,10 @@ const followUpContentLength = computed(() => {
 
 const followUpUnavailableText = computed(() => {
   if (!review.value) return ''
+
+  if (review.value.reviewType === 'FOLLOW_UP') {
+    return '追评记录不能再次追加评价'
+  }
 
   if (review.value.status === 'DELETED') {
     return '原评价已删除，无法追加评价'
@@ -693,7 +701,7 @@ const loadReview = async () => {
 
     if (response.success && response.data) {
       review.value = response.data
-      await loadFollowUp()
+      followUp.value = response.data.followUp || null
       return
     }
 

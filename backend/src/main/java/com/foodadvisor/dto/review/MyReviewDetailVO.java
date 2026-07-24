@@ -13,6 +13,17 @@ public class MyReviewDetailVO {
 
     private Long merchantId;
 
+    /**
+     * ORIGINAL / FOLLOW_UP
+     */
+    private String reviewType;
+
+    /**
+     * 追评关联的原评价 ID。
+     * 原评价通常为 null。
+     */
+    private Long parentReviewId;
+
     private String merchantName;
 
     private String merchantCategory;
@@ -54,6 +65,12 @@ public class MyReviewDetailVO {
     private List<ReviewVersionVO> versionHistory;
 
     private ReviewReplyVO merchantReply;
+
+    /**
+     * 原评价关联的有效追评。
+     * 没有追评时为 null。
+     */
+    private ReviewFollowUpVO followUp;
 
     @Data
     public static class ReviewVersionVO {
