@@ -72,6 +72,23 @@ public class MerchantReviewSummaryController {
     }
 
     /**
+     * 用户端：手动刷新评价摘要（异步）。
+     *
+     * 立即返回 GENERATING 状态，后台异步重新生成，
+     * 前端轮询 GET 接口直到状态变为 SUCCESS。
+     *
+     * 请求示例：
+     *   POST /api/merchants/1/review-summary/refresh
+     */
+    @PostMapping("/api/merchants/{merchantId}/review-summary/refresh")
+    public ApiResponse<MerchantReviewSummaryVO> refresh(
+            @PathVariable Long merchantId
+    ) {
+        return ApiResponse.success(
+                summaryService.refreshSummary(merchantId));
+    }
+
+    /**
      * 商家端：生成或刷新评价摘要。
      *
      * 未达刷新条件（新增评论不足且未过期）时直接返回已有摘要，

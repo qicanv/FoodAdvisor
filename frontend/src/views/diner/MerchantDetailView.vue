@@ -76,6 +76,9 @@
               <h2>AI 评价摘要</h2>
               <span class="summary-top-badge">AI 生成</span>
               <button type="button" class="summary-evidence-btn" @click="openSummaryEvidence">查看依据</button>
+              <button type="button" class="summary-refresh-btn" @click="refreshSummary" :disabled="summaryRefreshing">
+                {{ summaryRefreshing ? '刷新中...' : '刷新' }}
+              </button>
             </div>
             <p class="summary-top-text">{{ reviewSummary.summaryText }}</p>
             <div class="summary-top-details" v-if="reviewSummary.advantages?.length || reviewSummary.disadvantages?.length">
@@ -459,7 +462,8 @@ import request from '../../api/request'
 import { submitMerchantReview } from '../../api/review'
 import {
   getMerchantReviewSummary,
-  getMerchantReviewSummaryEvidences
+  getMerchantReviewSummaryEvidences,
+  refreshMerchantReviewSummary
 } from '../../api/restaurant'
 import { getMerchantReviews, getMerchantReviewTags, getReviewAnalysis } from '../../api/reviewAnalysis'
 
@@ -560,6 +564,7 @@ const submitSuccess = ref('')
 const imageInput = ref(null)
 const selectedImages = ref([])
 const reviewSummary = ref(null)
+const summaryRefreshing = ref(false)
 const summaryEvidenceOpen = ref(false)
 const summaryEvidenceLoading = ref(false)
 const summaryEvidenceError = ref('')
@@ -865,6 +870,25 @@ function clearSummaryPolling() {
   if (summaryPollTimer) {
     clearInterval(summaryPollTimer)
     summaryPollTimer = null
+  }
+}
+
+const refreshSummary = async () => {
+  const merchantId = merchant.value?.id
+  if (!merchantId || summaryRefreshing.value) return
+  summaryRefreshing.value = true
+  try {
+    const res = await refreshMerchantReviewSummary(merchantId)
+    if (res.success && res.data) {
+      reviewSummary.value = res.data
+      if (res.data.status === 'GENERATING') {
+        startSummaryPolling(merchantId)
+      }
+    }
+  } catch (_) {
+    // 失败时保持当前展示
+  } finally {
+    summaryRefreshing.value = false
   }
 }
 
@@ -1696,6 +1720,12 @@ onBeforeUnmount(() => {
   background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; cursor: pointer; transition: all 0.2s;
 }
 .summary-evidence-btn:hover { background: #bae7ff; }
+.summary-refresh-btn {
+  padding: 6px 12px; font-size: 13px; color: #52c41a;
+  background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+}
+.summary-refresh-btn:hover:not(:disabled) { background: #d9f7be; }
+.summary-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .summary-top-text { font-size: 15px; color: #444; line-height: 1.8; margin: 0 0 12px; }
 .summary-top-details { display: flex; gap: 24px; flex-wrap: wrap; }
 .summary-top-col { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

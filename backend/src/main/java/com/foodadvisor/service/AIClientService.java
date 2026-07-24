@@ -926,12 +926,15 @@ public class AIClientService {
 
             return result;
         } catch (HttpStatusCodeException exception) {
+            String responseBody = exception.getResponseBodyAsString();
+            String detail = (responseBody != null && !responseBody.isBlank())
+                    ? responseBody.substring(0, Math.min(responseBody.length(), 500))
+                    : "(无响应体)";
             RuntimeException wrapped =
                     new RuntimeException(
                             "AI 服务请求失败，HTTP 状态码："
-                                    + exception
-                                            .getStatusCode()
-                                            .value(),
+                                    + exception.getStatusCode().value()
+                                    + "，响应：" + detail,
                             exception
                     );
 

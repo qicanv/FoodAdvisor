@@ -23,6 +23,10 @@ export const getMerchantReviewSummaryEvidences = (
   )
 }
 
+export const refreshMerchantReviewSummary = merchantId => {
+  return request.post(`/api/merchants/${merchantId}/review-summary/refresh`)
+}
+
 export const searchMerchants = params => {
   return request.get('/api/merchants/search', { params })
 }
