@@ -89,7 +89,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
             "FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE event_type = 'MERCHANT_CLICK' AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND ubl.merchant_id IS NOT NULL AND m.region_code = #{regionCode} " +
+            "AND ubl.merchant_id IS NOT NULL AND m.region_code LIKE #{regionCode}||'%' " +
             "GROUP BY ubl.merchant_id, m.name, m.cuisine ORDER BY count DESC LIMIT #{limit}")
     List<Map<String, Object>> getRegionalHotMerchants(@Param("regionCode") String regionCode,
                                                        @Param("startTime") OffsetDateTime startTime,
@@ -99,7 +99,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
     @Select("SELECT m.cuisine as cuisine, COUNT(*) as count FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE event_type = 'MERCHANT_CLICK' AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND m.cuisine IS NOT NULL AND m.cuisine != '' AND m.region_code = #{regionCode} " +
+            "AND m.cuisine IS NOT NULL AND m.cuisine != '' AND m.region_code LIKE #{regionCode}||'%' " +
             "GROUP BY m.cuisine ORDER BY count DESC LIMIT #{limit}")
     List<Map<String, Object>> getRegionalHotCuisines(@Param("regionCode") String regionCode,
                                                       @Param("startTime") OffsetDateTime startTime,
@@ -110,7 +110,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE event_type = 'SEARCH' AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
             "AND ubl.search_keyword IS NOT NULL AND ubl.search_keyword != '' " +
-            "AND (m.region_code = #{regionCode} OR m.region_code IS NULL) " +
+            "AND (m.region_code LIKE #{regionCode}||'%' OR m.region_code IS NULL) " +
             "GROUP BY ubl.search_keyword ORDER BY count DESC LIMIT #{limit}")
     List<Map<String, Object>> getRegionalHotKeywords(@Param("regionCode") String regionCode,
                                                       @Param("startTime") OffsetDateTime startTime,
@@ -118,16 +118,16 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
                                                       @Param("limit") Integer limit);
 
     @Select("SELECT CASE " +
-            "WHEN HOUR(ubl.created_at) BETWEEN 6 AND 9 THEN '早餐时段' " +
-            "WHEN HOUR(ubl.created_at) BETWEEN 10 AND 14 THEN '午餐时段' " +
-            "WHEN HOUR(ubl.created_at) BETWEEN 14 AND 17 THEN '下午茶时段' " +
-            "WHEN HOUR(ubl.created_at) BETWEEN 17 AND 21 THEN '晚餐时段' " +
-            "WHEN HOUR(ubl.created_at) BETWEEN 21 AND 24 THEN '夜宵时段' " +
+            "WHEN EXTRACT(HOUR FROM ubl.created_at) BETWEEN 6 AND 9 THEN '早餐时段' " +
+            "WHEN EXTRACT(HOUR FROM ubl.created_at) BETWEEN 10 AND 14 THEN '午餐时段' " +
+            "WHEN EXTRACT(HOUR FROM ubl.created_at) BETWEEN 14 AND 17 THEN '下午茶时段' " +
+            "WHEN EXTRACT(HOUR FROM ubl.created_at) BETWEEN 17 AND 21 THEN '晚餐时段' " +
+            "WHEN EXTRACT(HOUR FROM ubl.created_at) BETWEEN 21 AND 24 THEN '夜宵时段' " +
             "ELSE '凌晨时段' END as period, COUNT(*) as count " +
             "FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE event_type IN ('SEARCH', 'MERCHANT_CLICK', 'SCENE_ENTRY') AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND (m.region_code = #{regionCode} OR m.region_code IS NULL) " +
+            "AND (m.region_code LIKE #{regionCode}||'%' OR m.region_code IS NULL) " +
             "GROUP BY period ORDER BY count DESC")
     List<Map<String, Object>> getRegionalConsumptionPeriods(@Param("regionCode") String regionCode,
                                                              @Param("startTime") OffsetDateTime startTime,
@@ -136,7 +136,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
     @Select("SELECT COUNT(*) FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND (m.region_code = #{regionCode} OR m.region_code IS NULL)")
+            "AND (m.region_code LIKE #{regionCode}||'%' OR m.region_code IS NULL)")
     Long getRegionalTotalEvents(@Param("regionCode") String regionCode,
                                  @Param("startTime") OffsetDateTime startTime,
                                  @Param("endTime") OffsetDateTime endTime);
@@ -144,7 +144,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
     @Select("SELECT COUNT(DISTINCT ubl.user_id) FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND (m.region_code = #{regionCode} OR m.region_code IS NULL)")
+            "AND (m.region_code LIKE #{regionCode}||'%' OR m.region_code IS NULL)")
     Long getRegionalActiveUsers(@Param("regionCode") String regionCode,
                                  @Param("startTime") OffsetDateTime startTime,
                                  @Param("endTime") OffsetDateTime endTime);
@@ -152,7 +152,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
     @Select("SELECT COUNT(*) FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE event_type = 'MERCHANT_CLICK' AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND m.region_code = #{regionCode}")
+            "AND m.region_code LIKE #{regionCode}||'%'")
     Long getRegionalMerchantClicks(@Param("regionCode") String regionCode,
                                     @Param("startTime") OffsetDateTime startTime,
                                     @Param("endTime") OffsetDateTime endTime);
@@ -160,7 +160,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
     @Select("SELECT COUNT(*) FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE event_type = 'SEARCH' AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND (m.region_code = #{regionCode} OR m.region_code IS NULL)")
+            "AND (m.region_code LIKE #{regionCode}||'%' OR m.region_code IS NULL)")
     Long getRegionalSearches(@Param("regionCode") String regionCode,
                               @Param("startTime") OffsetDateTime startTime,
                               @Param("endTime") OffsetDateTime endTime);
@@ -168,7 +168,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
     @Select("SELECT COUNT(*) FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE event_type = 'SCENE_ENTRY' AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND (m.region_code = #{regionCode} OR m.region_code IS NULL)")
+            "AND (m.region_code LIKE #{regionCode}||'%' OR m.region_code IS NULL)")
     Long getRegionalSceneEntries(@Param("regionCode") String regionCode,
                                   @Param("startTime") OffsetDateTime startTime,
                                   @Param("endTime") OffsetDateTime endTime);
@@ -176,7 +176,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
     @Select("SELECT COUNT(*) FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE event_type = 'TAG_CLICK' AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND (m.region_code = #{regionCode} OR m.region_code IS NULL)")
+            "AND (m.region_code LIKE #{regionCode}||'%' OR m.region_code IS NULL)")
     Long getRegionalTagClicks(@Param("regionCode") String regionCode,
                                @Param("startTime") OffsetDateTime startTime,
                                @Param("endTime") OffsetDateTime endTime);
@@ -184,7 +184,7 @@ public interface UserBehaviorLogMapper extends BaseMapper<UserBehaviorLog> {
     @Select("SELECT DATE(ubl.created_at) as date, COUNT(*) as count FROM user_behavior_logs ubl " +
             "LEFT JOIN merchants m ON ubl.merchant_id = m.id " +
             "WHERE event_type IN ('SEARCH', 'MERCHANT_CLICK', 'SCENE_ENTRY') AND ubl.created_at BETWEEN #{startTime} AND #{endTime} " +
-            "AND (m.region_code = #{regionCode} OR m.region_code IS NULL) " +
+            "AND (m.region_code LIKE #{regionCode}||'%' OR m.region_code IS NULL) " +
             "GROUP BY DATE(ubl.created_at) ORDER BY DATE(ubl.created_at)")
     List<Map<String, Object>> getRegionalDailyStats(@Param("regionCode") String regionCode,
                                                      @Param("startTime") OffsetDateTime startTime,

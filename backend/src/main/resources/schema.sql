@@ -96,6 +96,19 @@ CREATE INDEX IF NOT EXISTS idx_behavior_merchant_id ON user_behavior_logs (merch
 CREATE INDEX IF NOT EXISTS idx_behavior_scene_type ON user_behavior_logs (scene_type);
 CREATE INDEX IF NOT EXISTS idx_behavior_search_keyword ON user_behavior_logs (search_keyword);
 
+-- ==================== 商家测试数据 ====================
+
+INSERT INTO merchants (id, merchant_code, name, category, cuisine, rating, average_price, review_count, address, region_code, platform_status, operation_status) VALUES 
+(1, 'MERCHANT_001', '蜀大侠火锅', '火锅', '川菜', 4.8, 128, 2560, '成都市锦江区春熙路', 'CD-JJ', 'ACTIVE', 'OPERATING') ON CONFLICT DO NOTHING;
+INSERT INTO merchants (id, merchant_code, name, category, cuisine, rating, average_price, review_count, address, region_code, platform_status, operation_status) VALUES 
+(2, 'MERCHANT_002', '九锅一堂', '川菜', '川菜', 4.6, 88, 1890, '成都市武侯区玉林路', 'CD-WH', 'ACTIVE', 'OPERATING') ON CONFLICT DO NOTHING;
+INSERT INTO merchants (id, merchant_code, name, category, cuisine, rating, average_price, review_count, address, region_code, platform_status, operation_status) VALUES 
+(3, 'MERCHANT_003', '元气寿司', '日料', '日式', 4.7, 158, 1230, '成都市高新区天府大道', 'CD-GX', 'ACTIVE', 'OPERATING') ON CONFLICT DO NOTHING;
+INSERT INTO merchants (id, merchant_code, name, category, cuisine, rating, average_price, review_count, address, region_code, platform_status, operation_status) VALUES 
+(4, 'MERCHANT_004', '老码头火锅', '火锅', '川菜', 4.9, 168, 3420, '成都市青羊区宽窄巷子', 'CD-QY', 'ACTIVE', 'OPERATING') ON CONFLICT DO NOTHING;
+INSERT INTO merchants (id, merchant_code, name, category, cuisine, rating, average_price, review_count, address, region_code, platform_status, operation_status) VALUES 
+(5, 'MERCHANT_005', '大蓉和', '川菜', '川菜', 4.5, 138, 2100, '成都市成华区建设路', 'CD-CH', 'ACTIVE', 'OPERATING') ON CONFLICT DO NOTHING;
+
 -- ==================== 用户行为日志测试数据 ====================
 
 INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_001', 2, 'SEARCH', '火锅', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;

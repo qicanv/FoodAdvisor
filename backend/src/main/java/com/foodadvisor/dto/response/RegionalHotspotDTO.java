@@ -22,8 +22,6 @@ public class RegionalHotspotDTO {
 
     private List<Map<String, Object>> hotCuisines;
 
-    private List<Map<String, Object>> hotKeywords;
-
     private List<Map<String, Object>> consumptionPeriods;
 
     private List<Map<String, Object>> trendChanges;

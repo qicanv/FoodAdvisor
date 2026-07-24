@@ -19,14 +19,15 @@ public class RegionalHotspotController {
 
     private final RegionalHotspotService regionalHotspotService;
 
-    private boolean isAdmin(HttpServletRequest request) {
-        String userRole = (String) request.getAttribute("role");
-        return "ADMIN".equals(userRole);
+    private boolean hasAdminAccess(HttpServletRequest request) {
+        Object role = request.getAttribute("role");
+        String userRole = role == null ? null : role.toString();
+        return "ADMIN".equalsIgnoreCase(userRole) || "OPERATOR".equalsIgnoreCase(userRole);
     }
 
     @GetMapping("/regions")
     public ApiResponse<List<Map<String, Object>>> getAllRegions(HttpServletRequest request) {
-        if (!isAdmin(request)) {
+        if (!hasAdminAccess(request)) {
             return ApiResponse.failure("FORBIDDEN", "无管理权限");
         }
 
@@ -41,7 +42,7 @@ public class RegionalHotspotController {
             @RequestParam(value = "startTime") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime startTime,
             @RequestParam(value = "endTime") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime endTime) {
 
-        if (!isAdmin(request)) {
+        if (!hasAdminAccess(request)) {
             return ApiResponse.failure("FORBIDDEN", "无管理权限");
         }
 

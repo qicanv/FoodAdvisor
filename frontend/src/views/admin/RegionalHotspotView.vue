@@ -21,30 +21,48 @@
       <div class="filter-section">
         <div class="filter-row">
           <div class="filter-item">
-            <label>区域选择</label>
-            <select v-model="selectedRegion" class="filter-select" @change="loadHotspots">
-              <option v-for="region in regions" :key="region.code" :value="region.code">
-                {{ region.name }}
-              </option>
-            </select>
-          </div>
-          <div class="filter-item">
             <label>时间范围</label>
-            <select v-model="timeRange" class="filter-select" @change="loadHotspots">
-              <option value="today">今日</option>
-              <option value="yesterday">昨日</option>
-              <option value="last7days">近7天</option>
-              <option value="last30days">近30天</option>
-              <option value="custom">自定义</option>
-            </select>
+            <div class="filter-buttons">
+              <button 
+                v-for="range in timeRanges" 
+                :key="range.value"
+                :class="['filter-btn', { active: timeRange === range.value }]"
+                @click="setTimeRange(range.value)"
+              >
+                {{ range.label }}
+              </button>
+            </div>
           </div>
-          <div v-if="timeRange === 'custom'" class="filter-item">
-            <label>开始时间</label>
-            <input type="datetime-local" v-model="customStart" class="filter-input" @change="loadHotspots" />
-          </div>
-          <div v-if="timeRange === 'custom'" class="filter-item">
-            <label>结束时间</label>
-            <input type="datetime-local" v-model="customEnd" class="filter-input" @change="loadHotspots" />
+          <div v-if="timeRange !== 'all'" class="filter-item date-selector">
+            <div v-if="timeRange === 'day'" class="day-selector">
+              <span class="selector-label">选择日期：</span>
+              <input 
+                type="date" 
+                v-model="selectedDate" 
+                :max="todayStr"
+                class="date-input"
+                @change="handleDateChange"
+              />
+            </div>
+            <div v-else-if="timeRange === 'week'" class="week-selector">
+              <span class="selector-label">选择周：</span>
+              <select v-model="selectedYear" class="week-select" @change="handleWeekChange">
+                <option v-for="year in availableYears" :key="year" :value="year">{{ year }}年</option>
+              </select>
+              <select v-model="selectedWeek" class="week-select" @change="handleWeekChange">
+                <option v-for="week in availableWeeks" :key="week.value" :value="week.value">
+                  第{{ week.value }}周 ({{ week.label }})
+                </option>
+              </select>
+            </div>
+            <div v-else class="month-selector">
+              <span class="selector-label">选择月份：</span>
+              <select v-model="selectedMonth" class="month-select" @change="handleMonthChange">
+                <option v-for="month in monthOptions" :key="month.value" :value="month.value">
+                  {{ month.label }}
+                </option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -62,13 +80,6 @@
           <div class="stat-info">
             <div class="stat-value">{{ stats.totalUsers }}</div>
             <div class="stat-label">活跃用户数</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon" style="background: linear-gradient(135deg, #fa8c16 0%, #ffa940 100%);">📍</div>
-          <div class="stat-info">
-            <div class="stat-value">{{ currentRegionName }}</div>
-            <div class="stat-label">当前区域</div>
           </div>
         </div>
       </div>
@@ -119,20 +130,6 @@
               <span class="hot-count">{{ item.count }}</span>
             </div>
             <div v-if="!stats.hotCuisines || stats.hotCuisines.length === 0" class="empty-state">
-              暂无数据
-            </div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <h2 class="section-title">🔍 热门搜索词</h2>
-          <div class="hot-list">
-            <div v-for="(item, index) in stats.hotKeywords" :key="item.keyword" class="hot-item">
-              <span class="hot-rank" :class="getRankClass(index)">{{ index + 1 }}</span>
-              <span class="hot-name">{{ item.keyword || '未知' }}</span>
-              <span class="hot-count">{{ item.count }}</span>
-            </div>
-            <div v-if="!stats.hotKeywords || stats.hotKeywords.length === 0" class="empty-state">
               暂无数据
             </div>
           </div>
@@ -417,15 +414,37 @@ import {
   regenerateAllHotWords
 } from '../../api/regionalHotspot'
 
+const today = new Date()
+const todayStr = today.toISOString().split('T')[0]
+
+function getCurrentWeekNumber() {
+  const date = new Date()
+  const start = new Date(date.getFullYear(), 0, 1)
+  const diff = date - start
+  const oneWeek = 1000 * 60 * 60 * 24 * 7
+  return Math.ceil(diff / oneWeek)
+}
+
+function getFirstDayOfWeek(year, week) {
+  const start = new Date(year, 0, 1)
+  const day = start.getDay() || 7
+  const firstMonday = new Date(start)
+  firstMonday.setDate(start.getDate() + (day === 1 ? 0 : 8 - day))
+  const result = new Date(firstMonday)
+  result.setDate(firstMonday.getDate() + (week - 1) * 7)
+  return result
+}
+
 // ==================== 通用 ====================
 const activeTab = ref('hotspot')
 
 // ==================== Tab 1: 消费热点洞察 ====================
-const regions = ref([])
-const selectedRegion = ref('CD')
-const timeRange = ref('last7days')
-const customStart = ref('')
-const customEnd = ref('')
+const timeRange = ref('week')
+const selectedDate = ref('')
+const selectedYear = ref(today.getFullYear())
+const selectedWeek = ref(getCurrentWeekNumber())
+const selectedMonth = ref('')
+
 const loading = ref(false)
 const trendChartRef = ref(null)
 let trendChart = null
@@ -435,7 +454,6 @@ const stats = ref({
   regionName: '',
   hotMerchants: [],
   hotCuisines: [],
-  hotKeywords: [],
   consumptionPeriods: [],
   trendChanges: [],
   dailyTrend: [],
@@ -443,9 +461,47 @@ const stats = ref({
   totalUsers: 0
 })
 
-const currentRegionName = computed(() => {
-  const region = regions.value.find(r => r.code === selectedRegion.value)
-  return region ? region.name : selectedRegion.value
+const timeRanges = [
+  { label: '全部', value: 'all' },
+  { label: '按日', value: 'day' },
+  { label: '按周', value: 'week' },
+  { label: '按月', value: 'month' },
+]
+
+const availableYears = computed(() => {
+  const currentYear = today.getFullYear()
+  return [currentYear - 1, currentYear, currentYear + 1]
+})
+
+const availableWeeks = computed(() => {
+  const options = []
+  const year = selectedYear.value
+  for (let i = 1; i <= 52; i++) {
+    const firstDay = getFirstDayOfWeek(year, i)
+    const lastDay = new Date(firstDay)
+    lastDay.setDate(lastDay.getDate() + 6)
+    const firstMonth = firstDay.getMonth() + 1
+    const firstDayNum = firstDay.getDate()
+    const lastMonth = lastDay.getMonth() + 1
+    const lastDayNum = lastDay.getDate()
+    options.push({
+      value: i,
+      label: `${firstMonth}月${firstDayNum}日-${lastMonth}月${lastDayNum}日`
+    })
+  }
+  return options
+})
+
+const monthOptions = computed(() => {
+  const options = []
+  const year = today.getFullYear()
+  for (let i = 1; i <= 12; i++) {
+    options.push({
+      value: `${year}-${String(i).padStart(2, '0')}`,
+      label: `${year}年${i}月`
+    })
+  }
+  return options
 })
 
 const getRankClass = (index) => {
@@ -460,39 +516,71 @@ const getBarWidth = (count) => {
   return (count / maxCount) * 100
 }
 
+const setTimeRange = (range) => {
+  timeRange.value = range
+  if (range === 'day') {
+    selectedDate.value = todayStr
+  } else if (range === 'week') {
+    selectedYear.value = today.getFullYear()
+    selectedWeek.value = getCurrentWeekNumber()
+  } else if (range === 'month') {
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    selectedMonth.value = `${today.getFullYear()}-${month}`
+  }
+  loadHotspots()
+}
+
+const handleDateChange = () => {
+  loadHotspots()
+}
+
+const handleWeekChange = () => {
+  loadHotspots()
+}
+
+const handleMonthChange = () => {
+  loadHotspots()
+}
+
 const buildTimeParams = () => {
-  const now = new Date()
   let start, end
 
   switch (timeRange.value) {
-    case 'today':
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      end = now
+    case 'all':
+      start = new Date('2020-01-01')
+      end = today
       break
-    case 'yesterday':
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-      end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      break
-    case 'last7days':
-      start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      end = now
-      break
-    case 'last30days':
-      start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-      end = now
-      break
-    case 'custom':
-      if (customStart.value && customEnd.value) {
-        start = new Date(customStart.value)
-        end = new Date(customEnd.value)
+    case 'day':
+      if (selectedDate.value) {
+        const dateParts = selectedDate.value.split('-')
+        start = new Date(dateParts[0], dateParts[1] - 1, dateParts[2])
+        end = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], 23, 59, 59, 999)
       } else {
-        start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        end = now
+        start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+        end = today
+      }
+      break
+    case 'week':
+      start = getFirstDayOfWeek(selectedYear.value, selectedWeek.value)
+      end = new Date(start)
+      end.setDate(start.getDate() + 6)
+      end.setHours(23, 59, 59, 999)
+      break
+    case 'month':
+      if (selectedMonth.value) {
+        const monthParts = selectedMonth.value.split('-')
+        start = new Date(monthParts[0], monthParts[1] - 1, 1)
+        end = new Date(monthParts[0], monthParts[1], 0, 23, 59, 59, 999)
+      } else {
+        start = new Date(today.getFullYear(), today.getMonth(), 1)
+        end = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999)
       }
       break
     default:
-      start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      end = now
+      start = getFirstDayOfWeek(today.getFullYear(), getCurrentWeekNumber())
+      end = new Date(start)
+      end.setDate(start.getDate() + 6)
+      end.setHours(23, 59, 59, 999)
   }
 
   return {
@@ -501,22 +589,11 @@ const buildTimeParams = () => {
   }
 }
 
-const loadRegions = async () => {
-  try {
-    const response = await getAllRegions()
-    if (response.success && response.data) {
-      regions.value = response.data
-    }
-  } catch (error) {
-    console.error('加载区域列表失败:', error)
-  }
-}
-
 const loadHotspots = async () => {
   loading.value = true
   try {
     const params = {
-      regionCode: selectedRegion.value,
+      regionCode: 'CD',
       ...buildTimeParams()
     }
     const response = await getRegionalHotspots(params)
@@ -879,7 +956,6 @@ const backToMerchants = () => {
 
 // ==================== 生命周期 ====================
 onMounted(() => {
-  loadRegions()
   loadHotspots()
   window.addEventListener('resize', handleResize)
 })

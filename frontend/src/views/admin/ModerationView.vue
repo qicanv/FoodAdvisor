@@ -85,7 +85,6 @@
         </div>
       </div>
     </div>
-    </div>
 
     <!-- 违规类型分布 -->
     <div class="violation-summary" v-if="vStats.totalDetections > 0">
