@@ -2,140 +2,215 @@
   <div class="profile-page">
     <nav class="diner-nav">
       <div class="nav-container">
-        <div class="logo-section">
-          <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
-          <span class="brand-name">食尚参谋 - 个人中心</span>
-        </div>
+        <button
+          type="button"
+          class="brand-button"
+          @click="goBack"
+        >
+          <span class="brand-logo-shell">
+            <img
+              src="../../assets/images/greedy-cat.png"
+              alt="食尚参谋"
+              class="logo-img"
+            />
+          </span>
+
+          <span class="brand-copy">
+            <strong>食尚参谋</strong>
+            <span>个人中心</span>
+          </span>
+        </button>
+
         <div class="nav-links">
-          <button class="back-btn" @click="goBack">返回首页</button>
-          <button class="logout-btn" @click="handleLogout">退出登录</button>
+          <button
+            type="button"
+            class="back-btn"
+            @click="goBack"
+          >
+            ← 返回首页
+          </button>
+
+          <button
+            type="button"
+            class="logout-btn"
+            @click="handleLogout"
+          >
+            退出登录
+          </button>
         </div>
       </div>
     </nav>
 
     <main class="profile-main">
       <div class="container">
-        <div class="profile-card">
-          <div class="profile-header">
+        <section class="profile-hero">
+          <div class="profile-identity">
             <div class="avatar">
               <span class="avatar-icon">👤</span>
             </div>
+
             <div class="user-details">
-              <h2>{{ userInfo.username }}</h2>
-              <p class="user-role">食客</p>
-            </div>
-          </div>
+              <h1>{{ userInfo.username || '食客用户' }}</h1>
 
-          <div class="profile-content">
-            <div class="info-section">
-              <h3>基本信息</h3>
-              <div class="info-grid">
-                <div class="info-item">
-                  <span class="info-label">用户名</span>
-                  <span class="info-value">{{ userInfo.username }}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">用户角色</span>
-                  <span class="info-value">食客</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">注册时间</span>
-                  <span class="info-value">{{ formatDate(userInfo.createdAt) }}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">登录次数</span>
-                  <span class="info-value">{{ userInfo.loginCount || 1 }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="stats-section">
-              <h3>我的统计</h3>
-              <div class="stats-grid">
-                <div class="stat-card">
-                  <div class="stat-icon">🍽️</div>
-                  <div class="stat-value">12</div>
-                  <div class="stat-label">已评价餐厅</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-icon">⭐</div>
-                  <div class="stat-value">4.8</div>
-                  <div class="stat-label">平均评分</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-icon">❤️</div>
-                  <div class="stat-value">8</div>
-                  <div class="stat-label">收藏餐厅</div>
-                </div>
-                <div class="stat-card">
-                  <div class="stat-icon">💬</div>
-                  <div class="stat-value">24</div>
-                  <div class="stat-label">互动评论</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="actions-section">
-              <h3>账户管理</h3>
-              <div class="action-grid">
-                <button class="action-btn" @click="goToMyReviews">
-                  <span class="action-icon">📝</span>
-                  <span class="action-text">我的评价</span>
-                </button>
-                <button class="action-btn notification-btn" @click="goToNotifications">
-                  <span class="action-icon">💬</span>
-                  <span class="action-text">消息中心</span>
-                  <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount }}</span>
-                </button>
-                <button class="action-btn" @click="goToMyReports">
-                  <span class="action-icon">🛡️</span>
-                  <span class="action-text">我的举报</span>
-                </button>
-                <button class="action-btn">
-                  <span class="action-icon">✏️</span>
-                  <span class="action-text">修改密码</span>
-                </button>
-                <button class="action-btn">
-                  <span class="action-icon">📧</span>
-                  <span class="action-text">绑定邮箱</span>
-                </button>
-                <button class="action-btn">
-                  <span class="action-icon">📱</span>
-                  <span class="action-text">绑定手机</span>
-                </button>
-                <button class="action-btn">
-                  <span class="action-icon">🔒</span>
-                  <span class="action-text">隐私设置</span>
-                </button>
+              <div class="user-meta">
+                <span class="role-badge">食客</span>
+                <span>注册于 {{ formatDate(userInfo.createdAt) }}</span>
+                <span class="meta-divider"></span>
+                <span>登录 {{ userInfo.loginCount || 1 }} 次</span>
               </div>
             </div>
           </div>
-        </div>
+        </section>
+
+        <section class="content-section">
+          <div class="section-heading">
+            <h2>我的内容</h2>
+          </div>
+
+          <div class="content-grid">
+            <button
+              type="button"
+              class="content-card review-card"
+              @click="goToMyReviews"
+            >
+              <span class="content-icon">📝</span>
+              <span class="content-title">我的评价</span>
+              <span class="content-arrow">→</span>
+            </button>
+
+            <button
+              type="button"
+              class="content-card"
+              @click="goToNotifications"
+            >
+              <span class="content-icon">💬</span>
+              <span class="content-title">消息中心</span>
+
+              <span class="content-end">
+                <span
+                  v-if="unreadCount > 0"
+                  class="unread-badge"
+                >
+                  {{ unreadCount }}
+                </span>
+                <span class="content-arrow">→</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              class="content-card"
+              @click="goToMyReports"
+            >
+              <span class="content-icon">🛡️</span>
+              <span class="content-title">我的举报</span>
+              <span class="content-arrow">→</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="dashboard-grid">
+          <div class="dashboard-card">
+            <div class="card-heading">
+              <span class="heading-icon">👤</span>
+              <h2>账户信息</h2>
+            </div>
+
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-label">用户名</span>
+                <strong>{{ userInfo.username || '食客用户' }}</strong>
+              </div>
+
+              <div class="info-item">
+                <span class="info-label">用户角色</span>
+                <strong>食客</strong>
+              </div>
+
+              <div class="info-item">
+                <span class="info-label">注册时间</span>
+                <strong>{{ formatDate(userInfo.createdAt) }}</strong>
+              </div>
+
+              <div class="info-item">
+                <span class="info-label">登录次数</span>
+                <strong>{{ userInfo.loginCount || 1 }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-card">
+            <div class="card-heading">
+              <span class="heading-icon">⚙️</span>
+              <h2>账户设置</h2>
+            </div>
+
+            <div class="setting-list">
+              <button type="button" class="setting-item">
+                <span class="setting-icon">✏️</span>
+                <span class="setting-name">修改密码</span>
+                <span class="pending-tag">待接入</span>
+              </button>
+
+              <button type="button" class="setting-item">
+                <span class="setting-icon">📧</span>
+                <span class="setting-name">绑定邮箱</span>
+                <span class="pending-tag">待接入</span>
+              </button>
+
+              <button type="button" class="setting-item">
+                <span class="setting-icon">📱</span>
+                <span class="setting-name">绑定手机</span>
+                <span class="pending-tag">待接入</span>
+              </button>
+
+              <button type="button" class="setting-item">
+                <span class="setting-icon">🔒</span>
+                <span class="setting-name">隐私设置</span>
+                <span class="pending-tag">待接入</span>
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '../../api/request'
 
 const router = useRouter()
-const userInfo = ref({ username: '', createdAt: new Date(), loginCount: 1 })
+
+const userInfo = ref({
+  username: '',
+  createdAt: null,
+  loginCount: 1
+})
+
 const unreadCount = ref(0)
 
-onMounted(() => {
-  const user = localStorage.getItem('user')
-  if (user) {
-    userInfo.value = JSON.parse(user)
+const readStoredUser = () => {
+  const rawUser = localStorage.getItem('user')
+
+  if (!rawUser) {
+    return null
   }
-  loadUnreadCount()
-})
+
+  try {
+    return JSON.parse(rawUser)
+  } catch (error) {
+    console.error('读取用户信息失败:', error)
+    return null
+  }
+}
 
 const loadUnreadCount = async () => {
   try {
     const response = await request.get('/api/notifications/count-unread')
+
     if (response.success && response.data) {
       unreadCount.value = response.data.count || 0
     }
@@ -167,284 +242,552 @@ const handleLogout = () => {
   router.push('/diner')
 }
 
-const formatDate = (date) => {
+const formatDate = date => {
   if (!date) return '-'
-  const d = new Date(date)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  const parsedDate = new Date(date)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return '-'
+  }
+
+  return [
+    parsedDate.getFullYear(),
+    String(parsedDate.getMonth() + 1).padStart(2, '0'),
+    String(parsedDate.getDate()).padStart(2, '0')
+  ].join('-')
 }
+
+onMounted(() => {
+  const storedUser = readStoredUser()
+
+  if (storedUser) {
+    userInfo.value = {
+      ...userInfo.value,
+      ...storedUser
+    }
+  }
+
+  loadUnreadCount()
+})
 </script>
 
 <style scoped>
+.profile-page,
+.profile-page *,
+.profile-page *::before,
+.profile-page *::after {
+  box-sizing: border-box;
+}
+
 .profile-page {
+  width: 100%;
   min-height: 100vh;
-  background: #f5f7fa;
+  color: #302a25;
+  background:
+    radial-gradient(
+      circle at 8% 3%,
+      rgba(255, 228, 204, 0.5),
+      transparent 25%
+    ),
+    radial-gradient(
+      circle at 92% 5%,
+      rgba(254, 240, 214, 0.58),
+      transparent 24%
+    ),
+    #f8f6f2;
+}
+
+.profile-page button {
+  font-family: inherit;
 }
 
 .diner-nav {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  padding: 16px 0;
-  position: fixed;
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
   z-index: 100;
+  border-bottom: 1px solid rgba(229, 222, 212, 0.86);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+}
+
+.nav-container,
+.container {
+  width: calc(100% - 48px);
+  max-width: 1080px;
+  min-width: 0;
+  margin: 0 auto;
 }
 
 .nav-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
   display: flex;
-  justify-content: space-between;
+  min-height: 70px;
   align-items: center;
+  justify-content: space-between;
+  gap: 20px;
 }
 
-.logo-section {
+.brand-button {
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.brand-logo-shell {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #f0ddce;
+  border-radius: 13px;
+  background: #fff8f1;
 }
 
 .logo-img {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 37px;
+  height: 37px;
+  object-fit: cover;
 }
 
-.brand-name {
-  font-size: 20px;
-  font-weight: 700;
-  color: #ff6700;
+.brand-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.brand-copy strong {
+  color: #2e2925;
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.brand-copy span {
+  color: #978c82;
+  font-size: 12px;
 }
 
 .nav-links {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  gap: 10px;
+}
+
+.back-btn,
+.logout-btn {
+  min-height: 39px;
+  padding: 0 13px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .back-btn {
-  padding: 8px 16px;
-  background: #fff;
-  color: #ff6700;
-  border: 1px solid #ff6700;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
+  border: 1px solid #fed7aa;
+  color: #c2410c;
+  background: #fff8f1;
 }
 
 .back-btn:hover {
-  background: #fff7ed;
+  border-color: #fb923c;
+  background: #fff1e6;
 }
 
 .logout-btn {
-  padding: 8px 16px;
-  background: #f5f5f5;
-  color: #666666;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  background: #fff;
 }
 
 .logout-btn:hover {
-  background: #e8e8e8;
+  background: #fef2f2;
 }
 
 .profile-main {
-  padding-top: 80px;
-  padding-bottom: 40px;
+  padding: 25px 0 48px;
 }
 
-.container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 0 20px;
+.profile-hero {
+  padding: 28px 31px;
+  border: 1px solid #f0dcc9;
+  border-radius: 24px;
+  background:
+    radial-gradient(
+      circle at 88% 16%,
+      rgba(251, 146, 60, 0.16),
+      transparent 30%
+    ),
+    linear-gradient(135deg, #fffaf4, #fff1e5);
+  box-shadow: 0 16px 38px rgba(111, 75, 43, 0.08);
 }
 
-.profile-card {
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
-}
-
-.profile-header {
+.profile-identity {
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 20px;
-  padding: 30px;
-  background: linear-gradient(135deg, #ff6700 0%, #ff9500 100%);
-  color: #fff;
+  gap: 18px;
 }
 
 .avatar {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  width: 70px;
+  height: 70px;
+  flex: 0 0 70px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 10px 24px rgba(125, 77, 34, 0.08);
 }
 
 .avatar-icon {
-  font-size: 40px;
+  font-size: 33px;
 }
 
-.user-details h2 {
-  font-size: 24px;
-  margin: 0 0 8px 0;
+.user-details {
+  min-width: 0;
 }
 
-.user-role {
-  font-size: 14px;
-  opacity: 0.9;
+.user-details h1 {
+  margin: 0 0 8px;
+  overflow: hidden;
+  color: #2d2722;
+  font-size: 29px;
+  font-weight: 800;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #83786f;
+  font-size: 13px;
+}
+
+.role-badge {
+  padding: 4px 9px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  color: #c2410c;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.meta-divider {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #c5b9af;
+}
+
+.content-section,
+.dashboard-grid {
+  margin-top: 24px;
+}
+
+.section-heading h2,
+.card-heading h2 {
   margin: 0;
+  color: #342e29;
+  font-size: 20px;
+  line-height: 1.4;
 }
 
-.profile-content {
-  padding: 30px;
+.section-heading {
+  margin-bottom: 13px;
 }
 
-.info-section,
-.stats-section,
-.actions-section {
-  margin-bottom: 30px;
+.content-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  gap: 13px;
 }
 
-.info-section:last-child,
-.stats-section:last-child,
-.actions-section:last-child {
-  margin-bottom: 0;
+.content-card {
+  display: flex;
+  min-width: 0;
+  min-height: 88px;
+  align-items: center;
+  gap: 13px;
+  padding: 16px 17px;
+  border: 1px solid #e8e1da;
+  border-radius: 17px;
+  color: #39322d;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.94);
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
-.profile-content h3 {
+.content-card:hover {
+  transform: translateY(-2px);
+  border-color: #fdba74;
+  box-shadow: 0 11px 24px rgba(90, 63, 39, 0.08);
+}
+
+.review-card {
+  border-color: #fdba74;
+  background: linear-gradient(135deg, #fffaf4, #fff2e6);
+}
+
+.content-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border-radius: 13px;
+  font-size: 21px;
+  background: #fff3e8;
+}
+
+.content-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: #37302b;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.content-end {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.content-arrow {
+  flex: 0 0 auto;
+  color: #c2410c;
   font-size: 18px;
-  font-weight: 600;
-  color: #333;
-  margin: 0 0 20px 0;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #f5f7fa;
+}
+
+.unread-badge {
+  display: grid;
+  min-width: 23px;
+  height: 23px;
+  place-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  background: #ef4444;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+}
+
+.dashboard-card {
+  min-width: 0;
+  padding: 21px;
+  border: 1px solid #e9e2db;
+  border-radius: 19px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 7px 21px rgba(80, 61, 43, 0.04);
+}
+
+.card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #eee8e1;
+}
+
+.heading-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: 12px;
+  font-size: 18px;
+  background: #fff3e8;
 }
 
 .info-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 15px;
 }
 
 .info-item {
   display: flex;
+  min-width: 0;
+  min-height: 70px;
+  justify-content: center;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 16px;
-  background: #f9fafb;
-  border-radius: 8px;
+  gap: 5px;
+  padding: 12px 13px;
+  border: 1px solid #eee8e1;
+  border-radius: 11px;
+  background: #faf8f5;
 }
 
 .info-label {
-  font-size: 13px;
-  color: #999;
+  color: #988d84;
+  font-size: 12px;
 }
 
-.info-value {
-  font-size: 15px;
-  color: #333;
-  font-weight: 500;
+.info-item strong {
+  color: #3d3630;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+.setting-list {
+  margin-top: 4px;
 }
 
-.stat-card {
+.setting-item {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 20px 16px;
-  background: #f9fafb;
-  border-radius: 12px;
-}
-
-.stat-icon {
-  font-size: 28px;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: #ff6700;
-}
-
-.stat-label {
-  font-size: 13px;
-  color: #666;
-}
-
-.action-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-.action-btn {
-  display: flex;
+  width: 100%;
+  min-height: 50px;
   align-items: center;
   gap: 10px;
-  padding: 14px 20px;
-  background: #fff;
-  border: 1px solid #e8e8e8;
-  border-radius: 10px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid #f0ebe6;
+  color: #463e37;
+  text-align: left;
+  background: transparent;
+  cursor: default;
+}
+
+.setting-item:last-child {
+  border-bottom: 0;
+}
+
+.setting-icon {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  flex: 0 0 31px;
+  place-items: center;
+  border-radius: 9px;
   font-size: 15px;
-  color: #333;
-  cursor: pointer;
-  transition: all 0.2s;
+  background: #faf5f0;
 }
 
-.action-btn:hover {
-  background: #f5f7fa;
-  border-color: #ff6700;
-  color: #ff6700;
+.setting-name {
+  flex: 1 1 auto;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.action-icon {
-  font-size: 18px;
+.pending-tag {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #978c82;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f5f2ee;
 }
 
-.action-text {
-  font-weight: 500;
+@media (max-width: 820px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-.unread-badge {
-  padding: 2px 6px;
-  background: #ff4d4f;
-  color: #fff;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 500;
+@media (max-width: 700px) {
+  .nav-container,
+  .container {
+    width: calc(100% - 32px);
+  }
+
+  .logout-btn {
+    display: none;
+  }
+
+  .profile-main {
+    padding-top: 17px;
+  }
 }
 
-.notification-btn {
-  position: relative;
-}
+@media (max-width: 520px) {
+  .brand-copy span {
+    display: none;
+  }
 
-@media (max-width: 600px) {
+  .back-btn {
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .profile-hero {
+    padding: 22px 18px;
+  }
+
+  .avatar {
+    width: 56px;
+    height: 56px;
+    flex-basis: 56px;
+    border-radius: 17px;
+  }
+
+  .avatar-icon {
+    font-size: 27px;
+  }
+
+  .user-details h1 {
+    font-size: 24px;
+  }
+
+  .meta-divider {
+    display: none;
+  }
+
+  .content-card {
+    min-height: 76px;
+  }
+
+  .dashboard-card {
+    padding: 18px;
+  }
+
   .info-grid {
     grid-template-columns: 1fr;
   }
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .action-grid {
-    grid-template-columns: 1fr;
-  }
+}
+</style>
+
+<style>
+html,
+body,
+#app {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  overflow-x: hidden;
 }
 </style>

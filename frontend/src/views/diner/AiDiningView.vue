@@ -1,49 +1,118 @@
 <template>
   <div class="ai-dining-page">
     <header class="page-header">
-      <button class="back-button" type="button" @click="router.push('/diner/home')">← 返回首页</button>
-      <div class="page-title">
-        <h1>AI 探店</h1>
-        <p>直接描述人数、预算、菜系、距离和用餐场景</p>
-      </div>
-      <div class="header-actions">
-        <span class="session-state">
-          {{ sessionId ? '会话已保存' : '正在准备会话' }}
-        </span>
-
+      <div class="header-container">
         <button
+          class="back-button"
           type="button"
-          class="new-session-button"
-          :disabled="initializing || sending || adjustingSuggestionKey !== ''"
-          @click="startNewConversation"
+          @click="router.push('/diner/home')"
         >
-          ＋ 新建对话
+          <span class="back-icon">←</span>
+          <span>返回首页</span>
         </button>
+
+        <div class="page-title">
+          <span class="title-eyebrow">✨ 智能探店对话</span>
+
+          <div class="title-line">
+            <h1>AI 探店</h1>
+            <span class="online-badge">
+              <span class="online-dot"></span>
+              在线
+            </span>
+          </div>
+
+          <p>描述人数、预算、菜系、距离和用餐场景，快速获得个性化推荐</p>
+        </div>
+
+        <div class="header-actions">
+          <span class="session-state">
+            <span class="session-dot"></span>
+            {{ sessionId ? '会话已保存' : '正在准备会话' }}
+          </span>
+
+          <button
+            type="button"
+            class="new-session-button"
+            :disabled="initializing || sending || adjustingSuggestionKey !== ''"
+            @click="startNewConversation"
+          >
+            <span>＋</span>
+            新建对话
+          </button>
+        </div>
       </div>
     </header>
 
     <main class="dialogue-shell">
-      <div class="location-toolbar">
-        <button
-          type="button"
-          class="location-button"
-          :disabled="locationStatus === 'LOCATING'"
-          @click="requestCurrentLocation"
-        >
-          {{ locationButtonText() }}
-        </button>
-        <span class="location-status">{{ locationStatusText() }}</span>
+      <div class="assistant-toolbar">
+        <div class="assistant-profile">
+          <span class="assistant-avatar">✨</span>
+
+          <span class="assistant-copy">
+            <strong>食尚参谋 AI 助手</strong>
+            <small>根据真实商家资料与评价为你筛选餐厅</small>
+          </span>
+        </div>
+
+        <div class="location-toolbar">
+          <button
+            type="button"
+            class="location-button"
+            :disabled="locationStatus === 'LOCATING'"
+            @click="requestCurrentLocation"
+          >
+            <span class="location-icon">⌖</span>
+            {{ locationButtonText() }}
+          </button>
+
+          <span class="location-status">
+            <span
+              class="location-status-dot"
+              :class="{ ready: locationStatus === 'READY' }"
+            ></span>
+            {{ locationStatusText() }}
+          </span>
+        </div>
       </div>
-      <div v-if="Object.keys(currentConstraints).length" class="constraint-bar">
-        <strong>当前条件</strong>
-        <span>{{ constraintSummary(currentConstraints) }}</span>
+
+      <div
+        v-if="Object.keys(currentConstraints).length"
+        class="constraint-bar"
+      >
+        <span class="constraint-label">当前条件</span>
+        <span class="constraint-content">
+          {{ constraintSummary(currentConstraints) }}
+        </span>
       </div>
-      <section ref="messageListRef" class="message-list" aria-live="polite">
-        <div v-if="initializing" class="state-panel">正在加载会话...</div>
+
+      <section
+        ref="messageListRef"
+        class="message-list"
+        aria-live="polite"
+      >
+        <div v-if="initializing" class="state-panel">
+          <span class="state-spinner"></span>
+          <strong>正在加载会话</strong>
+          <p>马上就好，请稍候片刻</p>
+        </div>
+
         <div v-else-if="messages.length === 0" class="empty-panel">
-          <div class="empty-icon">✨</div>
+          <div class="empty-icon-shell">
+            <span class="empty-icon">✨</span>
+          </div>
+
+          <span class="empty-eyebrow">开始一次智能探店</span>
           <h2>想吃什么，直接告诉我</h2>
-          <p>例如：四个人，人均八十，想吃川菜，三公里内，适合朋友聚餐。</p>
+          <p>
+            你可以一次说出人数、预算、菜系、距离和场景，
+            我会帮你提取条件并推荐合适的商家。
+          </p>
+
+          <div class="example-card">
+            <span>例如</span>
+            <strong>四个人，人均八十，想吃川菜，三公里内，适合朋友聚餐。</strong>
+          </div>
         </div>
 
         <article
@@ -52,100 +121,174 @@
           class="message-row"
           :class="message.role === 'USER' ? 'user-row' : 'assistant-row'"
         >
-          <div class="message-bubble">
-            <div class="message-role">{{ message.role === 'USER' ? '我' : 'AI 探店助手' }}</div>
-            <p>{{ message.content }}</p>
-            <div v-if="message.notice" class="notice-banner">
-              {{ message.notice }}
+          <div class="message-avatar">
+            {{ message.role === 'USER' ? '我' : '✨' }}
+          </div>
+
+          <div class="message-column">
+            <div class="message-role">
+              {{ message.role === 'USER' ? '我' : 'AI 探店助手' }}
             </div>
 
-            <div v-if="message.recommendations.length" class="merchant-grid">
+            <div class="message-bubble">
+              <p>{{ message.content }}</p>
+
+              <div v-if="message.notice" class="notice-banner">
+                <span>ℹ</span>
+                {{ message.notice }}
+              </div>
+
               <div
-                v-for="merchant in message.recommendations"
-                :key="merchant.merchantId"
-                class="merchant-card"
-                role="button"
-                tabindex="0"
-                @click="openMerchant(merchant.merchantId)"
-                @keydown.enter="openMerchant(merchant.merchantId)"
+                v-if="message.recommendations.length"
+                class="merchant-grid"
               >
-                <div class="merchant-card-header">
-                  <span class="rank-badge">#{{ merchant.rankNo || '-' }}</span>
-                  <span class="operation-status">{{ operationStatusText(merchant.operationStatus) }}</span>
-                </div>
-                <h3>{{ textOr(merchant.merchantName, '商家名称暂无') }}</h3>
-                <div class="merchant-meta">
-                  <span>{{ textOr(merchant.category || merchant.cuisine, '暂无商家类别') }}</span>
-                  <span>{{ ratingText(merchant.merchantRating) }}</span>
-                  <span>{{ priceText(merchant.averagePrice) }}</span>
-                  <span>{{ distanceText(merchant.distanceKm) }}</span>
-                </div>
-                <p class="reason">{{ textOr(merchant.reason, '暂无推荐理由') }}</p>
-                <ul v-if="merchant.riskNotes?.length" class="risk-list">
-                  <li v-for="risk in merchant.riskNotes" :key="risk">{{ risk }}</li>
-                </ul>
                 <div
-                  v-if="Array.isArray(merchant.matchedDishes) && merchant.matchedDishes.length"
-                  class="matched-dishes"
+                  v-for="merchant in message.recommendations"
+                  :key="merchant.merchantId"
+                  class="merchant-card"
+                  role="button"
+                  tabindex="0"
+                  @click="openMerchant(merchant.merchantId)"
+                  @keydown.enter="openMerchant(merchant.merchantId)"
                 >
-                  <span class="matched-dishes-title">匹配菜品：</span>
-                  <span
-                    v-for="dish in merchant.matchedDishes.slice(0, 3)"
-                    :key="dish.dishId"
-                    class="matched-dish"
+                  <div class="merchant-card-header">
+                    <span class="rank-badge">
+                      TOP {{ merchant.rankNo || '-' }}
+                    </span>
+
+                    <span class="operation-status">
+                      <span class="operation-dot"></span>
+                      {{ operationStatusText(merchant.operationStatus) }}
+                    </span>
+                  </div>
+
+                  <h3>{{ textOr(merchant.merchantName, '商家名称暂无') }}</h3>
+
+                  <div class="merchant-meta">
+                    <span>
+                      {{ textOr(merchant.category || merchant.cuisine, '暂无商家类别') }}
+                    </span>
+                    <span>{{ ratingText(merchant.merchantRating) }}</span>
+                    <span>{{ priceText(merchant.averagePrice) }}</span>
+                    <span>{{ distanceText(merchant.distanceKm) }}</span>
+                  </div>
+
+                  <p class="reason">
+                    {{ textOr(merchant.reason, '暂无推荐理由') }}
+                  </p>
+
+                  <ul
+                    v-if="merchant.riskNotes?.length"
+                    class="risk-list"
                   >
-                    {{ textOr(dish.dishName, '菜品名称暂无') }}
-                    {{ dish.dishPrice == null ? '价格暂无' : `￥${dish.dishPrice}` }}
-                  </span>
+                    <li
+                      v-for="risk in merchant.riskNotes"
+                      :key="risk"
+                    >
+                      {{ risk }}
+                    </li>
+                  </ul>
+
+                  <div
+                    v-if="Array.isArray(merchant.matchedDishes) && merchant.matchedDishes.length"
+                    class="matched-dishes"
+                  >
+                    <span class="matched-dishes-title">匹配菜品</span>
+
+                    <span
+                      v-for="dish in merchant.matchedDishes.slice(0, 3)"
+                      :key="dish.dishId"
+                      class="matched-dish"
+                    >
+                      {{ textOr(dish.dishName, '菜品名称暂无') }}
+                      {{ dish.dishPrice == null ? '价格暂无' : `￥${dish.dishPrice}` }}
+                    </span>
+                  </div>
+
+                  <div class="merchant-card-footer">
+                    <span class="merchant-detail-hint">点击查看商家详情</span>
+
+                    <button
+                      type="button"
+                      class="evidence-button"
+                      @click.stop="openEvidence(message, merchant)"
+                    >
+                      查看依据
+                      <span>→</span>
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  class="evidence-button"
-                  @click.stop="openEvidence(message, merchant)"
-                >
-                  查看依据
-                </button>
               </div>
-            </div>
 
-            <div v-if="message.suggestions.length" class="suggestion-panel">
-              <strong>可以尝试调整：</strong>
-              <div class="suggestion-list">
-                <button
-                  v-for="suggestion in message.suggestions"
-                  :key="suggestion.id || suggestion.displayText"
-                  type="button"
-                  class="suggestion-button"
-                  :disabled="adjustingSuggestionKey !== ''"
-                  @click="applySuggestion(message, suggestion)"
-                >
-                  <span>{{ suggestion.displayText || suggestion.reason }}</span>
-                  <small>
-                    {{ isAdjusting(message, suggestion) ? '重新推荐中...' : '点击调整并重新推荐' }}
-                  </small>
-                </button>
+              <div
+                v-if="message.suggestions.length"
+                class="suggestion-panel"
+              >
+                <div class="panel-heading">
+                  <span class="panel-icon">↻</span>
+                  <strong>可以尝试调整</strong>
+                </div>
+
+                <div class="suggestion-list">
+                  <button
+                    v-for="suggestion in message.suggestions"
+                    :key="suggestion.id || suggestion.displayText"
+                    type="button"
+                    class="suggestion-button"
+                    :disabled="adjustingSuggestionKey !== ''"
+                    @click="applySuggestion(message, suggestion)"
+                  >
+                    <span>{{ suggestion.displayText || suggestion.reason }}</span>
+                    <small>
+                      {{ isAdjusting(message, suggestion) ? '重新推荐中...' : '调整并重新推荐' }}
+                    </small>
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div v-if="message.limitingConditions.length" class="limiting-panel">
-              <strong>当前限制条件</strong>
-              <ul>
-                <li
-                  v-for="condition in message.limitingConditions"
-                  :key="condition.field || condition.type || JSON.stringify(condition)"
-                >
-                  {{ condition.description || condition.field }}
-                </li>
-              </ul>
+              <div
+                v-if="message.limitingConditions.length"
+                class="limiting-panel"
+              >
+                <div class="panel-heading">
+                  <span class="panel-icon">!</span>
+                  <strong>当前限制条件</strong>
+                </div>
+
+                <ul>
+                  <li
+                    v-for="condition in message.limitingConditions"
+                    :key="condition.field || condition.type || JSON.stringify(condition)"
+                  >
+                    {{ condition.description || condition.field }}
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
         </article>
 
-        <div v-if="sending" class="typing-indicator">AI 正在理解需求并筛选商家...</div>
+        <div v-if="sending" class="typing-indicator">
+          <span class="typing-avatar">✨</span>
+          <span class="typing-bubble">
+            <span class="typing-dots">
+              <i></i>
+              <i></i>
+              <i></i>
+            </span>
+            AI 正在理解需求并筛选商家
+          </span>
+        </div>
       </section>
 
-      <div v-if="errorMessage" class="error-banner" role="alert">
-        {{ errorMessage }}
+      <div
+        v-if="errorMessage"
+        class="error-banner"
+        role="alert"
+      >
+        <span class="error-icon">!</span>
+        <span class="error-text">{{ errorMessage }}</span>
+
         <button
           v-if="pendingRequest"
           type="button"
@@ -157,41 +300,116 @@
       </div>
 
       <form class="composer" @submit.prevent="submitMessage">
-        <textarea
-          v-model="draft"
-          maxlength="1000"
-          rows="3"
-          :disabled="initializing || sending"
-          placeholder="说说你的用餐需求，例如：两个人，人均 100 元，想吃火锅..."
-          @keydown.enter.exact.prevent="submitMessage"
-        />
-        <div class="composer-footer">
-          <span>{{ draft.length }}/1000</span>
-          <button type="submit" :disabled="initializing || sending || !sessionId">
-            {{ sending ? '发送中...' : '发送' }}
-          </button>
+        <div class="composer-input-shell">
+          <textarea
+            v-model="draft"
+            maxlength="1000"
+            rows="2"
+            :disabled="initializing || sending"
+            placeholder="说说你的用餐需求，例如：两个人，人均 100 元，想吃火锅..."
+            @keydown.enter.exact.prevent="submitMessage"
+          />
+
+          <div class="composer-footer">
+            <span class="composer-tip">
+              Enter 发送 · Shift + Enter 换行
+            </span>
+
+            <div class="composer-actions">
+              <span class="word-count">{{ draft.length }}/1000</span>
+
+              <button
+                type="submit"
+                :disabled="initializing || sending || !sessionId"
+              >
+                <span>{{ sending ? '发送中...' : '发送需求' }}</span>
+                <span class="send-icon">↑</span>
+              </button>
+            </div>
+          </div>
         </div>
       </form>
     </main>
-    <div v-if="evidenceDialogOpen" class="dialog-mask" @click.self="closeEvidence">
-      <section class="evidence-dialog" role="dialog" aria-modal="true">
+
+    <div
+      v-if="evidenceDialogOpen"
+      class="dialog-mask"
+      @click.self="closeEvidence"
+    >
+      <section
+        class="evidence-dialog"
+        role="dialog"
+        aria-modal="true"
+      >
         <header>
-          <h2>推荐依据</h2>
-          <button type="button" @click="closeEvidence">关闭</button>
+          <div>
+            <span class="dialog-eyebrow">推荐可解释性</span>
+            <h2>推荐依据</h2>
+          </div>
+
+          <button
+            type="button"
+            class="dialog-close-button"
+            @click="closeEvidence"
+          >
+            ×
+          </button>
         </header>
-        <div v-if="evidenceLoading" class="state-panel">正在加载推荐依据...</div>
-        <div v-else-if="evidenceError" class="error-banner">{{ evidenceError }}</div>
-        <div v-else-if="!evidences.length" class="state-panel">暂无可查看依据</div>
-        <article v-for="(evidence, index) in evidences" :key="index" class="evidence-item">
-          <strong>{{ evidenceTypeText(evidence.sourceType) }}</strong>
-          <span>{{ evidence.merchantName }}</span>
-          <span v-if="evidence.conditionKey">
-            对应条件：{{ evidence.conditionKey }}
-          </span>
-          <p v-if="evidence.available">{{ evidence.excerpt || '暂无详细内容' }}</p>
-          <p v-else>该评价已删除或当前无权查看</p>
-          <small v-if="evidence.available && evidence.reviewTime">{{ evidence.reviewTime }}</small>
-        </article>
+
+        <div
+          v-if="evidenceLoading"
+          class="dialog-state-panel"
+        >
+          正在加载推荐依据...
+        </div>
+
+        <div
+          v-else-if="evidenceError"
+          class="dialog-error-banner"
+        >
+          {{ evidenceError }}
+        </div>
+
+        <div
+          v-else-if="!evidences.length"
+          class="dialog-state-panel"
+        >
+          暂无可查看依据
+        </div>
+
+        <div v-else class="evidence-list">
+          <article
+            v-for="(evidence, index) in evidences"
+            :key="index"
+            class="evidence-item"
+          >
+            <div class="evidence-item-header">
+              <strong>{{ evidenceTypeText(evidence.sourceType) }}</strong>
+              <span>{{ evidence.merchantName }}</span>
+            </div>
+
+            <span
+              v-if="evidence.conditionKey"
+              class="evidence-condition"
+            >
+              对应条件：{{ evidence.conditionKey }}
+            </span>
+
+            <p v-if="evidence.available">
+              {{ evidence.excerpt || '暂无详细内容' }}
+            </p>
+
+            <p v-else class="unavailable-text">
+              该评价已删除或当前无权查看
+            </p>
+
+            <small
+              v-if="evidence.available && evidence.reviewTime"
+            >
+              {{ evidence.reviewTime }}
+            </small>
+          </article>
+        </div>
       </section>
     </div>
   </div>
@@ -686,121 +904,1574 @@ onMounted(initialize)
 </script>
 
 <style scoped>
-.ai-dining-page { min-height: 100vh; padding: 24px; background: #f4f5fb; color: #1f2937; }
-.page-header {
-  max-width: 1120px;
-  margin: 0 auto 18px;
-  display: grid;
-  grid-template-columns: 160px 1fr 230px;
-  align-items: center;
+.ai-dining-page,
+.ai-dining-page *,
+.ai-dining-page *::before,
+.ai-dining-page *::after {
+  box-sizing: border-box;
 }
-.page-header h1 { margin: 0; text-align: center; font-size: 30px; }
-.page-header p { margin: 6px 0 0; text-align: center; color: #667085; }
-.back-button { justify-self: start; border: 0; background: transparent; color: #5b5bd6; cursor: pointer; font-size: 15px; }
-.header-actions {
-  justify-self: end;
+
+.ai-dining-page {
   display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  color: #29231e;
+  font-family:
+    "Microsoft YaHei",
+    "PingFang SC",
+    "Noto Sans SC",
+    Arial,
+    sans-serif;
+  background:
+    radial-gradient(
+      circle at 12% 4%,
+      rgba(255, 226, 194, 0.52),
+      transparent 24%
+    ),
+    radial-gradient(
+      circle at 88% 7%,
+      rgba(221, 214, 254, 0.48),
+      transparent 26%
+    ),
+    #f8f6f2;
+}
+
+.ai-dining-page button,
+.ai-dining-page textarea {
+  font-family: inherit;
+}
+
+.page-header {
+  width: 100%;
+  flex: 0 0 auto;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(229, 222, 212, 0.84);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px);
+}
+
+.header-container {
+  display: grid;
+  width: calc(100% - 48px);
+  max-width: 1180px;
+  min-width: 0;
+  margin: 0 auto;
+  grid-template-columns: minmax(150px, 0.55fr) minmax(0, 1.5fr) minmax(230px, 0.7fr);
   align-items: center;
-  gap: 12px;
+  gap: 24px;
+}
+
+.back-button {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  padding: 10px 13px;
+  border: 1px solid #e7e0d8;
+  border-radius: 12px;
+  color: #655c54;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s,
+    transform 0.2s;
+}
+
+.back-button:hover {
+  transform: translateX(-2px);
+  border-color: #fdba74;
+  color: #c2410c;
+  background: #fff8f1;
+}
+
+.back-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.page-title {
+  min-width: 0;
+  text-align: center;
+}
+
+.title-eyebrow {
+  display: inline-flex;
+  margin-bottom: 2px;
+  color: #7c3aed;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.title-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.page-title h1 {
+  margin: 0;
+  color: #29231e;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -1px;
+}
+
+.online-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid #d1fae5;
+  border-radius: 999px;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 700;
+  background: #f0fdf4;
+}
+
+.online-dot,
+.session-dot,
+.location-status-dot,
+.operation-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.online-dot {
+  width: 7px;
+  height: 7px;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
+}
+
+.page-title p {
+  max-width: 620px;
+  margin: 2px auto 0;
+  color: #80766e;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .session-state {
-  color: #667085;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: #80766e;
   font-size: 13px;
   white-space: nowrap;
 }
 
+.session-dot {
+  width: 7px;
+  height: 7px;
+  background: #a78bfa;
+}
+
 .new-session-button {
-  padding: 8px 13px;
-  border: 1px solid #7c3aed;
-  border-radius: 9px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 15px;
+  border: 1px solid #c4b5fd;
+  border-radius: 12px;
   color: #6d28d9;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
   background: #fff;
   cursor: pointer;
-  white-space: nowrap;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    box-shadow 0.2s,
+    transform 0.2s;
 }
 
 .new-session-button:hover:not(:disabled) {
-  background: #f5f3ff;
+  transform: translateY(-1px);
+  border-color: #8b5cf6;
+  background: #faf8ff;
+  box-shadow: 0 8px 18px rgba(109, 40, 217, 0.1);
 }
 
 .new-session-button:disabled {
-  opacity: .55;
+  opacity: 0.55;
   cursor: not-allowed;
 }
-.dialogue-shell { max-width: 1120px; margin: 0 auto; overflow: hidden; border-radius: 20px; background: #fff; box-shadow: 0 12px 36px rgba(31, 41, 55, .1); }
-.location-toolbar { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid #eaecf0; background: #fafafa; }
-.location-button { min-width: 132px; padding: 8px 13px; border: 1px solid #8b5cf6; border-radius: 9px; color: #6d28d9; background: #fff; cursor: pointer; }
-.location-button:disabled { opacity: .6; cursor: wait; }
-.location-status { color: #667085; font-size: 13px; }
-.constraint-bar { display: flex; gap: 10px; padding: 10px 22px; color: #475467; background: #f8fafc; font-size: 13px; }
-.message-list { height: calc(100vh - 280px); min-height: 430px; overflow-y: auto; padding: 28px; }
-.empty-panel, .state-panel { height: 100%; display: grid; place-content: center; text-align: center; color: #667085; }
-.empty-panel h2 { color: #1f2937; margin: 12px 0 4px; }
-.empty-icon { font-size: 44px; }
-.message-row { display: flex; margin-bottom: 22px; }
-.user-row { justify-content: flex-end; }
-.message-bubble { max-width: 86%; padding: 15px 18px; border-radius: 16px; background: #f2f3f8; }
-.user-row .message-bubble { max-width: 72%; color: #fff; background: linear-gradient(135deg, #5b5bd6, #8b5cf6); }
-.message-role { margin-bottom: 7px; font-size: 12px; font-weight: 700; opacity: .72; }
-.message-bubble > p { margin: 0; line-height: 1.65; white-space: pre-wrap; }
-.merchant-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
-.merchant-card { padding: 16px; text-align: left; border: 1px solid #e5e7eb; border-radius: 14px; background: #fff; cursor: pointer; }
-.merchant-card:hover { border-color: #8b5cf6; box-shadow: 0 5px 18px rgba(91, 91, 214, .12); }
-.evidence-button { margin-top: 12px; padding: 7px 12px; border: 1px solid #7c3aed; border-radius: 8px; color: #6d28d9; background: #fff; cursor: pointer; }
-.dialog-mask { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(17, 24, 39, .45); }
-.evidence-dialog { width: min(680px, 100%); max-height: 78vh; overflow-y: auto; padding: 20px; border-radius: 16px; background: #fff; }
-.evidence-dialog header { display: flex; align-items: center; justify-content: space-between; }
-.evidence-dialog h2 { margin: 0; }
-.evidence-item { margin-top: 14px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 10px; }
-.evidence-item span, .evidence-item small { display: block; margin-top: 5px; color: #667085; }
-.merchant-card-header { display: flex; justify-content: space-between; font-size: 12px; color: #667085; }
-.rank-badge { color: #7c3aed; font-weight: 700; }
-.merchant-card h3 { margin: 9px 0; color: #111827; }
-.merchant-meta { display: flex; flex-wrap: wrap; gap: 6px; }
-.merchant-meta span { padding: 3px 7px; border-radius: 6px; background: #f3f4f6; color: #4b5563; font-size: 12px; }
-.reason { margin-top: 12px !important; color: #374151; font-size: 14px; }
-.risk-list { margin: 8px 0 0; padding-left: 20px; color: #b45309; font-size: 13px; }
-.notice-banner { margin-top: 10px; padding: 9px 11px; border-radius: 8px; color: #475467; background: #eef2ff; font-size: 13px; }
-.matched-dishes { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.matched-dishes-title { color: #6b7280; font-size: 13px; }
-.matched-dish { padding: 4px 8px; border-radius: 999px; background: #fff7ed; color: #9a3412; font-size: 13px; }
-.suggestion-panel { margin-top: 14px; padding: 12px; border-radius: 10px; background: #fff7ed; color: #9a3412; }
-.suggestion-list { display: grid; gap: 8px; margin-top: 9px; }
-.suggestion-button { display: flex; justify-content: space-between; gap: 14px; align-items: center; width: 100%; padding: 10px 12px; text-align: left; border: 1px solid #fdba74; border-radius: 9px; color: #9a3412; background: #fff; cursor: pointer; }
-.suggestion-button:hover:not(:disabled) { border-color: #f97316; box-shadow: 0 3px 12px rgba(249, 115, 22, .14); }
-.suggestion-button:disabled { opacity: .6; cursor: wait; }
-.suggestion-button small { flex: none; color: #c2410c; }
-.limiting-panel { margin-top: 12px; padding: 12px; border-radius: 10px; color: #475467; background: #f8fafc; }
-.limiting-panel ul { margin: 7px 0 0; padding-left: 20px; }
-.typing-indicator { color: #7c3aed; font-size: 14px; }
-.error-banner { margin: 0 28px 12px; padding: 11px 14px; border-radius: 9px; color: #b42318; background: #fef3f2; }
-.retry-button { margin-left: 12px; border: 1px solid #b42318; border-radius: 7px; color: #b42318; background: #fff; cursor: pointer; }
-.composer { padding: 18px 22px; border-top: 1px solid #eaecf0; background: #fff; }
-.composer textarea { width: 100%; resize: none; box-sizing: border-box; padding: 13px; border: 1px solid #d0d5dd; border-radius: 12px; font: inherit; }
-.composer textarea:focus { outline: 0; border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, .1); }
-.composer-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; color: #98a2b3; font-size: 12px; }
-.composer button { min-width: 100px; padding: 10px 18px; border: 0; border-radius: 9px; color: #fff; background: #6d5bd0; cursor: pointer; }
-.composer button:disabled { opacity: .55; cursor: not-allowed; }
-@media (max-width: 760px) {
-  .ai-dining-page { padding: 12px; }
-  .page-header { grid-template-columns: 1fr auto; }
-  .page-title {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    margin-bottom: 16px;
+
+.dialogue-shell {
+  display: flex;
+  width: calc(100% - 24px);
+  max-width: 1380px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  margin: 8px auto 12px;
+  overflow: hidden;
+  border: 1px solid rgba(229, 222, 212, 0.84);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 54px rgba(92, 67, 43, 0.1);
+}
+
+.assistant-toolbar {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 18px;
+  border-bottom: 1px solid #eee8e1;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 250, 245, 0.98),
+      rgba(250, 248, 255, 0.98)
+    );
+}
+
+.assistant-profile {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+
+.assistant-avatar,
+.message-avatar,
+.typing-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.assistant-avatar {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #ddd6fe;
+  border-radius: 12px;
+  font-size: 18px;
+  background: #f5f3ff;
+  box-shadow: 0 6px 14px rgba(109, 40, 217, 0.08);
+}
+
+.assistant-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.assistant-copy strong {
+  color: #312a25;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.assistant-copy small {
+  overflow: hidden;
+  color: #938980;
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.location-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid #fed7aa;
+  border-radius: 11px;
+  color: #c2410c;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: #fffaf5;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.location-button:hover:not(:disabled) {
+  border-color: #fb923c;
+  background: #fff7ed;
+}
+
+.location-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.location-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.location-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: #8a8178;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.location-status-dot {
+  width: 7px;
+  height: 7px;
+  background: #cbd5e1;
+}
+
+.location-status-dot.ready {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
+}
+
+.constraint-bar {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 22px;
+  border-bottom: 1px solid #eee8e1;
+  background: #fffaf5;
+}
+
+.constraint-label {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 7px;
+  color: #9a3412;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  background: #ffedd5;
+}
+
+.constraint-content {
+  min-width: 0;
+  color: #6f665e;
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.message-list {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 24px 32px;
+  scroll-behavior: smooth;
+  scrollbar-color: #d6cec5 transparent;
+  scrollbar-width: thin;
+}
+
+.message-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.message-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #d6cec5;
+  background-clip: padding-box;
+}
+
+.empty-panel,
+.state-panel {
+  display: flex;
+  width: 100%;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+}
+
+.empty-panel {
+  max-width: 630px;
+  margin: 0 auto;
+  color: #80766e;
+}
+
+.empty-icon-shell {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  margin-bottom: 16px;
+  place-items: center;
+  border: 1px solid #ddd6fe;
+  border-radius: 24px;
+  background:
+    radial-gradient(
+      circle at 35% 30%,
+      rgba(255, 255, 255, 0.9),
+      transparent 36%
+    ),
+    linear-gradient(135deg, #f5f3ff, #ede9fe);
+  box-shadow: 0 14px 30px rgba(109, 40, 217, 0.1);
+}
+
+.empty-icon {
+  font-size: 34px;
+}
+
+.empty-eyebrow {
+  margin-bottom: 6px;
+  color: #7c3aed;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.empty-panel h2 {
+  margin: 0;
+  color: #29231e;
+  font-size: 29px;
+  line-height: 1.4;
+}
+
+.empty-panel > p {
+  max-width: 570px;
+  margin: 10px auto 0;
+  color: #80766e;
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.example-card {
+  display: flex;
+  max-width: 100%;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 22px;
+  padding: 14px 16px;
+  border: 1px solid #f3dfce;
+  border-radius: 14px;
+  text-align: left;
+  background: #fffaf5;
+}
+
+.example-card span {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 700;
+  background: #ffedd5;
+}
+
+.example-card strong {
+  min-width: 0;
+  color: #655c54;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.state-panel {
+  gap: 8px;
+  color: #80766e;
+}
+
+.state-panel strong {
+  color: #4d453e;
+  font-size: 17px;
+}
+
+.state-panel p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.state-spinner {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 6px;
+  border: 3px solid #eee8e1;
+  border-top-color: #8b5cf6;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.message-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 11px;
+  margin-bottom: 24px;
+}
+
+.user-row {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 38px;
+  height: 38px;
+  margin-top: 21px;
+  border: 1px solid #e4ddd6;
+  border-radius: 13px;
+  color: #6d28d9;
+  font-size: 15px;
+  font-weight: 700;
+  background: #f5f3ff;
+}
+
+.user-row .message-avatar {
+  border-color: #fed7aa;
+  color: #c2410c;
+  background: #fff3e8;
+}
+
+.message-column {
+  display: flex;
+  width: auto;
+  max-width: calc(100% - 49px);
+  min-width: 0;
+  flex-direction: column;
+}
+
+.user-row .message-column {
+  align-items: flex-end;
+}
+
+.message-role {
+  margin: 0 4px 6px;
+  color: #8a8178;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.message-bubble {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  padding: 17px 18px;
+  border: 1px solid #e7e0d8;
+  border-radius: 18px 18px 18px 6px;
+  color: #3f3832;
+  background: #fbfaf8;
+  box-shadow: 0 5px 16px rgba(80, 61, 43, 0.05);
+}
+
+.assistant-row .message-column {
+  width: min(94%, 1120px);
+}
+
+.assistant-row .message-bubble {
+  width: 100%;
+}
+
+.user-row .message-column {
+  max-width: min(72%, 650px);
+}
+
+.user-row .message-bubble {
+  border-color: transparent;
+  border-radius: 18px 18px 6px 18px;
+  color: #fff;
+  background: linear-gradient(135deg, #6d5bd0 0%, #8b5cf6 100%);
+  box-shadow: 0 10px 24px rgba(109, 40, 217, 0.18);
+}
+
+.message-bubble > p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notice-banner {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #ddd6fe;
+  border-radius: 10px;
+  color: #5b4e78;
+  font-size: 14px;
+  line-height: 1.55;
+  background: #f5f3ff;
+}
+
+.notice-banner > span {
+  flex: 0 0 auto;
+  font-weight: 800;
+}
+
+.merchant-grid {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 17px;
+}
+
+.merchant-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 250px;
+  flex-direction: column;
+  padding: 17px;
+  overflow: hidden;
+  border: 1px solid #e8e1da;
+  border-radius: 16px;
+  text-align: left;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(255, 250, 245, 0.94)
+    );
+  cursor: pointer;
+  transition:
+    transform 0.22s,
+    border-color 0.22s,
+    box-shadow 0.22s;
+}
+
+.merchant-card:hover {
+  transform: translateY(-3px);
+  border-color: #c4b5fd;
+  box-shadow: 0 14px 28px rgba(91, 60, 30, 0.1);
+}
+
+.merchant-card:focus-visible {
+  outline: 3px solid rgba(139, 92, 246, 0.18);
+  outline-offset: 2px;
+}
+
+.merchant-card-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rank-badge {
+  padding: 4px 8px;
+  border-radius: 7px;
+  color: #6d28d9;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  background: #ede9fe;
+}
+
+.operation-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: #7d746c;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.operation-dot {
+  width: 6px;
+  height: 6px;
+  background: #22c55e;
+}
+
+.merchant-card h3 {
+  margin: 12px 0 9px;
+  color: #29231e;
+  font-size: 19px;
+  font-weight: 750;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.merchant-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.merchant-meta span {
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #eee8e1;
+  border-radius: 7px;
+  color: #655c54;
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  background: #f8f6f2;
+}
+
+.reason {
+  margin: 13px 0 0 !important;
+  color: #5d554e;
+  font-size: 15px !important;
+  line-height: 1.65 !important;
+  overflow-wrap: anywhere;
+}
+
+.risk-list {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  color: #b45309;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.matched-dishes {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.matched-dishes-title {
+  color: #7d746c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.matched-dish {
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  color: #9a3412;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  background: #fff7ed;
+}
+
+.merchant-card-footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 15px;
+}
+
+.merchant-detail-hint {
+  min-width: 0;
+  color: #9a9087;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.evidence-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid #c4b5fd;
+  border-radius: 9px;
+  color: #6d28d9;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.evidence-button:hover {
+  border-color: #8b5cf6;
+  background: #faf8ff;
+}
+
+.suggestion-panel,
+.limiting-panel {
+  min-width: 0;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+}
+
+.suggestion-panel {
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  background: #fff7ed;
+}
+
+.limiting-panel {
+  border: 1px solid #e5e7eb;
+  color: #5f574f;
+  background: #f8fafc;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.suggestion-list {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.suggestion-button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 12px;
+  border: 1px solid #fdba74;
+  border-radius: 10px;
+  color: #9a3412;
+  font-size: 14px;
+  text-align: left;
+  background: #fff;
+  cursor: pointer;
+}
+
+.suggestion-button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.suggestion-button:hover:not(:disabled) {
+  border-color: #f97316;
+  box-shadow: 0 3px 12px rgba(249, 115, 22, 0.14);
+}
+
+.suggestion-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.suggestion-button small {
+  flex: 0 0 auto;
+  color: #c2410c;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.limiting-panel ul {
+  margin: 9px 0 0;
+  padding-left: 21px;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.typing-indicator {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 11px;
+  color: #6d28d9;
+  font-size: 14px;
+}
+
+.typing-avatar {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #ddd6fe;
+  border-radius: 13px;
+  background: #f5f3ff;
+}
+
+.typing-bubble {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid #e7e0d8;
+  border-radius: 14px 14px 14px 5px;
+  color: #6f665e;
+  background: #fbfaf8;
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  animation: typing 1.2s infinite ease-in-out;
+}
+
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.error-banner {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  margin: 0 22px 12px;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 11px;
+  color: #b42318;
+  font-size: 14px;
+  line-height: 1.55;
+  background: #fef3f2;
+}
+
+.error-icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 800;
+  background: #dc2626;
+}
+
+.error-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.retry-button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #b42318;
+  border-radius: 8px;
+  color: #b42318;
+  font-size: 13px;
+  white-space: nowrap;
+  background: #fff;
+  cursor: pointer;
+}
+
+.composer {
+  width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
+  padding: 12px 20px 14px;
+  border-top: 1px solid #eee8e1;
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.composer-input-shell {
+  width: 100%;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid #d8d1c9;
+  border-radius: 16px;
+  background: #fff;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.composer-input-shell:focus-within {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1);
+}
+
+.composer textarea {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 7px 11px 4px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  color: #39332e;
+  font-size: 16px;
+  line-height: 1.65;
+  background: transparent;
+}
+
+.composer textarea::placeholder {
+  color: #a09890;
+}
+
+.composer textarea:disabled {
+  cursor: not-allowed;
+}
+
+.composer-footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 4px 1px 10px;
+}
+
+.composer-tip {
+  min-width: 0;
+  color: #a09890;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.composer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.word-count {
+  color: #a09890;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.composer button[type="submit"] {
+  display: inline-flex;
+  min-width: 118px;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 11px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: linear-gradient(135deg, #6d5bd0, #8b5cf6);
+  box-shadow: 0 9px 20px rgba(109, 40, 217, 0.19);
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+}
+
+.composer button[type="submit"]:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(109, 40, 217, 0.25);
+}
+
+.composer button[type="submit"]:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.send-icon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 7px;
+  color: #6d28d9;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  width: 100%;
+  max-width: 100%;
+  place-items: center;
+  padding: 20px;
+  overflow: hidden;
+  background: rgba(41, 35, 30, 0.52);
+  backdrop-filter: blur(6px);
+}
+
+.evidence-dialog {
+  width: min(700px, calc(100vw - 40px));
+  max-width: 100%;
+  max-height: min(82vh, 760px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 22px;
+  border: 1px solid #e7e0d8;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 28px 70px rgba(41, 35, 30, 0.2);
+}
+
+.evidence-dialog > header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eee8e1;
+}
+
+.dialog-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #7c3aed;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.evidence-dialog h2 {
+  margin: 0;
+  color: #29231e;
+  font-size: 25px;
+  line-height: 1.35;
+}
+
+.dialog-close-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid #e7e0d8;
+  border-radius: 11px;
+  color: #7d746c;
+  font-size: 22px;
+  line-height: 1;
+  background: #fff;
+  cursor: pointer;
+}
+
+.dialog-close-button:hover {
+  border-color: #fdba74;
+  color: #c2410c;
+  background: #fff8f1;
+}
+
+.dialog-state-panel,
+.dialog-error-banner {
+  margin-top: 16px;
+  padding: 24px;
+  border-radius: 12px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.dialog-state-panel {
+  color: #80766e;
+  background: #faf8f5;
+}
+
+.dialog-error-banner {
+  color: #b42318;
+  background: #fef3f2;
+}
+
+.evidence-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.evidence-item {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #e7e0d8;
+  border-radius: 13px;
+  background: #fcfbf9;
+}
+
+.evidence-item-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.evidence-item-header strong {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 7px;
+  color: #6d28d9;
+  font-size: 13px;
+  background: #ede9fe;
+}
+
+.evidence-item-header span {
+  min-width: 0;
+  color: #655c54;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.evidence-condition {
+  display: block;
+  margin-top: 8px;
+  color: #9a3412;
+  font-size: 13px;
+}
+
+.evidence-item p {
+  margin: 11px 0 0;
+  color: #514943;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.evidence-item small {
+  display: block;
+  margin-top: 8px;
+  color: #9a9087;
+  font-size: 12px;
+}
+
+.unavailable-text {
+  color: #9a3412 !important;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
-  .back-button { grid-row: 2; }
-  .header-actions {
-    grid-row: 2;
-    justify-self: end;
+}
+
+@keyframes typing {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 980px) {
+  .header-container {
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .session-state {
     display: none;
   }
-  .message-list { height: calc(100vh - 300px); padding: 16px; }
-  .message-bubble { max-width: 94%; }
-  .merchant-grid { grid-template-columns: 1fr; }
+
+  .assistant-row .message-column {
+    width: calc(100% - 49px);
+  }
+
+  .merchant-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .page-header {
+    padding: 14px 0;
+  }
+
+  .header-container {
+    width: calc(100% - 32px);
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .page-title {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    padding-bottom: 4px;
+  }
+
+  .page-title h1 {
+    font-size: 30px;
+  }
+
+  .page-title p {
+    font-size: 14px;
+  }
+
+  .back-button {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .header-actions {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .dialogue-shell {
+    width: calc(100% - 16px);
+    margin: 6px auto 8px;
+    border-radius: 18px;
+  }
+
+  .assistant-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .location-toolbar {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .message-list {
+    min-height: 0;
+    padding: 20px 16px;
+  }
+
+  .message-column,
+  .assistant-row .message-column {
+    max-width: calc(100% - 49px);
+    width: calc(100% - 49px);
+  }
+
+  .user-row .message-column {
+    max-width: calc(100% - 49px);
+  }
+
+  .message-bubble {
+    padding: 15px;
+  }
+
+  .merchant-card {
+    min-height: 0;
+  }
+
+  .composer {
+    padding: 14px;
+  }
+
+  .error-banner {
+    margin-right: 14px;
+    margin-left: 14px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .retry-button {
+    margin-left: 34px;
+  }
+}
+
+@media (max-width: 520px) {
+  .title-eyebrow,
+  .online-badge {
+    display: none;
+  }
+
+  .page-title h1 {
+    font-size: 28px;
+  }
+
+  .page-title p {
+    max-width: 330px;
+  }
+
+  .back-button,
+  .new-session-button {
+    min-height: 40px;
+    padding-right: 11px;
+    padding-left: 11px;
+    font-size: 13px;
+  }
+
+  .assistant-copy small,
+  .location-status {
+    display: none;
+  }
+
+  .location-toolbar {
+    justify-content: flex-start;
+  }
+
+  .location-button {
+    width: 100%;
+  }
+
+  .constraint-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .message-list {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .message-avatar,
+  .typing-avatar {
+    width: 34px;
+    height: 34px;
+  }
+
+  .message-column,
+  .assistant-row .message-column,
+  .user-row .message-column {
+    width: calc(100% - 45px);
+    max-width: calc(100% - 45px);
+  }
+
+  .message-avatar {
+    margin-top: 20px;
+  }
+
+  .merchant-card-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .evidence-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .suggestion-button {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .composer-footer {
+    align-items: flex-end;
+  }
+
+  .composer-tip {
+    max-width: 155px;
+  }
+
+  .composer button[type="submit"] {
+    min-width: 94px;
+  }
+
+  .evidence-dialog {
+    width: calc(100vw - 24px);
+    padding: 17px;
+  }
+
+  .evidence-item-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .evidence-item-header span {
+    text-align: left;
+  }
+}
+</style>
+
+<style>
+html,
+body,
+#app {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  overflow-x: hidden;
+  overflow-x: clip;
 }
 </style>

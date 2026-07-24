@@ -2,18 +2,44 @@
   <div class="diner-home">
     <nav class="diner-nav">
       <div class="nav-container">
-        <div class="logo-section">
-          <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
-          <span class="brand-name">食尚参谋 - 食客端</span>
-        </div>
-        <div class="nav-links">
-          <div class="user-info">
-            <button class="profile-btn" @click="goToProfile">
-              <span class="profile-icon">👤</span>
-              <span class="user-name">{{ userInfo.username }}</span>
-            </button>
-            <button class="logout-btn" @click="handleLogout">退出登录</button>
-          </div>
+        <button type="button" class="brand-home" @click="router.push('/diner/home')">
+          <span class="brand-logo-shell">
+            <img
+              src="../../assets/images/greedy-cat.png"
+              alt="食尚参谋"
+              class="logo-img"
+            />
+          </span>
+
+          <span class="brand-copy">
+            <strong>食尚参谋</strong>
+            <small>AI 美食决策助手</small>
+          </span>
+        </button>
+
+        <div class="nav-actions">
+          <button
+            type="button"
+            class="profile-btn"
+            aria-label="进入我的个人中心，查看评价、消息和账户设置"
+            title="进入我的个人中心"
+            @click="goToProfile"
+          >
+            <span class="profile-avatar">👤</span>
+
+            <span class="profile-copy">
+              <strong>我的</strong>
+              <small>
+                {{ userInfo.username || '食客用户' }} · 评价/消息
+              </small>
+            </span>
+
+            <span class="profile-arrow">→</span>
+          </button>
+
+          <button type="button" class="logout-btn" @click="handleLogout">
+            退出
+          </button>
         </div>
       </div>
     </nav>
@@ -21,61 +47,149 @@
     <main class="home-main">
       <section class="hero-section">
         <div class="container">
-          <div class="hero-content">
-            <h1>今天想吃点什么？</h1>
-            <p>选择一个场景，食尚参谋为您推荐最合适的餐厅</p>
+          <div class="hero-panel">
+            <div class="hero-content">
+              <span class="hero-eyebrow">
+                ✦ AI 餐厅推荐 · 基于真实商家与评价
+              </span>
+
+              <h1>
+                今天，想吃点
+                <span>什么？</span>
+              </h1>
+
+              <p>
+                告诉我人数、预算、口味和用餐场景，
+                食尚参谋帮你更快找到合适的餐厅。
+              </p>
+
+              <div class="hero-actions">
+                <button
+                  type="button"
+                  class="hero-primary-button"
+                  @click="goToAiDining"
+                >
+                  和 AI 聊聊
+                  <span>→</span>
+                </button>
+
+                <button
+                  type="button"
+                  class="hero-secondary-button"
+                  @click="goToRanking"
+                >
+                  查看热门榜单
+                </button>
+              </div>
+
+              <div class="hero-trust-row">
+                <span>✓ 条件智能提取</span>
+                <span>✓ 推荐依据可查看</span>
+                <span>✓ 支持连续对话</span>
+              </div>
+            </div>
+
+            <div class="hero-visual" aria-hidden="true">
+              <div class="visual-glow"></div>
+              <div class="food-orbit food-orbit-main">🍲</div>
+              <div class="food-orbit food-orbit-top">🌶️</div>
+              <div class="food-orbit food-orbit-bottom">🥟</div>
+
+              <div class="ai-status-card">
+                <span class="ai-status-dot"></span>
+                AI 正在为你选店
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <section class="ai-entry-section">
+      <section class="feature-section">
         <div class="container">
-          <div class="ai-entry-card" @click="goToAiDining">
-            <div class="ai-entry-icon">✨</div>
-            <div class="ranking-content">
-              <h3 class="ranking-title">AI 探店</h3>
-              <p class="ranking-subtitle">用自然语言说出人数、预算和口味，获取个性化商家推荐</p>
-            </div>
-            <div class="ranking-arrow">
-              <span class="arrow-text">开始对话</span>
-              <span class="arrow-icon">→</span>
-            </div>
-          </div>
-        </div>
-      </section>
+          <div class="feature-grid">
+            <button
+              type="button"
+              class="feature-card feature-card-ai"
+              @click="goToAiDining"
+            >
+              <span class="feature-icon feature-icon-ai">✨</span>
 
-      <section class="ranking-entry-section">
-        <div class="container">
-          <div class="ranking-card" @click="goToRanking">
-            <div class="ranking-icon">🔥</div>
-            <div class="ranking-content">
-              <h3 class="ranking-title">热门商家榜单</h3>
-              <p class="ranking-subtitle">本周热议、月度新晋、性价比、人气商家</p>
-            </div>
-            <div class="ranking-arrow">
-              <span class="arrow-text">查看榜单</span>
-              <span class="arrow-icon">→</span>
-            </div>
+              <span class="feature-content">
+                <span class="feature-label">智能推荐</span>
+                <strong>AI 探店</strong>
+                <small>
+                  说出人数、预算和口味，获得个性化商家推荐
+                </small>
+              </span>
+
+              <span class="feature-link">
+                开始对话
+                <span>→</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              class="feature-card feature-card-ranking"
+              @click="goToRanking"
+            >
+              <span class="feature-icon feature-icon-ranking">🔥</span>
+
+              <span class="feature-content">
+                <span class="feature-label">口碑趋势</span>
+                <strong>热门商家榜单</strong>
+                <small>
+                  查看本周热议、月度新晋与高性价比商家
+                </small>
+              </span>
+
+              <span class="feature-link">
+                查看榜单
+                <span>→</span>
+              </span>
+            </button>
           </div>
         </div>
       </section>
 
       <section class="scenes-section">
         <div class="container">
-          <h2 class="section-title">选择用餐场景</h2>
+          <div class="section-heading">
+            <div>
+              <span class="section-eyebrow">按场景发现美食</span>
+              <h2 class="section-title">今天是什么用餐场景？</h2>
+              <p>选择场景后，我们会自动调整推荐重点。</p>
+            </div>
+
+            <span class="scene-count">8 种场景</span>
+          </div>
+
           <div class="scenes-grid">
-            <div 
-              v-for="scene in scenes" 
+            <div
+              v-for="scene in scenes"
               :key="scene.id"
               class="scene-card"
               :class="{ active: selectedScene?.id === scene.id }"
               @click="selectScene(scene)"
             >
+              <span
+                v-if="selectedScene?.id === scene.id"
+                class="scene-check"
+              >
+                ✓
+              </span>
+
               <div class="scene-icon" :style="{ background: scene.color }">
                 <span class="icon-emoji">{{ scene.emoji }}</span>
               </div>
+
               <h3>{{ scene.name }}</h3>
               <p class="scene-desc">{{ scene.description }}</p>
+
+              <span class="scene-action">
+                选择场景
+                <span>→</span>
+              </span>
             </div>
           </div>
         </div>
@@ -185,16 +299,6 @@
           </div>
         </div>
       </section>
-
-      <section v-if="!selectedScene && !loading" class="tips-section">
-        <div class="container">
-          <div class="tips-card">
-            <div class="tips-icon">👆</div>
-            <h3>请选择用餐场景</h3>
-            <p>选择一个场景后，我们将根据场景特点为您推荐最合适的餐厅</p>
-          </div>
-        </div>
-      </section>
     </main>
   </div>
 </template>
@@ -225,7 +329,7 @@ const scenes = [
     name: '朋友聚会',
     emoji: '👯‍♀️',
     description: '热闹氛围，量大实惠',
-    color: 'linear-gradient(135deg, #ff6700 0%, #ff9500 100%)',
+    color: 'linear-gradient(135deg, #fff1e8 0%, #ffe4d1 100%)',
     rules: ['人数', '分量', '性价比', '氛围']
   },
   {
@@ -233,7 +337,7 @@ const scenes = [
     name: '家庭聚餐',
     emoji: '👨‍👩‍👧‍👦',
     description: '温馨舒适，老少皆宜',
-    color: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)',
+    color: 'linear-gradient(135deg, #effbea 0%, #dcf5d4 100%)',
     rules: ['环境', '口味', '空间', '服务']
   },
   {
@@ -241,7 +345,7 @@ const scenes = [
     name: '约会',
     emoji: '🌹',
     description: '浪漫氛围，私密环境',
-    color: 'linear-gradient(135deg, #ff6b9d 0%, #ff85b3 100%)',
+    color: 'linear-gradient(135deg, #fff0f5 0%, #ffe1ec 100%)',
     rules: ['环境', '氛围', '评价', '私密性']
   },
   {
@@ -249,7 +353,7 @@ const scenes = [
     name: '早餐',
     emoji: '🍳',
     description: '营养丰富，中西兼有',
-    color: 'linear-gradient(135deg, #faad14 0%, #ffc53d 100%)',
+    color: 'linear-gradient(135deg, #fff8e1 0%, #ffedbf 100%)',
     rules: ['营养', '便捷', '口味', '营业时间']
   },
   {
@@ -257,7 +361,7 @@ const scenes = [
     name: '独自用餐',
     emoji: '🥢',
     description: '安静舒适，一人食',
-    color: 'linear-gradient(135deg, #1890ff 0%, #40a9ff 100%)',
+    color: 'linear-gradient(135deg, #edf7ff 0%, #dceeff 100%)',
     rules: ['安静', '便捷', '性价比', '单人座']
   },
   {
@@ -265,7 +369,7 @@ const scenes = [
     name: '下午茶',
     emoji: '☕',
     description: '悠闲时光，精致甜点',
-    color: 'linear-gradient(135deg, #722ed1 0%, #9254de 100%)',
+    color: 'linear-gradient(135deg, #f6f0ff 0%, #e9ddff 100%)',
     rules: ['环境', '甜点', '饮品', '氛围']
   },
   {
@@ -273,7 +377,7 @@ const scenes = [
     name: '夜宵',
     emoji: '🌙',
     description: '深夜美食，营业时间长',
-    color: 'linear-gradient(135deg, #fa8c16 0%, #ffc53d 100%)',
+    color: 'linear-gradient(135deg, #fff5e6 0%, #ffe8c2 100%)',
     rules: ['营业时间', '距离', '口味', '夜宵特色']
   },
   {
@@ -281,7 +385,7 @@ const scenes = [
     name: '生日聚会',
     emoji: '🎂',
     description: '庆祝氛围，蛋糕服务',
-    color: 'linear-gradient(135deg, #eb2f96 0%, #ff69c1 100%)',
+    color: 'linear-gradient(135deg, #fff0f7 0%, #ffdeee 100%)',
     rules: ['氛围', '空间', '蛋糕服务', '私密性']
   }
 ]
@@ -381,20 +485,27 @@ const getCategoryEmoji = (category) => {
 
 const getCategoryColor = (category) => {
   const colorMap = {
-    '川菜': 'linear-gradient(135deg, #ff6b6b 0%, #ffa502 100%)',
-    '粤菜': 'linear-gradient(135deg, #7bed9f 0%, #70a1ff 100%)',
-    '烧烤': 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
-    '轻食沙拉': 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-    '日料': 'linear-gradient(135deg, #dfe6e9 0%, #b2bec3 100%)',
-    '西餐': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    '火锅': 'linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%)',
-    '快餐': 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-    '咖啡': 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
-    '甜品': 'linear-gradient(135deg, #ffdde1 0%, #ee9ca7 100%)',
-    '早茶': 'linear-gradient(135deg, #73d13d 0%, #95de64 100%)',
-    '高端': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+    '中餐': 'linear-gradient(135deg, #fff4e8 0%, #ffe7d5 100%)',
+    '川菜': 'linear-gradient(135deg, #fff0ec 0%, #ffded6 100%)',
+    '川湘菜': 'linear-gradient(135deg, #fff0ec 0%, #ffded6 100%)',
+    '粤菜': 'linear-gradient(135deg, #eefaf2 0%, #dcf3e4 100%)',
+    '烧烤': 'linear-gradient(135deg, #fff0f3 0%, #ffdee6 100%)',
+    '轻食沙拉': 'linear-gradient(135deg, #eef9f3 0%, #dbf1e4 100%)',
+    '休闲餐饮': 'linear-gradient(135deg, #f5f2ff 0%, #e8e1fa 100%)',
+    '日料': 'linear-gradient(135deg, #f1f5fb 0%, #e1e8f2 100%)',
+    '西餐': 'linear-gradient(135deg, #f4f0ff 0%, #e7defb 100%)',
+    '火锅': 'linear-gradient(135deg, #fff0f5 0%, #ffdee9 100%)',
+    '快餐': 'linear-gradient(135deg, #fff6e9 0%, #ffe9ce 100%)',
+    '咖啡': 'linear-gradient(135deg, #f6f0eb 0%, #eadfd5 100%)',
+    '咖啡甜品': 'linear-gradient(135deg, #f6f0ff 0%, #e8ddfa 100%)',
+    '甜品': 'linear-gradient(135deg, #fff1f6 0%, #ffdfeb 100%)',
+    '早茶': 'linear-gradient(135deg, #f2faea 0%, #dff1d2 100%)',
+    '早餐': 'linear-gradient(135deg, #fff8e8 0%, #ffedc8 100%)',
+    '高端': 'linear-gradient(135deg, #f2eff8 0%, #e3ddeb 100%)'
   }
-  return colorMap[category] || 'linear-gradient(135deg, #ff6700 0%, #ff9500 100%)'
+
+  return colorMap[category]
+    || 'linear-gradient(135deg, #fff5eb 0%, #ffe8d7 100%)'
 }
 
 const getPrivacyLevel = (merchant) => {
@@ -634,286 +745,779 @@ const handleMerchantClick = (restaurant) => {
 </script>
 
 <style scoped>
+.diner-home,
+.diner-home *,
+.diner-home *::before,
+.diner-home *::after {
+  box-sizing: border-box;
+}
+
 .diner-home {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 100vh;
-  background: #f5f7fa;
+  overflow-x: hidden;
+  overflow-x: clip;
+  color: #25211d;
+  font-family:
+    "Microsoft YaHei",
+    "PingFang SC",
+    "Noto Sans SC",
+    Arial,
+    sans-serif;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  background:
+    radial-gradient(
+      circle at 10% 5%,
+      rgba(255, 237, 213, 0.65),
+      transparent 28%
+    ),
+    #f8f6f2;
+}
+
+.diner-home button,
+.diner-home select {
+  font-family: inherit;
+}
+
+.diner-nav,
+.home-main,
+.hero-section,
+.feature-section,
+.scenes-section,
+.filters-section,
+.loading-section,
+.results-section {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .diner-nav {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  padding: 16px 0;
-  position: fixed;
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
   z-index: 100;
+  overflow-x: clip;
+  border-bottom: 1px solid rgba(229, 222, 212, 0.82);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(18px);
+}
+
+.nav-container,
+.container {
+  width: calc(100% - 48px);
+  max-width: 1180px;
+  min-width: 0;
+  margin-right: auto;
+  margin-left: auto;
 }
 
 .nav-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
   display: flex;
-  justify-content: space-between;
+  min-height: 72px;
   align-items: center;
+  justify-content: space-between;
+  gap: 20px;
 }
 
-.logo-section {
+.container {
+  overflow: visible;
+}
+
+.brand-home {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 12px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.brand-logo-shell {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #f2dfd0;
+  border-radius: 14px;
+  background: #fff8f1;
 }
 
 .logo-img {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
 }
 
-.brand-name {
-  font-size: 20px;
-  font-weight: 700;
-  color: #ff6700;
-}
-
-.user-info {
+.brand-copy {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.user-name {
-  font-size: 14px;
-  color: #333333;
+.brand-copy strong {
+  overflow: hidden;
+  color: #2d2925;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-copy small {
+  color: #9a8f85;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.nav-actions {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
 }
 
 .profile-btn {
   display: flex;
+  min-width: 218px;
+  max-width: 280px;
+  min-height: 48px;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: #ff6700;
-  color: #ffffff;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  gap: 10px;
+  padding: 6px 11px 6px 8px;
+  border: 1px solid #f0d7c2;
+  border-radius: 14px;
+  color: #39332e;
+  font: inherit;
+  text-align: left;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(255, 248, 241, 0.98)
+    );
+  box-shadow: 0 4px 13px rgba(124, 89, 54, 0.05);
   cursor: pointer;
-  transition: all 0.2s;
-  margin-right: 12px;
+  transition:
+    transform 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .profile-btn:hover {
-  background: #e55a00;
+  transform: translateY(-1px);
+  border-color: #fb923c;
+  box-shadow: 0 8px 20px rgba(124, 89, 54, 0.1);
 }
 
-.profile-icon {
+.profile-avatar {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border-radius: 11px;
+  font-size: 17px;
+  background: #fff0e3;
+}
+
+.profile-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-copy strong {
+  overflow: hidden;
+  color: #322c27;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-copy small {
+  overflow: hidden;
+  color: #9a8f85;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-arrow {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  place-items: center;
+  border-radius: 8px;
+  color: #c2410c;
   font-size: 16px;
+  background: #fff0e3;
+  transition: transform 0.2s;
+}
+
+.profile-btn:hover .profile-arrow {
+  transform: translateX(2px);
 }
 
 .logout-btn {
-  padding: 8px 16px;
-  background: #f5f5f5;
-  color: #666666;
-  border: none;
-  border-radius: 8px;
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #82786f;
+  font: inherit;
   font-size: 14px;
+  background: transparent;
   cursor: pointer;
-  transition: all 0.2s;
 }
 
 .logout-btn:hover {
-  background: #e8e8e8;
+  color: #c2410c;
+  border-color: #fed7aa;
+  background: #fff7ed;
 }
 
 .home-main {
-  padding-top: 80px;
-}
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
+  padding-bottom: 48px;
+  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .hero-section {
-  background: linear-gradient(135deg, #ff6700 0%, #ff7a00 30%, #ff9500 60%, #ffcc00 100%);
-  padding: 60px 20px;
-  margin-bottom: 40px;
+  padding: 30px 0 16px;
+}
+
+.hero-panel {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 360px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(250px, 0.65fr);
+  overflow: hidden;
+  border: 1px solid #f1ddca;
+  border-radius: 32px;
+  background:
+    radial-gradient(
+      circle at 78% 18%,
+      rgba(251, 146, 60, 0.2),
+      transparent 28%
+    ),
+    linear-gradient(135deg, #fffaf4 0%, #fff4e8 54%, #ffead5 100%);
+  box-shadow: 0 20px 55px rgba(111, 75, 43, 0.1);
 }
 
 .hero-content {
-  text-align: center;
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  padding: 54px 30px 46px 54px;
+  text-align: left;
+}
+
+.hero-eyebrow {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  color: #c2410c;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  background: rgba(255, 255, 255, 0.68);
+  overflow-wrap: anywhere;
 }
 
 .hero-content h1 {
-  font-size: 36px;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0;
+  max-width: 610px;
+  margin: 20px 0 14px;
+  color: #29231e;
+  font-size: clamp(42px, 5vw, 62px);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -2px;
+  overflow-wrap: anywhere;
+}
+
+.hero-content h1 span {
+  color: #ea580c;
 }
 
 .hero-content p {
+  max-width: 590px;
+  margin: 0;
+  color: #746b63;
+  font-size: 17px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.hero-actions {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.hero-primary-button,
+.hero-secondary-button {
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 14px;
+  font: inherit;
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.9);
-  margin: 12px 0 0;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s,
+    background 0.2s;
+}
+
+.hero-primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  border: 0;
+  color: #fff;
+  background: #ea580c;
+  box-shadow: 0 10px 24px rgba(234, 88, 12, 0.24);
+}
+
+.hero-primary-button:hover {
+  transform: translateY(-2px);
+  background: #c2410c;
+  box-shadow: 0 14px 28px rgba(194, 65, 12, 0.28);
+}
+
+.hero-secondary-button {
+  border: 1px solid #e4d8ce;
+  color: #4d453e;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.hero-secondary-button:hover {
+  border-color: #fdba74;
+  background: #fff;
+}
+
+.hero-trust-row {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  margin-top: 25px;
+  color: #8a8178;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.hero-visual {
+  position: relative;
+  min-width: 0;
+  min-height: 360px;
+  overflow: hidden;
+}
+
+.visual-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 250px;
+  max-width: 80%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(251, 146, 60, 0.2);
+  filter: blur(8px);
+  transform: translate(-50%, -50%);
+}
+
+.food-orbit {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 18px 36px rgba(129, 78, 36, 0.14);
+  backdrop-filter: blur(12px);
+}
+
+.food-orbit-main {
+  top: 86px;
+  right: 72px;
+  width: 142px;
+  height: 142px;
+  font-size: 72px;
+  transform: rotate(-5deg);
+}
+
+.food-orbit-top {
+  top: 43px;
+  right: 26px;
+  width: 65px;
+  height: 65px;
+  font-size: 30px;
+  transform: rotate(10deg);
+}
+
+.food-orbit-bottom {
+  right: 34px;
+  bottom: 57px;
+  width: 76px;
+  height: 76px;
+  font-size: 35px;
+  transform: rotate(8deg);
+}
+
+.ai-status-card {
+  position: absolute;
+  right: 112px;
+  bottom: 41px;
+  display: flex;
+  max-width: calc(100% - 36px);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: 13px;
+  color: #655c54;
+  font-size: 14px;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 12px 25px rgba(91, 60, 30, 0.1);
+}
+
+.ai-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.13);
+}
+
+.feature-section {
+  padding: 12px 0 24px;
+}
+
+.feature-grid {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.feature-card {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 132px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  overflow: hidden;
+  border-radius: 22px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.22s,
+    box-shadow 0.22s,
+    border-color 0.22s;
+}
+
+.feature-card:hover {
+  transform: translateY(-3px);
+}
+
+.feature-card-ai {
+  border: 1px solid #ddd6fe;
+  color: #332a47;
+  background: linear-gradient(135deg, #faf8ff, #f4f0ff);
+}
+
+.feature-card-ai:hover {
+  border-color: #c4b5fd;
+  box-shadow: 0 14px 28px rgba(109, 40, 217, 0.1);
+}
+
+.feature-card-ranking {
+  border: 1px solid #fed7aa;
+  color: #4b3226;
+  background: linear-gradient(135deg, #fffaf5, #fff3e6);
+}
+
+.feature-card-ranking:hover {
+  border-color: #fdba74;
+  box-shadow: 0 14px 28px rgba(234, 88, 12, 0.1);
+}
+
+.feature-icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  place-items: center;
+  border-radius: 18px;
+  font-size: 28px;
+}
+
+.feature-icon-ai {
+  background: #ede9fe;
+}
+
+.feature-icon-ranking {
+  background: #ffedd5;
+}
+
+.feature-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.feature-label {
+  margin-bottom: 5px;
+  color: #9b8f84;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.feature-content strong {
+  margin-bottom: 7px;
+  font-size: 22px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.feature-content small {
+  color: #80766e;
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.feature-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #6f6257;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.feature-card:hover .feature-link span {
+  transform: translateX(4px);
+}
+
+.feature-link span {
+  transition: transform 0.2s;
+}
+
+.scenes-section {
+  padding: 28px 0 30px;
+}
+
+.section-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.section-heading > div {
+  min-width: 0;
+}
+
+.section-eyebrow {
+  display: block;
+  margin-bottom: 7px;
+  color: #ea580c;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .section-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1f2d3d;
-  margin-bottom: 24px;
+  margin: 0;
+  color: #29231e;
+  font-size: 30px;
+  font-weight: 750;
+  line-height: 1.35;
+  letter-spacing: -0.5px;
+  overflow-wrap: anywhere;
 }
 
-.result-count {
+.section-heading p {
+  margin: 8px 0 0;
+  color: #92877d;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.scene-count {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid #ebe4dd;
+  border-radius: 999px;
+  color: #8d8278;
   font-size: 14px;
-  font-weight: 400;
-  color: #667085;
-  margin-left: 12px;
-}
-
-.ranking-entry-section {
-  padding: 20px 0;
-}
-
-.ai-entry-section {
-  padding: 20px 0 0;
-}
-
-.ai-entry-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 24px;
-  color: #fff;
-  cursor: pointer;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #5b5bd6 0%, #8b5cf6 55%, #ec4899 100%);
-  box-shadow: 0 6px 20px rgba(91, 91, 214, 0.28);
-  transition: transform 0.3s, box-shadow 0.3s;
-}
-
-.ai-entry-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 28px rgba(91, 91, 214, 0.36);
-}
-
-.ai-entry-icon {
-  font-size: 40px;
-}
-
-.ranking-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%);
-  border-radius: 16px;
-  padding: 24px;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 4px 16px rgba(255, 107, 53, 0.3);
-}
-
-.ranking-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(255, 107, 53, 0.4);
-}
-
-.ranking-icon {
-  font-size: 40px;
-}
-
-.ranking-content {
-  flex: 1;
-}
-
-.ranking-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #fff;
-  margin-bottom: 4px;
-}
-
-.ranking-subtitle {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.ranking-arrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.arrow-text {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.arrow-icon {
-  font-size: 20px;
-  color: #fff;
-  transition: transform 0.3s;
-}
-
-.ranking-card:hover .arrow-icon {
-  transform: translateX(4px);
+  background: #fff;
+  white-space: nowrap;
 }
 
 .scenes-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .scene-card {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 24px;
-  text-align: center;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 190px;
+  padding: 21px;
+  overflow: hidden;
+  border: 1px solid #eae5df;
+  border-radius: 20px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.9);
   cursor: pointer;
-  transition: all 0.3s;
-  border: 2px solid transparent;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition:
+    transform 0.22s,
+    border-color 0.22s,
+    box-shadow 0.22s;
 }
 
 .scene-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  border-color: #fdba74;
+  box-shadow: 0 14px 30px rgba(92, 67, 43, 0.09);
 }
 
 .scene-card.active {
-  border-color: #ff6700;
-  background: #fff8f0;
+  border-color: #f97316;
+  background: #fffaf5;
+  box-shadow: 0 12px 28px rgba(234, 88, 12, 0.11);
+}
+
+.scene-check {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  background: #f97316;
 }
 
 .scene-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 16px;
+  display: grid;
+  width: 60px;
+  height: 60px;
+  margin: 0 0 18px;
+  place-items: center;
+  border: 1px solid rgba(214, 199, 185, 0.45);
+  border-radius: 18px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 6px 14px rgba(91, 67, 45, 0.06);
+  transition:
+    transform 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .icon-emoji {
-  font-size: 32px;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.scene-card:hover .scene-icon {
+  transform: translateY(-2px);
+  border-color: rgba(249, 115, 22, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 9px 18px rgba(91, 67, 45, 0.09);
+}
+
+.scene-card.active .scene-icon {
+  border-color: rgba(234, 88, 12, 0.48);
+  box-shadow:
+    0 0 0 3px rgba(249, 115, 22, 0.08),
+    0 9px 18px rgba(234, 88, 12, 0.1);
 }
 
 .scene-card h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1f2d3d;
-  margin: 0 0 8px;
+  margin: 0 0 7px;
+  color: #302a25;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .scene-desc {
-  font-size: 13px;
-  color: #667085;
   margin: 0;
+  color: #938980;
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.scene-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 17px;
+  color: #b0a49a;
+  font-size: 14px;
+}
+
+.scene-card:hover .scene-action,
+.scene-card.active .scene-action {
+  color: #ea580c;
 }
 
 .filters-section {
@@ -921,67 +1525,101 @@ const handleMerchantClick = (restaurant) => {
 }
 
 .filters-card {
+  width: 100%;
+  min-width: 0;
+  padding: 30px;
+  overflow: hidden;
+  border-radius: 18px;
   background: #ffffff;
-  border-radius: 16px;
-  padding: 28px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
 .filters-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1f2d3d;
-  margin: 0 0 20px;
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 9px;
+  margin: 0 0 26px;
+  color: #29231e;
+  line-height: 1.4;
 }
 
 .scene-tag {
-  font-size: 20px;
+  color: #29231e;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .scene-rules {
-  font-size: 14px;
-  font-weight: 400;
-  color: #ff6700;
+  color: #d85b16;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .filters-row {
-  display: flex;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 24px;
-  flex-wrap: wrap;
 }
 
 .filter-item {
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .filter-item label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #667085;
+  color: #514840;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .filter-select {
-  width: 160px;
-  padding: 10px 14px;
-  border: 1.5px solid #e8e8e8;
-  border-radius: 10px;
-  font-size: 14px;
-  background: #ffffff;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 44px 0 16px;
+  border: 2px solid #e4ddd6;
+  border-radius: 12px;
+  color: #2f2924;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.4;
+  background-color: #ffffff;
   cursor: pointer;
 }
 
 .filter-select:focus {
   outline: none;
-  border-color: #ff6700;
+  border-color: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
+}
+
+.filter-select option {
+  color: #2f2924;
+  font-family:
+    "Microsoft YaHei",
+    "PingFang SC",
+    Arial,
+    sans-serif;
+  font-size: 18px;
+  font-weight: 500;
 }
 
 .filter-actions {
   display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
   margin-top: 24px;
@@ -989,15 +1627,25 @@ const handleMerchantClick = (restaurant) => {
   border-top: 1px solid #f0f0f0;
 }
 
-.reset-btn {
+.reset-btn,
+.search-btn {
+  min-height: 46px;
   padding: 10px 24px;
-  background: #f5f5f5;
-  color: #666666;
-  border: none;
+  border: 0;
   border-radius: 10px;
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    transform 0.2s,
+    background 0.2s,
+    box-shadow 0.2s;
+}
+
+.reset-btn {
+  color: #666;
+  background: #f5f5f5;
 }
 
 .reset-btn:hover {
@@ -1005,15 +1653,8 @@ const handleMerchantClick = (restaurant) => {
 }
 
 .search-btn {
-  padding: 10px 24px;
+  color: #fff;
   background: linear-gradient(135deg, #ff6700 0%, #ff9500 100%);
-  color: #ffffff;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
 .search-btn:hover {
@@ -1021,224 +1662,438 @@ const handleMerchantClick = (restaurant) => {
   box-shadow: 0 4px 12px rgba(255, 103, 0, 0.3);
 }
 
-.restaurants-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
-}
-
-.restaurant-card {
-  background: #ffffff;
-  border-radius: 16px;
-  overflow: hidden;
-  display: flex;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  transition: all 0.3s;
-}
-
-.restaurant-card:hover {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  transform: translateY(-2px);
-}
-
-.rest-img {
-  width: 180px;
-  height: 180px;
-  flex-shrink: 0;
-}
-
-.rest-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.placeholder-emoji {
-  font-size: 48px;
-}
-
-.rest-info {
-  flex: 1;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-}
-
-.rest-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.rest-header h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1f2d3d;
-  margin: 0;
-}
-
-.rest-rating {
-  font-size: 15px;
-  font-weight: 600;
-  color: #ff6700;
-}
-
-.rest-category {
-  font-size: 13px;
-  color: #667085;
-  margin: 0 0 4px;
-}
-
-.rest-price {
-  font-size: 14px;
-  font-weight: 500;
-  color: #1f2d3d;
-  margin: 0 0 4px;
-}
-
-.rest-distance {
-  font-size: 13px;
-  color: #999999;
-  margin: 0 0 12px;
-}
-
-.rest-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.tag {
-  padding: 4px 10px;
-  background: #fff7e6;
-  color: #ff6700;
-  border-radius: 6px;
-  font-size: 12px;
-}
-
-.recommend-reason {
-  display: flex;
-  gap: 8px;
-  margin-top: auto;
-}
-
-.reason-icon {
-  font-size: 14px;
-}
-
-.reason-text {
-  font-size: 13px;
-  color: #667085;
-  line-height: 1.5;
-}
-
 .loading-section {
   margin-bottom: 40px;
 }
 
 .loading-card {
-  background: #ffffff;
-  border-radius: 16px;
   padding: 40px;
+  border-radius: 16px;
   text-align: center;
+  background: #ffffff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
 .loading-spinner {
   width: 48px;
   height: 48px;
+  margin: 0 auto 16px;
   border: 4px solid #f3f3f3;
-  border-top: 4px solid #ff6700;
+  border-top-color: #ff6700;
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  margin: 0 auto 16px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
 }
 
 .loading-card p {
-  font-size: 15px;
-  color: #667085;
   margin: 0;
+  color: #667085;
+  font-size: 16px;
 }
 
-.tips-section {
-  margin-bottom: 40px;
+.results-section {
+  padding-bottom: 36px;
 }
 
-.tips-card {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 40px;
-  text-align: center;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+.results-section > .container > .section-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin: 0 0 18px;
+  color: #25211d;
+  font-size: 30px;
+  font-weight: 750;
+  line-height: 1.35;
+  letter-spacing: -0.4px;
 }
 
-.tips-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
+.result-count {
+  color: #8f847b;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
-.tips-card h3 {
+.restaurants-grid {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.restaurant-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #ebe5df;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 5px 18px rgba(80, 61, 43, 0.06);
+  cursor: pointer;
+  transition:
+    transform 0.22s,
+    border-color 0.22s,
+    box-shadow 0.22s;
+}
+
+.restaurant-card:hover {
+  transform: translateY(-3px);
+  border-color: #fdc99f;
+  box-shadow: 0 15px 32px rgba(91, 66, 43, 0.11);
+}
+
+.rest-img {
+  width: 180px;
+  height: 180px;
+  flex: 0 0 180px;
+}
+
+.rest-placeholder {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.rest-placeholder::before {
+  position: absolute;
+  inset: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.16);
+  content: "";
+}
+
+.placeholder-emoji {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 22px;
+  font-size: 38px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.56);
+  box-shadow:
+    0 10px 24px rgba(80, 55, 35, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(6px);
+}
+
+.rest-info {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.rest-header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 7px;
+}
+
+.rest-header h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #25211d;
   font-size: 20px;
-  font-weight: 600;
-  color: #1f2d3d;
-  margin: 0 0 8px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.tips-card p {
+.rest-rating {
+  flex: 0 0 auto;
+  padding-top: 1px;
+  color: #ea580c;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.rest-category {
+  margin: 0 0 5px;
+  color: #766c63;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.rest-price {
+  margin: 0 0 4px;
+  color: #302a25;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.rest-distance {
+  margin: 0 0 10px;
+  color: #968b82;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.rest-tags {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tag {
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #ffdfc5;
+  border-radius: 7px;
+  color: #c65d1e;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  background: #fff8f0;
+}
+
+.recommend-reason {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: auto;
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: #faf8f5;
+}
+
+.reason-icon {
+  flex: 0 0 auto;
+  padding-top: 1px;
   font-size: 15px;
-  color: #667085;
-  margin: 0;
+  line-height: 1.5;
+}
+
+.reason-text {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: #6f665e;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 992px) {
-  .scenes-grid {
-    grid-template-columns: repeat(3, 1fr);
+  .hero-panel {
+    grid-template-columns: minmax(0, 1fr);
   }
-  
+
+  .hero-visual {
+    display: none;
+  }
+
+  .scenes-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .filters-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .restaurants-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 760px) {
+  .nav-container,
+  .container {
+    width: calc(100% - 32px);
+  }
+
+  .profile-btn {
+    min-width: 112px;
+    max-width: 150px;
+    min-height: 42px;
+    gap: 7px;
+    padding: 5px 8px 5px 6px;
+  }
+
+  .profile-avatar {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+    font-size: 15px;
+  }
+
+  .profile-copy {
+    display: flex;
+  }
+
+  .profile-copy strong {
+    font-size: 14px;
+  }
+
+  .profile-copy small {
+    display: none;
+  }
+
+  .profile-arrow {
+    width: 24px;
+    height: 24px;
+    flex-basis: 24px;
+    font-size: 14px;
+  }
+
+  .logout-btn {
+    display: none;
+  }
+
+  .feature-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .scenes-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  
-  .hero-content h1 {
-    font-size: 28px;
-  }
-  
-  .filters-row {
+
+  .section-heading {
+    align-items: flex-start;
     flex-direction: column;
   }
-  
-  .filter-select {
-    width: 100%;
+
+  .filters-card {
+    padding: 24px;
   }
-  
+
   .restaurant-card {
     flex-direction: column;
   }
-  
+
   .rest-img {
     width: 100%;
-    height: 160px;
+    height: 170px;
+    flex-basis: 170px;
   }
 }
 
-@media (max-width: 480px) {
-  .scenes-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 560px) {
+  .brand-copy small {
+    display: none;
   }
+
+  .hero-section {
+    padding-top: 18px;
+  }
+
+  .hero-panel {
+    min-height: auto;
+    border-radius: 24px;
+  }
+
+  .hero-content {
+    padding: 32px 24px;
+  }
+
+  .hero-content h1 {
+    font-size: 38px;
+    letter-spacing: -1px;
+  }
+
+  .hero-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hero-primary-button,
+  .hero-secondary-button {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .hero-trust-row {
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .feature-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .feature-link {
+    grid-column: 2;
+    margin-top: 4px;
+  }
+
+  .scenes-grid,
+  .filters-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filter-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reset-btn,
+  .search-btn {
+    width: 100%;
+  }
+
+  .results-section > .container > .section-title {
+    font-size: 27px;
+  }
+}
+</style>
+
+<style>
+html,
+body,
+#app {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+body {
+  position: relative;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
 }
 </style>
