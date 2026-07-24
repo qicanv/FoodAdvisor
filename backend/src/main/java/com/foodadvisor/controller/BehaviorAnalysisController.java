@@ -4,12 +4,12 @@ import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.security.AdminAccessGuard;
 import com.foodadvisor.service.BehaviorAnalysisService;
 import com.foodadvisor.service.UserBehaviorService;
-import com.foodadvisor.entity.UserBehaviorLog;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.util.List;
+import java.time.ZoneOffset;
 import java.util.Map;
 
 @RestController
@@ -136,38 +136,67 @@ public class BehaviorAnalysisController {
 
     @GetMapping("/stats")
     public ApiResponse<Object> getStats(
-            @RequestParam(required = false) OffsetDateTime startTime,
-            @RequestParam(required = false) OffsetDateTime endTime,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime,
             HttpServletRequest request) {
 
         adminAccessGuard.requireAdmin(request);
 
-        if (startTime == null) {
-            startTime = OffsetDateTime.now().minusDays(7);
+        OffsetDateTime start = parseDateTime(startTime);
+        OffsetDateTime end = parseDateTime(endTime);
+
+        if (start == null) {
+            start = OffsetDateTime.now().minusDays(7);
         }
-        if (endTime == null) {
-            endTime = OffsetDateTime.now();
+        if (end == null) {
+            end = OffsetDateTime.now();
         }
 
-        return ApiResponse.success(userBehaviorService.getStats(startTime, endTime));
+        return ApiResponse.success(userBehaviorService.getStats(start, end));
     }
 
     @GetMapping("/logs")
-    public ApiResponse<List<UserBehaviorLog>> getLogs(
-            @RequestParam(required = false) OffsetDateTime startTime,
-            @RequestParam(required = false) OffsetDateTime endTime,
+    public ApiResponse<Object> getLogs(
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime,
             @RequestParam(required = false) String eventType,
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "20") Integer pageSize,
             HttpServletRequest request) {
 
         adminAccessGuard.requireAdmin(request);
 
-        if (startTime == null) {
-            startTime = OffsetDateTime.now().minusDays(7);
+        OffsetDateTime start = parseDateTime(startTime);
+        OffsetDateTime end = parseDateTime(endTime);
+
+        if (start == null) {
+            start = OffsetDateTime.now().minusDays(7);
         }
-        if (endTime == null) {
-            endTime = OffsetDateTime.now();
+        if (end == null) {
+            end = OffsetDateTime.now();
         }
 
-        return ApiResponse.success(userBehaviorService.getEventLogs(startTime, endTime, eventType));
+        if (pageNum != null && pageSize != null) {
+            return ApiResponse.success(userBehaviorService.getEventLogsWithPagination(start, end, eventType, pageNum, pageSize));
+        }
+        return ApiResponse.success(userBehaviorService.getEventLogs(start, end, eventType));
+    }
+
+    private OffsetDateTime parseDateTime(String dateTimeStr) {
+        if (dateTimeStr == null || dateTimeStr.isEmpty()) {
+            return null;
+        }
+        try {
+            if (dateTimeStr.endsWith("Z")) {
+                return OffsetDateTime.parse(dateTimeStr);
+            }
+            return OffsetDateTime.parse(dateTimeStr + "Z");
+        } catch (Exception e) {
+            try {
+                return LocalDateTime.parse(dateTimeStr).atOffset(ZoneOffset.UTC);
+            } catch (Exception ex) {
+                return null;
+            }
+        }
     }
 }

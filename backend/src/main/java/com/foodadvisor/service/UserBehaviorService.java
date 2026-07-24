@@ -9,9 +9,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -134,5 +137,29 @@ public class UserBehaviorService {
         }
         wrapper.orderByDesc(UserBehaviorLog::getCreatedAt);
         return behaviorLogMapper.selectList(wrapper);
+    }
+
+    public Map<String, Object> getEventLogsWithPagination(OffsetDateTime startTime, OffsetDateTime endTime, String eventType, Integer pageNum, Integer pageSize) {
+        LambdaQueryWrapper<UserBehaviorLog> wrapper = new LambdaQueryWrapper<>();
+        wrapper.between(UserBehaviorLog::getCreatedAt, startTime, endTime);
+        if (eventType != null && !eventType.isEmpty()) {
+            wrapper.eq(UserBehaviorLog::getEventType, eventType);
+        }
+        wrapper.orderByDesc(UserBehaviorLog::getCreatedAt);
+
+        long total = behaviorLogMapper.selectCount(wrapper);
+        int totalPages = (int) Math.ceil((double) total / pageSize);
+        
+        Page<UserBehaviorLog> page = new Page<>(pageNum, pageSize);
+        Page<UserBehaviorLog> resultPage = behaviorLogMapper.selectPage(page, wrapper);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", resultPage.getRecords());
+        result.put("total", total);
+        result.put("totalPages", totalPages);
+        result.put("pageNum", pageNum);
+        result.put("pageSize", pageSize);
+        
+        return result;
     }
 }

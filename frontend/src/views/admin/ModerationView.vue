@@ -55,7 +55,6 @@
     </div>
 
     <!-- 统计卡片：内容审核 + 违规检测 -->
-    <div class="stats-cards">
     <div class="stat-cards">
       <div class="stat-card stat-card-pending">
         <div class="stat-icon">⏳</div>
@@ -345,7 +344,6 @@
             </div>
           </div>
         </div>
-        <div v-if="currentDetail && modStatus(currentDetail) === 'PENDING'" class="modal-footer">
         <div v-if="currentDetail && (currentDetail.moderationStatus === 'PENDING' || currentDetail.moderationStatus === 'APPROVED')" class="modal-footer">
           <textarea v-model="reviewRemark" class="remark-input" placeholder="请输入审核备注（可选）" rows="3"></textarea>
           <div class="footer-actions">

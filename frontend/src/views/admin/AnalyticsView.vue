@@ -18,22 +18,51 @@
     </template>
 
     <div class="tab-content">
-      <div class="time-filter-bar">
-        <div class="time-options">
+      <div class="time-filter">
+        <span class="filter-label">时间范围</span>
+        <div class="filter-buttons">
           <button 
-            v-for="option in timeRangeOptions" 
-            :key="option.value"
-            :class="['time-option', { active: selectedTimeRange === option.value }]"
-            @click="selectTimeRange(option.value)"
+            v-for="range in timeRanges" 
+            :key="range.value"
+            :class="['filter-btn', { active: timeRange === range.value }]"
+            @click="setTimeRange(range.value)"
           >
-            {{ option.label }}
+            {{ range.label }}
           </button>
         </div>
-        <div class="custom-time">
-          <input type="datetime-local" v-model="customStartTime" />
-          <span class="time-separator">至</span>
-          <input type="datetime-local" v-model="customEndTime" />
-          <button class="apply-time-btn" @click="applyCustomTime">应用</button>
+        
+        <div class="date-selector">
+          <div v-if="timeRange === 'day'" class="day-selector">
+            <span class="selector-label">选择日期：</span>
+            <input 
+              type="date" 
+              v-model="selectedDate" 
+              :max="todayStr"
+              class="date-input"
+              @change="handleDateChange"
+            />
+          </div>
+          
+          <div v-else-if="timeRange === 'week'" class="week-selector">
+            <span class="selector-label">选择周：</span>
+            <select v-model="selectedYear" class="week-select" @change="handleWeekChange">
+              <option v-for="year in availableYears" :key="year" :value="year">{{ year }}年</option>
+            </select>
+            <select v-model="selectedWeek" class="week-select" @change="handleWeekChange">
+              <option v-for="week in availableWeeks" :key="week.value" :value="week.value">
+                第{{ week.value }}周 ({{ week.label }})
+              </option>
+            </select>
+          </div>
+          
+          <div v-else class="month-selector">
+            <span class="selector-label">选择月份：</span>
+            <select v-model="selectedMonth" class="month-select" @change="handleMonthChange">
+              <option v-for="month in monthOptions" :key="month.value" :value="month.value">
+                {{ month.label }}
+              </option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -93,6 +122,9 @@
                   ></div>
                 </div>
                 <span class="event-count">{{ event.count }}</span>
+              </div>
+              <div v-if="eventStats.length === 0" class="empty-state">
+                <p>暂无事件数据</p>
               </div>
             </div>
           </div>
@@ -167,7 +199,7 @@
               >
                 <span :class="['rank-number', { top: index < 3 }]">{{ index + 1 }}</span>
                 <div class="merchant-info">
-                  <span class="merchant-name">{{ item.merchantName || '未知商家' }}</span>
+                  <span class="merchant-name">{{ item.merchantName || item.name || item.shopName || '未知商家' }}</span>
                   <span class="merchant-id">#{{ item.merchantId }}</span>
                 </div>
                 <span class="merchant-count">{{ item.count }}次点击</span>
@@ -245,15 +277,37 @@
             </tbody>
           </table>
         </div>
+        
+        <div v-if="pagination.total > 0" class="pagination-section">
+          <button class="page-btn" :disabled="pagination.pageNum <= 1" @click="changePage(pagination.pageNum - 1)">上一页</button>
+          <span class="page-info">第 {{ pagination.pageNum }} / {{ pagination.totalPages }} 页</span>
+          <button class="page-btn" :disabled="pagination.pageNum >= pagination.totalPages" @click="changePage(pagination.pageNum + 1)">下一页</button>
+        </div>
       </div>
     </div>
   </AdminLayout>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
 import { getBehaviorStats, getBehaviorLogs } from '../../api/behavior'
+
+function getCurrentWeekNumber() {
+  const now = new Date()
+  const startOfYear = new Date(now.getFullYear(), 0, 1)
+  const diff = now - startOfYear
+  const oneWeek = 1000 * 60 * 60 * 24 * 7
+  return Math.ceil(diff / oneWeek)
+}
+
+function getFirstDayOfWeek(year, weekNum) {
+  const date = new Date(year, 0, 1)
+  const dayOfWeek = date.getDay() || 7
+  const diff = (weekNum - 1) * 7 - (dayOfWeek - 1)
+  date.setDate(date.getDate() + diff)
+  return date
+}
 
 const sidebarItems = [
   { key: 'overview', label: '数据概览', icon: '📊' },
@@ -262,21 +316,30 @@ const sidebarItems = [
 ]
 
 const activeTab = ref('overview')
-const selectedTimeRange = ref('7days')
-const customStartTime = ref('')
-const customEndTime = ref('')
+const timeRange = ref('week')
+const today = new Date()
+const todayStr = today.toISOString().split('T')[0]
+const selectedDate = ref(todayStr)
+const selectedYear = ref(today.getFullYear())
+const selectedWeek = ref(getCurrentWeekNumber())
+const selectedMonth = ref(todayStr.substring(0, 7))
 const eventTypeFilter = ref('')
 
 const stats = ref({})
 const logs = ref([])
 const loading = ref(false)
 
-const timeRangeOptions = [
-  { label: '今日', value: 'today' },
-  { label: '昨日', value: 'yesterday' },
-  { label: '近7天', value: '7days' },
-  { label: '近30天', value: '30days' },
-  { label: '自定义', value: 'custom' },
+const pagination = reactive({
+  pageNum: 1,
+  pageSize: 20,
+  total: 0,
+  totalPages: 0
+})
+
+const timeRanges = [
+  { label: '按日', value: 'day' },
+  { label: '按周', value: 'week' },
+  { label: '按月', value: 'month' },
 ]
 
 const hotKeywords = computed(() => stats.value.hotKeywords || [])
@@ -293,6 +356,42 @@ const clickCount = computed(() => {
   return stats.value.clickCount || 0
 })
 
+const availableYears = computed(() => {
+  const currentYear = today.getFullYear()
+  return [currentYear - 1, currentYear, currentYear + 1]
+})
+
+const availableWeeks = computed(() => {
+  const options = []
+  const year = selectedYear.value
+  for (let i = 1; i <= 52; i++) {
+    const firstDay = getFirstDayOfWeek(year, i)
+    const lastDay = new Date(firstDay)
+    lastDay.setDate(lastDay.getDate() + 6)
+    const firstMonth = firstDay.getMonth() + 1
+    const firstDayNum = firstDay.getDate()
+    const lastMonth = lastDay.getMonth() + 1
+    const lastDayNum = lastDay.getDate()
+    options.push({
+      value: i,
+      label: `${firstMonth}月${firstDayNum}日-${lastMonth}月${lastDayNum}日`
+    })
+  }
+  return options
+})
+
+const monthOptions = computed(() => {
+  const options = []
+  const year = today.getFullYear()
+  for (let i = 1; i <= 12; i++) {
+    options.push({
+      value: `${year}-${String(i).padStart(2, '0')}`,
+      label: `${year}年${i}月`
+    })
+  }
+  return options
+})
+
 const dailyTrendData = computed(() => {
   const dailyStats = stats.value.dailyStats || []
   const dailyMap = {}
@@ -303,8 +402,50 @@ const dailyTrendData = computed(() => {
     }
     dailyMap[date].total += item.count || 0
   })
-  return Object.values(dailyMap).slice(-7)
+
+  const dates = generateDateRange(timeRange.value)
+  return dates.map(dateStr => ({
+    date: dateStr,
+    total: dailyMap[dateStr] ? dailyMap[dateStr].total : 0
+  }))
 })
+
+const generateDateRange = (range) => {
+  const dates = []
+  let startDate
+  let daysToGenerate
+
+  switch (range) {
+    case 'day':
+      const dateParts = selectedDate.value.split('-')
+      startDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2])
+      daysToGenerate = 1
+      break
+    case 'week':
+      startDate = getFirstDayOfWeek(selectedYear.value, selectedWeek.value)
+      daysToGenerate = 7
+      break
+    case 'month':
+      const monthParts = selectedMonth.value.split('-')
+      startDate = new Date(monthParts[0], monthParts[1] - 1, 1)
+      daysToGenerate = new Date(monthParts[0], monthParts[1], 0).getDate()
+      break
+    default:
+      startDate = getFirstDayOfWeek(today.getFullYear(), getCurrentWeekNumber())
+      daysToGenerate = 7
+  }
+
+  for (let i = 0; i < daysToGenerate; i++) {
+    const d = new Date(startDate)
+    d.setDate(startDate.getDate() + i)
+    const year = d.getUTCFullYear()
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    dates.push(`${year}-${month}-${day}`)
+  }
+
+  return dates
+}
 
 const formatNumber = (num) => {
   if (num >= 10000) {
@@ -369,52 +510,52 @@ const getLogDetail = (log) => {
   return '-'
 }
 
-const selectTimeRange = (range) => {
-  selectedTimeRange.value = range
-  loadStats()
+const setTimeRange = async (range) => {
+  timeRange.value = range
+  await loadStats()
 }
 
-const applyCustomTime = () => {
-  if (customStartTime.value && customEndTime.value) {
-    selectedTimeRange.value = 'custom'
-    loadStats()
-  }
+const handleDateChange = async () => {
+  await loadStats()
+}
+
+const handleWeekChange = async () => {
+  await loadStats()
+}
+
+const handleMonthChange = async () => {
+  await loadStats()
 }
 
 const buildTimeParams = () => {
-  const now = new Date()
   let startTime, endTime
 
-  switch (selectedTimeRange.value) {
-    case 'today':
-      startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      endTime = now
+  switch (timeRange.value) {
+    case 'day':
+      const dateParts = selectedDate.value.split('-')
+      startTime = new Date(dateParts[0], dateParts[1] - 1, dateParts[2])
+      endTime = new Date(dateParts[0], dateParts[1] - 1, parseInt(dateParts[2]) + 1)
       break
-    case 'yesterday':
-      startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-      endTime = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    case 'week':
+      startTime = getFirstDayOfWeek(selectedYear.value, selectedWeek.value)
+      endTime = new Date(startTime)
+      endTime.setDate(endTime.getDate() + 7)
       break
-    case '7days':
-      startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      endTime = now
-      break
-    case '30days':
-      startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-      endTime = now
-      break
-    case 'custom':
-      startTime = customStartTime.value ? new Date(customStartTime.value) : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      endTime = customEndTime.value ? new Date(customEndTime.value) : now
+    case 'month':
+      const monthParts = selectedMonth.value.split('-')
+      startTime = new Date(monthParts[0], monthParts[1] - 1, 1)
+      endTime = new Date(monthParts[0], parseInt(monthParts[1]), 1)
       break
     default:
-      startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      endTime = now
+      startTime = getFirstDayOfWeek(today.getFullYear(), getCurrentWeekNumber())
+      endTime = new Date(startTime)
+      endTime.setDate(endTime.getDate() + 7)
   }
 
-  return {
-    startTime: formatDateTime(startTime),
-    endTime: formatDateTime(endTime),
-  }
+  const params = {}
+  if (startTime) params.startTime = formatDateTime(startTime)
+  if (endTime) params.endTime = formatDateTime(endTime)
+  return params
 }
 
 const formatDateTime = (date) => {
@@ -425,7 +566,7 @@ const formatDateTime = (date) => {
   const hours = pad(date.getUTCHours())
   const minutes = pad(date.getUTCMinutes())
   const seconds = pad(date.getUTCSeconds())
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}Z`
 }
 
 const loadStats = async () => {
@@ -443,6 +584,10 @@ const loadStats = async () => {
     }
   } catch (error) {
     console.error('加载统计数据失败:', error)
+    if (error.response) {
+      console.error('响应状态:', error.response.status)
+      console.error('响应数据:', JSON.stringify(error.response.data))
+    }
   } finally {
     loading.value = false
   }
@@ -454,10 +599,14 @@ const loadLogs = async () => {
     const params = {
       ...buildTimeParams(),
       eventType: eventTypeFilter.value || undefined,
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize,
     }
     const response = await getBehaviorLogs(params)
     if (response.success && response.data) {
-      logs.value = response.data
+      logs.value = response.data.list || response.data
+      pagination.total = response.data.total || 0
+      pagination.totalPages = response.data.totalPages || Math.ceil(pagination.total / pagination.pageSize)
     }
   } catch (error) {
     console.error('加载日志失败:', error)
@@ -466,8 +615,23 @@ const loadLogs = async () => {
   }
 }
 
+const changePage = (page) => {
+  if (page >= 1 && page <= pagination.totalPages) {
+    pagination.pageNum = page
+    loadLogs()
+  }
+}
+
 onMounted(() => {
   loadStats()
+})
+
+watch(activeTab, (newTab) => {
+  if (newTab === 'logs') {
+    loadLogs()
+  } else if (newTab === 'overview') {
+    loadStats()
+  }
 })
 </script>
 
@@ -476,70 +640,73 @@ onMounted(() => {
   width: 100%;
 }
 
-.time-filter-bar {
+.time-filter {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
-  padding: 16px 24px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   flex-wrap: wrap;
 }
 
-.time-options {
+.filter-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #5a6a7a;
+}
+
+.filter-buttons {
   display: flex;
   gap: 8px;
 }
 
-.time-option {
-  padding: 8px 16px;
-  border: 1px solid #e8e8e8;
+.filter-btn {
+  padding: 10px 20px;
+  border: 2px solid #e8e8e8;
   border-radius: 20px;
   background: #fff;
+  color: #5a6a7a;
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s;
 }
 
-.time-option:hover {
+.filter-btn:hover {
   border-color: #1890ff;
   color: #1890ff;
 }
 
-.time-option.active {
+.filter-btn.active {
+  border-color: #1890ff;
   background: #1890ff;
   color: #fff;
-  border-color: #1890ff;
 }
 
-.custom-time {
+.date-selector {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.custom-time input {
+.selector-label {
+  font-size: 14px;
+  color: #5a6a7a;
+}
+
+.date-input, .week-select, .month-select {
   padding: 8px 12px;
-  border: 1px solid #e8e8e8;
+  border: 1px solid #d9d9d9;
   border-radius: 8px;
   font-size: 14px;
-}
-
-.time-separator {
-  color: #999;
-}
-
-.apply-time-btn {
-  padding: 8px 16px;
-  background: #1890ff;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  color: #1f2d3d;
+  background: #fff;
   cursor: pointer;
+}
+
+.date-input:focus, .week-select:focus, .month-select:focus {
+  outline: none;
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 
 .stats-cards {
@@ -646,36 +813,67 @@ onMounted(() => {
 }
 
 .daily-trend {
-  height: 200px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #d9d9d9 transparent;
+}
+
+.daily-trend::-webkit-scrollbar {
+  height: 6px;
+}
+
+.daily-trend::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.daily-trend::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+.daily-trend::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
 }
 
 .trend-bars {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
-  height: 160px;
-  padding-top: 20px;
+  gap: 8px;
+  height: 180px;
+  padding: 12px;
+  min-width: max-content;
 }
 
 .trend-bar-wrapper {
+  flex-shrink: 0;
+  width: 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  flex: 1;
+  height: 100%;
+  justify-content: flex-end;
+  position: relative;
 }
 
 .trend-bar {
-  width: 32px;
+  width: 100%;
+  max-width: 36px;
   background: linear-gradient(180deg, #1890ff 0%, #40a9ff 100%);
-  border-radius: 4px 4px 0 0;
+  border-radius: 6px 6px 0 0;
   transition: height 0.5s ease;
   min-height: 5px;
 }
 
+.trend-bar:hover {
+  opacity: 0.8;
+}
+
 .trend-date {
-  font-size: 12px;
-  color: #999;
+  font-size: 11px;
+  color: #909399;
+  margin-top: 8px;
 }
 
 .rank-list {
@@ -871,5 +1069,41 @@ onMounted(() => {
   text-align: center;
   padding: 40px;
   color: #999;
+}
+
+.pagination-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.page-btn {
+  padding: 8px 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #fff;
+  color: #5a6a7a;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.page-btn:hover:not(:disabled) {
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+.page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-info {
+  font-size: 14px;
+  color: #5a6a7a;
 }
 </style>
