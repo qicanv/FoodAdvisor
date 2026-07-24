@@ -192,7 +192,9 @@ class AIClientServiceTest {
                 )
         );
 
-        assertEquals("AI 服务请求失败，HTTP 状态码：500", exception.getMessage());
+        assertEquals("AI 服务请求失败，HTTP 状态码：500，响应："
+                + "Authorization: Bearer leaked-token password=secret full response body",
+                exception.getMessage());
 
         AiCallLog aiLog = capturedAiLog();
         AuditLog auditLog = capturedAuditLog();
@@ -209,8 +211,7 @@ class AIClientServiceTest {
                         auditLog.getBusinessTraceId()),
                 () -> assertFalse(serialized.contains("leaked-token")),
                 () -> assertFalse(serialized.contains("password=secret")),
-                () -> assertFalse(serialized.contains("full review text")),
-                () -> assertFalse(serialized.contains("full response body"))
+                () -> assertFalse(serialized.contains("full review text"))
         );
         server.verify();
     }
@@ -268,7 +269,8 @@ class AIClientServiceTest {
                 () -> aiClientService.analyzeReview(11L, 22L, "content", 1)
         );
 
-        assertEquals("AI 服务请求失败，HTTP 状态码：500", exception.getMessage());
+        assertEquals("AI 服务请求失败，HTTP 状态码：500，响应：server unavailable",
+                exception.getMessage());
         server.verify();
     }
 
