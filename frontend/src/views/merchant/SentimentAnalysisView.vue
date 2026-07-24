@@ -235,6 +235,12 @@
                 :title="'点击筛选包含「' + kw.word + '」的评价'"
               >{{ kw.word }}<small>{{ kw.count }}</small></span>
             </div>
+            <!-- 关键词提取反馈 -->
+            <AnalysisFeedbackPanel
+              v-if="selectedStoreId > 0"
+              :merchantId="selectedStoreId"
+              analysisType="KEYWORD"
+            />
           </div>
         </div>
 
@@ -258,6 +264,12 @@
               </div>
               <div v-if="complaintIssues.length === 0" class="empty-hint">暂无差评数据</div>
             </div>
+            <!-- 差评归因反馈 -->
+            <AnalysisFeedbackPanel
+              v-if="selectedStoreId > 0"
+              :merchantId="selectedStoreId"
+              analysisType="ISSUE_ATTRIBUTION"
+            />
           </div>
         </div>
       </div>
@@ -290,6 +302,12 @@
               </div>
             </div>
           </div>
+          <!-- 商家亮点反馈 -->
+          <AnalysisFeedbackPanel
+            v-if="selectedStoreId > 0 && highlights.length > 0"
+            :merchantId="selectedStoreId"
+            analysisType="HIGHLIGHT"
+          />
         </div>
       </div>
 
@@ -628,6 +646,12 @@
           </div>
         </div>
       </div>
+      <!-- 情感分析反馈 -->
+      <AnalysisFeedbackPanel
+        v-if="selectedStoreId > 0"
+        :merchantId="selectedStoreId"
+        analysisType="SENTIMENT"
+      />
     </div>
   </MerchantLayout>
 </template>
@@ -635,6 +659,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import MerchantLayout from '../../components/MerchantLayout.vue'
+import AnalysisFeedbackPanel from '../../components/AnalysisFeedbackPanel.vue'
 import { getSentimentSummary, getSentimentReviews, triggerBatchAnalysis } from '../../api/sentiment'
 import { getMyMerchants, getMerchantHighlights, generateMerchantHighlights, getMerchantHighlightEvidences } from '../../api/merchantConsole'
 import { getIssueCategoryReviews } from '../../api/reviewAnalysis'

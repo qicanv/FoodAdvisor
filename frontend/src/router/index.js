@@ -264,6 +264,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
   },
   {
+    path: '/admin/analysis-feedback',
+    name: 'admin-analysis-feedback',
+    component: () => import('../views/admin/AnalysisFeedbackView.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
+  },
+  {
     path: '/admin/fraud-cases',
     name: 'admin-fraud-cases',
     component: () => import('../views/admin/fraud/FraudCaseList.vue'),

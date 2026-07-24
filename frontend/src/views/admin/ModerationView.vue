@@ -84,7 +84,7 @@
           <div class="stat-label">降级检测（30天）</div>
         </div>
       </div>
-      
+    </div>
     </div>
 
     <!-- 违规类型分布 -->
