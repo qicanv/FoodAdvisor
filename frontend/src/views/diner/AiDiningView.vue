@@ -1,19 +1,135 @@
 <template>
   <div class="ai-dining-page">
+    <aside
+      v-show="historySidebarOpen"
+      class="history-sidebar"
+      aria-label="历史对话"
+    >
+      <div class="history-sidebar-header">
+        <div class="history-sidebar-title">
+          <span class="history-sidebar-logo">✨</span>
+          <strong>历史对话</strong>
+        </div>
+
+        <button
+          type="button"
+          class="history-close-button"
+          aria-label="收起历史对话侧栏"
+          @click="closeHistorySidebar"
+        >
+          ‹
+        </button>
+      </div>
+
+      <button
+        type="button"
+        class="sidebar-new-session-button"
+        :disabled="initializing || sending || adjustingSuggestionKey !== ''"
+        @click="startNewConversation"
+      >
+        <span>＋</span>
+        新建对话
+      </button>
+
+      <div class="history-sidebar-content">
+        <div
+          v-if="historyLoading"
+          class="history-state"
+        >
+          正在加载...
+        </div>
+
+        <div
+          v-else-if="historyError"
+          class="history-state history-error"
+        >
+          {{ historyError }}
+
+          <button
+            type="button"
+            class="history-retry-button"
+            @click="loadHistorySessions"
+          >
+            重新加载
+          </button>
+        </div>
+
+        <div
+          v-else-if="historySessions.length === 0"
+          class="history-state"
+        >
+          暂无历史对话
+        </div>
+
+        <div v-else class="history-session-list">
+          <div
+            v-for="session in historySessions"
+            :key="session.sessionId"
+            class="history-session-row"
+          >
+            <button
+              type="button"
+              class="history-session-item"
+              :class="{ active: session.sessionId === sessionId }"
+              :disabled="
+                initializing ||
+                sending ||
+                adjustingSuggestionKey !== '' ||
+                deletingSessionId === session.sessionId
+              "
+              @click="switchHistorySession(session)"
+            >
+              <span class="history-session-title">
+                {{ session.title }}
+              </span>
+
+              <span
+                v-if="session.updatedAt"
+                class="history-session-time"
+              >
+                {{ formatSessionTime(session.updatedAt) }}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              class="history-session-delete"
+              title="删除对话"
+              :disabled="
+                initializing ||
+                sending ||
+                deletingSessionId !== null
+              "
+              @click.stop="deleteHistorySession(session)"
+            >
+              {{
+                deletingSessionId === session.sessionId
+                  ? '删除中'
+                  : '删除'
+              }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="ai-dining-main">
     <header class="page-header">
       <div class="header-container">
-        <button
-          class="back-button"
-          type="button"
-          @click="router.push('/diner/home')"
-        >
-          <span class="back-icon">←</span>
-          <span>返回首页</span>
-        </button>
+        <div class="header-leading">
+          <button
+            v-if="!historySidebarOpen"
+            type="button"
+            class="history-button"
+            :disabled="initializing || sending || adjustingSuggestionKey !== ''"
+            @click="toggleHistorySidebar"
+          >
+            <span class="history-button-icon">☰</span>
+            历史对话
+          </button>
+        </div>
 
         <div class="page-title">
-          <span class="title-eyebrow">✨ 智能探店对话</span>
-
           <div class="title-line">
             <h1>AI 探店</h1>
             <span class="online-badge">
@@ -21,24 +137,16 @@
               在线
             </span>
           </div>
-
-          <p>描述人数、预算、菜系、距离和用餐场景，快速获得个性化推荐</p>
         </div>
 
         <div class="header-actions">
-          <span class="session-state">
-            <span class="session-dot"></span>
-            {{ sessionId ? '会话已保存' : '正在准备会话' }}
-          </span>
-
           <button
+            class="back-button"
             type="button"
-            class="new-session-button"
-            :disabled="initializing || sending || adjustingSuggestionKey !== ''"
-            @click="startNewConversation"
+            @click="router.push('/diner/home')"
           >
-            <span>＋</span>
-            新建对话
+            <span class="back-icon">⌂</span>
+            <span>返回首页</span>
           </button>
         </div>
       </div>
@@ -51,7 +159,6 @@
 
           <span class="assistant-copy">
             <strong>食尚参谋 AI 助手</strong>
-            <small>根据真实商家资料与评价为你筛选餐厅</small>
           </span>
         </div>
 
@@ -94,7 +201,6 @@
         <div v-if="initializing" class="state-panel">
           <span class="state-spinner"></span>
           <strong>正在加载会话</strong>
-          <p>马上就好，请稍候片刻</p>
         </div>
 
         <div v-else-if="messages.length === 0" class="empty-panel">
@@ -102,17 +208,7 @@
             <span class="empty-icon">✨</span>
           </div>
 
-          <span class="empty-eyebrow">开始一次智能探店</span>
           <h2>想吃什么，直接告诉我</h2>
-          <p>
-            你可以一次说出人数、预算、菜系、距离和场景，
-            我会帮你提取条件并推荐合适的商家。
-          </p>
-
-          <div class="example-card">
-            <span>例如</span>
-            <strong>四个人，人均八十，想吃川菜，三公里内，适合朋友聚餐。</strong>
-          </div>
         </div>
 
         <article
@@ -306,15 +402,11 @@
             maxlength="1000"
             rows="2"
             :disabled="initializing || sending"
-            placeholder="说说你的用餐需求，例如：两个人，人均 100 元，想吃火锅..."
+            placeholder="输入你的用餐需求..."
             @keydown.enter.exact.prevent="submitMessage"
           />
 
           <div class="composer-footer">
-            <span class="composer-tip">
-              Enter 发送 · Shift + Enter 换行
-            </span>
-
             <div class="composer-actions">
               <span class="word-count">{{ draft.length }}/1000</span>
 
@@ -330,6 +422,14 @@
         </div>
       </form>
     </main>
+
+    </div>
+
+    <div
+      v-if="historySidebarOpen"
+      class="history-mobile-mask"
+      @click="closeHistorySidebar"
+    ></div>
 
     <div
       v-if="evidenceDialogOpen"
@@ -421,7 +521,9 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   adjustDiningRecommendation,
   createDiningSession,
+  deleteDiningSession,
   getDiningMessages,
+  getDiningSessions,
   getRecommendationEvidences,
   sendDiningMessage
 } from '../../api/aiDining'
@@ -445,6 +547,13 @@ const evidenceLoading = ref(false)
 const evidenceError = ref('')
 const evidences = ref([])
 const pendingRequest = ref(null)
+const historySidebarOpen = ref(
+  typeof window !== 'undefined' && window.innerWidth > 980
+)
+const historyLoading = ref(false)
+const historyError = ref('')
+const historySessions = ref([])
+const deletingSessionId = ref(null)
 
 const currentUserId = () => {
   const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
@@ -457,6 +566,49 @@ const currentUserId = () => {
 }
 
 const sessionStorageKey = () => `foodadvisor.aiDining.session.${currentUserId()}`
+
+const sessionIdOf = session => Number(
+  session?.sessionId ?? session?.id
+)
+
+const normalizeSessionSummary = session => ({
+  sessionId: sessionIdOf(session),
+  title:
+    session?.title ||
+    session?.sessionTitle ||
+    '未命名对话',
+  updatedAt:
+    session?.updatedAt ||
+    session?.lastMessageAt ||
+    session?.createdAt ||
+    ''
+})
+
+const extractSessionList = response => {
+  const data = response?.data
+
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.sessions)) return data.sessions
+  if (Array.isArray(data?.records)) return data.records
+  if (Array.isArray(data?.items)) return data.items
+
+  return []
+}
+
+const formatSessionTime = value => {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+}
 
 const createRequestId = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
@@ -588,6 +740,145 @@ const loadHistory = async id => {
   messages.value = (response.data?.messages || []).map(normalizeHistoryMessage)
 }
 
+const loadHistorySessions = async () => {
+  historyLoading.value = true
+  historyError.value = ''
+
+  try {
+    const response = await getDiningSessions(currentUserId())
+
+    if (!response.success) {
+      throw new Error(response.message || '历史对话加载失败')
+    }
+
+    historySessions.value = extractSessionList(response)
+      .map(normalizeSessionSummary)
+      .filter(item => Number.isSafeInteger(item.sessionId) && item.sessionId > 0)
+      .sort((left, right) => {
+        const leftTime = new Date(left.updatedAt || 0).getTime()
+        const rightTime = new Date(right.updatedAt || 0).getTime()
+        return rightTime - leftTime
+      })
+  } catch (error) {
+    historySessions.value = []
+    historyError.value =
+      error.message || '历史对话加载失败，请稍后重试'
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+const isMobileViewport = () =>
+  typeof window !== 'undefined' && window.innerWidth <= 980
+
+const toggleHistorySidebar = async () => {
+  historySidebarOpen.value = !historySidebarOpen.value
+
+  if (historySidebarOpen.value) {
+    await loadHistorySessions()
+  }
+}
+
+const closeHistorySidebar = () => {
+  historySidebarOpen.value = false
+}
+
+const switchHistorySession = async session => {
+  const targetSessionId = sessionIdOf(session)
+
+  if (
+    !Number.isSafeInteger(targetSessionId) ||
+    targetSessionId <= 0
+  ) {
+    historyError.value = '该历史会话信息无效'
+    return
+  }
+
+  if (targetSessionId === sessionId.value) {
+    if (isMobileViewport()) {
+      closeHistorySidebar()
+    }
+    return
+  }
+
+  initializing.value = true
+  errorMessage.value = ''
+
+  try {
+    await loadHistory(targetSessionId)
+    sessionId.value = targetSessionId
+    localStorage.setItem(
+      sessionStorageKey(),
+      String(targetSessionId)
+    )
+    currentConstraints.value = {}
+    pendingRequest.value = null
+    if (isMobileViewport()) {
+      closeHistorySidebar()
+    }
+  } catch (error) {
+    historyError.value =
+      error.message || '历史消息加载失败，请稍后重试'
+  } finally {
+    initializing.value = false
+    scrollToBottom()
+  }
+}
+
+const deleteHistorySession = async session => {
+  const targetSessionId = sessionIdOf(session)
+
+  if (
+    !Number.isSafeInteger(targetSessionId) ||
+    targetSessionId <= 0
+  ) {
+    historyError.value = '该历史会话信息无效'
+    return
+  }
+
+  const confirmed = window.confirm(
+    `确定删除“${session.title || '该对话'}”吗？\n\n` +
+    '删除后将不再显示，但系统仍会保留相关记录。'
+  )
+
+  if (!confirmed) return
+
+  deletingSessionId.value = targetSessionId
+  historyError.value = ''
+
+  try {
+    const response = await deleteDiningSession(targetSessionId)
+
+    if (!response.success) {
+      throw new Error(response.message || '删除对话失败')
+    }
+
+    historySessions.value = historySessions.value.filter(
+      item => item.sessionId !== targetSessionId
+    )
+
+    if (targetSessionId !== sessionId.value) {
+      return
+    }
+
+    const nextSession = historySessions.value[0]
+
+    if (nextSession) {
+      await switchHistorySession(nextSession)
+      return
+    }
+
+    await createSession()
+    resetConversationView()
+    await loadHistorySessions()
+  } catch (error) {
+    historyError.value =
+      error.message || '删除对话失败，请稍后重试'
+  } finally {
+    deletingSessionId.value = null
+  }
+}
+
 const createSession = async () => {
   const response = await createDiningSession('AI探店对话')
   if (!response.success || !response.data?.sessionId) {
@@ -628,6 +919,10 @@ const startNewConversation = async () => {
     // 再清空页面，避免创建失败时丢掉当前聊天界面。
     await createSession()
     resetConversationView()
+
+    if (historySidebarOpen.value) {
+      await loadHistorySessions()
+    }
   } catch (error) {
     errorMessage.value =
       error.message || '新建对话失败，请稍后重试'
@@ -900,7 +1195,13 @@ const closeEvidence = () => {
   evidenceDialogOpen.value = false
 }
 
-onMounted(initialize)
+onMounted(async () => {
+  await initialize()
+
+  if (historySidebarOpen.value) {
+    await loadHistorySessions()
+  }
+})
 </script>
 
 <style scoped>
@@ -919,7 +1220,7 @@ onMounted(initialize)
   height: 100vh;
   height: 100dvh;
   min-height: 0;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   color: #29231e;
   font-family:
@@ -942,6 +1243,15 @@ onMounted(initialize)
     #f8f6f2;
 }
 
+.ai-dining-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .ai-dining-page button,
 .ai-dining-page textarea {
   font-family: inherit;
@@ -962,9 +1272,16 @@ onMounted(initialize)
   max-width: 1180px;
   min-width: 0;
   margin: 0 auto;
-  grid-template-columns: minmax(150px, 0.55fr) minmax(0, 1.5fr) minmax(230px, 0.7fr);
+  grid-template-columns: minmax(150px, 0.65fr) minmax(0, 1.5fr) minmax(150px, 0.65fr);
   align-items: center;
   gap: 24px;
+}
+
+.header-leading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .back-button {
@@ -973,7 +1290,7 @@ onMounted(initialize)
   max-width: 100%;
   align-items: center;
   gap: 8px;
-  justify-self: start;
+  justify-self: end;
   padding: 10px 13px;
   border: 1px solid #e7e0d8;
   border-radius: 12px;
@@ -991,7 +1308,7 @@ onMounted(initialize)
 }
 
 .back-button:hover {
-  transform: translateX(-2px);
+  transform: translateX(2px);
   border-color: #fdba74;
   color: #c2410c;
   background: #fff8f1;
@@ -1063,14 +1380,6 @@ onMounted(initialize)
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
 }
 
-.page-title p {
-  max-width: 620px;
-  margin: 2px auto 0;
-  color: #80766e;
-  font-size: 14px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
 
 .header-actions {
   display: flex;
@@ -1094,6 +1403,95 @@ onMounted(initialize)
   width: 7px;
   height: 7px;
   background: #a78bfa;
+}
+
+.history-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #655c54;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
+}
+
+.history-button:hover:not(:disabled) {
+  border-color: #e7e0d8;
+  color: #6d28d9;
+  background: #faf8ff;
+}
+
+.history-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.history-button-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.history-session-row {
+  position: relative;
+  min-width: 0;
+}
+
+.history-session-row .history-session-item {
+  padding-right: 58px;
+}
+
+.history-session-delete {
+  position: absolute;
+  top: 8px;
+  right: 7px;
+  min-width: 44px;
+  height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  color: #8a8178;
+  font-size: 12px;
+  font-weight: 600;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 0.2s,
+    color 0.2s,
+    background 0.2s;
+}
+
+.history-session-row:hover .history-session-delete,
+.history-session-row:focus-within .history-session-delete {
+  opacity: 1;
+}
+
+.history-session-delete:hover:not(:disabled) {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+.history-session-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (hover: none) {
+  .history-session-delete {
+    opacity: 1;
+  }
 }
 
 .new-session-button {
@@ -1203,14 +1601,6 @@ onMounted(initialize)
   line-height: 1.4;
 }
 
-.assistant-copy small {
-  overflow: hidden;
-  color: #938980;
-  font-size: 12px;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .location-toolbar {
   display: flex;
@@ -1374,13 +1764,6 @@ onMounted(initialize)
   font-size: 34px;
 }
 
-.empty-eyebrow {
-  margin-bottom: 6px;
-  color: #7c3aed;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
 
 .empty-panel h2 {
   margin: 0;
@@ -1389,45 +1772,9 @@ onMounted(initialize)
   line-height: 1.4;
 }
 
-.empty-panel > p {
-  max-width: 570px;
-  margin: 10px auto 0;
-  color: #80766e;
-  font-size: 16px;
-  line-height: 1.75;
-}
 
-.example-card {
-  display: flex;
-  max-width: 100%;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 22px;
-  padding: 14px 16px;
-  border: 1px solid #f3dfce;
-  border-radius: 14px;
-  text-align: left;
-  background: #fffaf5;
-}
 
-.example-card span {
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border-radius: 6px;
-  color: #c2410c;
-  font-size: 12px;
-  font-weight: 700;
-  background: #ffedd5;
-}
 
-.example-card strong {
-  min-width: 0;
-  color: #655c54;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.65;
-  overflow-wrap: anywhere;
-}
 
 .state-panel {
   gap: 8px;
@@ -1439,10 +1786,6 @@ onMounted(initialize)
   font-size: 17px;
 }
 
-.state-panel p {
-  margin: 0;
-  font-size: 14px;
-}
 
 .state-spinner {
   width: 34px;
@@ -1999,18 +2342,11 @@ onMounted(initialize)
   display: flex;
   min-width: 0;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
   padding: 4px 4px 1px 10px;
 }
 
-.composer-tip {
-  min-width: 0;
-  color: #a09890;
-  font-size: 12px;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
 
 .composer-actions {
   display: flex;
@@ -2066,6 +2402,201 @@ onMounted(initialize)
   border-radius: 7px;
   color: #6d28d9;
   background: rgba(255, 255, 255, 0.9);
+}
+
+
+.history-sidebar {
+  display: flex;
+  width: 286px;
+  min-width: 286px;
+  height: 100%;
+  flex: 0 0 286px;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #e7e0d8;
+  background: rgba(248, 247, 244, 0.98);
+}
+
+.history-sidebar-header {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 14px 10px;
+}
+
+.history-sidebar-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  color: #312a25;
+  font-size: 15px;
+}
+
+.history-sidebar-logo {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border: 1px solid #ddd6fe;
+  border-radius: 9px;
+  background: #f5f3ff;
+}
+
+.history-close-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  color: #7d746c;
+  font-size: 26px;
+  line-height: 1;
+  background: transparent;
+  cursor: pointer;
+}
+
+.history-close-button:hover {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.sidebar-new-session-button {
+  display: flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  margin: 2px 12px 10px;
+  padding: 0 13px;
+  border: 1px solid #ded8d1;
+  border-radius: 11px;
+  color: #3f3832;
+  font-size: 14px;
+  font-weight: 700;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    box-shadow 0.2s;
+}
+
+.sidebar-new-session-button:hover:not(:disabled) {
+  border-color: #c4b5fd;
+  background: #faf8ff;
+  box-shadow: 0 5px 14px rgba(109, 40, 217, 0.08);
+}
+
+.sidebar-new-session-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.history-sidebar-content {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 4px 10px 14px;
+  scrollbar-color: #d6cec5 transparent;
+  scrollbar-width: thin;
+}
+
+.history-state {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 12px;
+  color: #8a8178;
+  font-size: 14px;
+  text-align: center;
+}
+
+.history-error {
+  color: #b42318;
+}
+
+.history-retry-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #c4b5fd;
+  border-radius: 9px;
+  color: #6d28d9;
+  font-weight: 700;
+  background: #fff;
+  cursor: pointer;
+}
+
+.history-session-list {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.history-session-item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 9px;
+  color: #4d453e;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+
+.history-session-item:hover:not(:disabled) {
+  background: #efede9;
+}
+
+.history-session-item.active {
+  color: #5b21b6;
+  background: #ede9fe;
+}
+
+.history-session-item:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.history-session-title {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-session-time {
+  color: #9a9087;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.history-mobile-mask {
+  display: none;
 }
 
 .dialog-mask {
@@ -2227,6 +2758,7 @@ onMounted(initialize)
   color: #9a3412 !important;
 }
 
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -2248,6 +2780,26 @@ onMounted(initialize)
 }
 
 @media (max-width: 980px) {
+  .history-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 290;
+    width: min(320px, calc(100vw - 52px));
+    min-width: 0;
+    height: 100dvh;
+    flex-basis: auto;
+    box-shadow: 18px 0 48px rgba(41, 35, 30, 0.18);
+  }
+
+  .history-mobile-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 280;
+    display: block;
+    background: rgba(41, 35, 30, 0.3);
+    backdrop-filter: blur(3px);
+  }
+
   .header-container {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
@@ -2286,11 +2838,7 @@ onMounted(initialize)
     font-size: 30px;
   }
 
-  .page-title p {
-    font-size: 14px;
-  }
-
-  .back-button {
+  .header-leading {
     grid-column: 1;
     grid-row: 2;
   }
@@ -2366,11 +2914,8 @@ onMounted(initialize)
     font-size: 28px;
   }
 
-  .page-title p {
-    max-width: 330px;
-  }
-
   .back-button,
+  .history-button,
   .new-session-button {
     min-height: 40px;
     padding-right: 11px;
@@ -2378,7 +2923,6 @@ onMounted(initialize)
     font-size: 13px;
   }
 
-  .assistant-copy small,
   .location-status {
     display: none;
   }
@@ -2436,10 +2980,6 @@ onMounted(initialize)
 
   .composer-footer {
     align-items: flex-end;
-  }
-
-  .composer-tip {
-    max-width: 155px;
   }
 
   .composer button[type="submit"] {
