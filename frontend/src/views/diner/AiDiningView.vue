@@ -127,6 +127,16 @@
                 {{ locationButtonText() }}
               </button>
 
+              <button
+                type="button"
+                class="map-toggle-toolbar-button"
+                :title="mapCollapsed ? '展开地图' : '收起地图'"
+                @click="toggleMap"
+              >
+                <span class="map-toggle-icon">📍</span>
+                {{ mapCollapsed ? "展开地图" : "收起地图" }}
+              </button>
+
               <span class="location-status">
                 <span
                   class="location-status-dot"
@@ -405,6 +415,42 @@
       </main>
     </div>
 
+    <aside
+      class="map-panel"
+      :class="{ collapsed: mapCollapsed }"
+      aria-label="地图"
+    >
+      <div class="map-panel-header">
+        <span class="map-panel-title">
+          <span class="map-panel-icon">📍</span>
+          地图
+        </span>
+        <button
+          type="button"
+          class="map-toggle-button"
+          :title="mapCollapsed ? '展开地图' : '收起地图'"
+          @click="toggleMap"
+        >
+          {{ mapCollapsed ? "‹" : "›" }}
+        </button>
+      </div>
+      <div ref="mapContainerRef" class="map-container"></div>
+      <div v-if="!mapReady" class="map-loading-overlay">
+        <span class="map-loading-spinner"></span>
+        <span>地图加载中...</span>
+      </div>
+      <div class="map-legend">
+        <span class="legend-item">
+          <span class="legend-dot user-dot"></span>
+          我的位置
+        </span>
+        <span class="legend-item">
+          <span class="legend-dot merchant-dot"></span>
+          推荐商家
+        </span>
+      </div>
+    </aside>
+
     <div
       v-if="historySidebarOpen"
       class="history-mobile-mask"
@@ -476,7 +522,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   adjustDiningRecommendation,
@@ -515,6 +561,14 @@ const historyLoading = ref(false);
 const historyError = ref("");
 const historySessions = ref([]);
 const deletingSessionId = ref(null);
+
+// ---- map state ----
+const mapContainerRef = ref(null);
+const mapCollapsed = ref(false);
+const mapReady = ref(false);
+let mapInstance = null;
+let userMarkerInstance = null;
+const merchantMarkerInstances = [];
 
 const currentUserProfile = () => {
   const raw = localStorage.getItem("user") || localStorage.getItem("userInfo");
@@ -559,6 +613,14 @@ const extractSessionList = (response) => {
   if (Array.isArray(data?.items)) return data.items;
 
   return [];
+};
+
+const truncateForTitle = (text) => {
+  if (!text) return "AI探店对话";
+  const trimmed = text.trim();
+  if (!trimmed) return "AI探店对话";
+  const maxLen = 20;
+  return trimmed.length <= maxLen ? trimmed : trimmed.substring(0, maxLen);
 };
 
 const formatSessionTime = (value) => {
@@ -676,6 +738,10 @@ const requestCurrentLocation = () => {
         userLongitude: position.coords.longitude,
       };
       locationStatus.value = "READY";
+      updateUserLocationOnMap(
+        position.coords.latitude,
+        position.coords.longitude,
+      );
     },
     (error) => {
       currentLocation.value = null;
@@ -696,6 +762,285 @@ const requestCurrentLocation = () => {
 
 const isConstraintObject = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+
+// 静默获取位置（不显示错误提示），用于页面加载时自动定位
+const tryAutoLocation = () => {
+  if (!navigator.geolocation) return;
+  if (locationStatus.value === "READY" || locationStatus.value === "LOCATING")
+    return;
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      currentLocation.value = {
+        userLatitude: position.coords.latitude,
+        userLongitude: position.coords.longitude,
+      };
+      locationStatus.value = "READY";
+      updateUserLocationOnMap(
+        position.coords.latitude,
+        position.coords.longitude,
+      );
+    },
+    () => {
+      // 静默失败，不显示错误
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 8000,
+      maximumAge: 300000,
+    },
+  );
+};
+
+// 检查当前消息中是否有推荐商家
+const hasRecommendationsInHistory = () => {
+  return messages.value.some(
+    (m) => m.role === "ASSISTANT" && m.recommendations?.length,
+  );
+};
+
+// ---------- map helpers ----------
+const toggleMap = () => {
+  mapCollapsed.value = !mapCollapsed.value;
+  if (!mapCollapsed.value && !mapReady.value) {
+    nextTick(() => initMap());
+  } else if (!mapCollapsed.value && mapReady.value) {
+    nextTick(() => {
+      if (mapInstance) {
+        // 百度地图容器尺寸变化后需要重新设置中心点
+        setTimeout(() => {
+          mapInstance.resize();
+          fitMapToAllMarkers();
+        }, 300);
+      }
+    });
+  }
+};
+
+const waitForBMapGL = () => {
+  return new Promise((resolve, reject) => {
+    if (typeof BMapGL !== "undefined") {
+      resolve();
+      return;
+    }
+    let attempts = 0;
+    const maxAttempts = 15;
+    const interval = setInterval(() => {
+      attempts++;
+      if (typeof BMapGL !== "undefined") {
+        clearInterval(interval);
+        resolve();
+      } else if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        reject(new Error("百度地图加载超时"));
+      }
+    }, 200);
+  });
+};
+
+const initMap = async () => {
+  if (!mapContainerRef.value || mapReady.value) return;
+
+  try {
+    await waitForBMapGL();
+  } catch {
+    return;
+  }
+
+  mapInstance = new BMapGL.Map(mapContainerRef.value);
+  mapInstance.enableScrollWheelZoom(true);
+  mapInstance.addControl(new BMapGL.NavigationControl());
+  mapInstance.addControl(new BMapGL.ScaleControl());
+
+  // 默认中心：成都
+  mapInstance.centerAndZoom(new BMapGL.Point(104.0668, 30.5728), 13);
+
+  mapReady.value = true;
+
+  // 如果已有当前位置，立即添加标记
+  if (
+    currentLocation.value?.userLatitude != null &&
+    currentLocation.value?.userLongitude != null
+  ) {
+    updateUserLocationOnMap(
+      currentLocation.value.userLatitude,
+      currentLocation.value.userLongitude,
+    );
+  }
+
+  // 如果已有推荐结果，添加商家标记
+  syncAllMerchantMarkers();
+};
+
+const updateUserLocationOnMap = (lat, lng) => {
+  if (!mapInstance || !mapReady.value) return;
+  if (lat == null || lng == null) return;
+
+  // 清除旧标记与标签
+  if (userMarkerInstance) {
+    if (userMarkerInstance._label) {
+      mapInstance.removeOverlay(userMarkerInstance._label);
+    }
+    mapInstance.removeOverlay(userMarkerInstance);
+    userMarkerInstance = null;
+  }
+
+  const point = new BMapGL.Point(lng, lat);
+  userMarkerInstance = new BMapGL.Marker(point);
+  mapInstance.addOverlay(userMarkerInstance);
+
+  const label = new BMapGL.Label("我的位置", {
+    position: point,
+    offset: new BMapGL.Size(0, -30),
+  });
+  label.setStyle({
+    color: "#333",
+    fontSize: "12px",
+    padding: "2px 8px",
+    background: "rgba(255,255,255,0.92)",
+    borderRadius: "4px",
+    fontWeight: "bold",
+    border: "2px solid #ef4444",
+  });
+  mapInstance.addOverlay(label);
+  userMarkerInstance._label = label;
+
+  fitMapToAllMarkers();
+};
+
+const clearMerchantMarkers = () => {
+  if (!mapInstance) return;
+  merchantMarkerInstances.forEach((m) => {
+    mapInstance.removeOverlay(m);
+    if (m._label) mapInstance.removeOverlay(m._label);
+  });
+  merchantMarkerInstances.length = 0;
+};
+
+// 蓝色箭头图标（SVG data URL）
+const BLUE_MARKER_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">' +
+    '<defs><filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.25"/></filter></defs>' +
+    '<g filter="url(#shadow)">' +
+    '<path d="M16 2C9.37 2 4 7.37 4 14c0 9 12 24 12 24s12-15 12-24c0-6.63-5.37-12-12-12z" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5"/>' +
+    '<circle cx="16" cy="14" r="5" fill="white"/>' +
+    "</g></svg>",
+)}`;
+
+const addMerchantMarkers = (merchants) => {
+  if (!mapInstance || !mapReady.value) return;
+  if (!merchants || merchants.length === 0) return;
+
+  // 清除旧商家标记
+  clearMerchantMarkers();
+
+  const blueIcon = new BMapGL.Icon(BLUE_MARKER_SVG, new BMapGL.Size(32, 40), {
+    anchor: new BMapGL.Size(16, 40),
+    imageSize: new BMapGL.Size(32, 40),
+  });
+
+  merchants.forEach((merchant, index) => {
+    const lat = merchant.latitude != null ? Number(merchant.latitude) : null;
+    const lng = merchant.longitude != null ? Number(merchant.longitude) : null;
+
+    if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return;
+
+    const point = new BMapGL.Point(lng, lat);
+
+    // 蓝色箭头图标标记
+    const marker = new BMapGL.Marker(point, { icon: blueIcon });
+    mapInstance.addOverlay(marker);
+
+    // 标签
+    const labelText = merchant.merchantName || `推荐 #${index + 1}`;
+    const label = new BMapGL.Label(labelText, {
+      position: point,
+      offset: new BMapGL.Size(0, -42),
+    });
+    label.setStyle({
+      color: "#1d4ed8",
+      fontSize: "12px",
+      padding: "2px 8px",
+      background: "rgba(255,255,255,0.92)",
+      borderRadius: "4px",
+      fontWeight: "bold",
+      border: "2px solid #3b82f6",
+    });
+    mapInstance.addOverlay(label);
+    marker._label = label;
+    merchantMarkerInstances.push(marker);
+  });
+
+  fitMapToAllMarkers();
+};
+
+const fitMapToAllMarkers = () => {
+  if (!mapInstance || !mapReady.value) return;
+
+  const allPoints = [];
+
+  // 用户位置
+  if (
+    currentLocation.value?.userLatitude != null &&
+    currentLocation.value?.userLongitude != null
+  ) {
+    allPoints.push(
+      new BMapGL.Point(
+        currentLocation.value.userLongitude,
+        currentLocation.value.userLatitude,
+      ),
+    );
+  }
+
+  // 商家标记位置
+  merchantMarkerInstances.forEach((m) => {
+    allPoints.push(m.getPosition());
+  });
+
+  if (allPoints.length === 0) return;
+  if (allPoints.length === 1) {
+    mapInstance.centerAndZoom(allPoints[0], 15);
+    return;
+  }
+
+  mapInstance.setViewport(allPoints, {
+    margins: [40, 40, 40, 40],
+  });
+};
+
+const syncAllMerchantMarkers = () => {
+  if (!mapInstance || !mapReady.value) return;
+
+  // 收集当前所有消息中最后一条 assistant 消息的推荐商家
+  const lastAssistantMsg = [...messages.value]
+    .reverse()
+    .find((m) => m.role === "ASSISTANT" && m.recommendations?.length);
+
+  if (lastAssistantMsg) {
+    addMerchantMarkers(lastAssistantMsg.recommendations);
+  }
+};
+
+// 监听消息变化，自动更新地图上的商家标记
+watch(
+  () =>
+    messages.value
+      .filter((m) => m.role === "ASSISTANT" && m.recommendations?.length)
+      .map((m) => m.key),
+  () => {
+    if (mapReady.value && !mapCollapsed.value) {
+      nextTick(() => syncAllMerchantMarkers());
+    }
+  },
+  { deep: false },
+);
+
+// 地图初始化完成后，同步已有的推荐商家标记
+watch(mapReady, (ready) => {
+  if (ready && !mapCollapsed.value && hasRecommendationsInHistory()) {
+    nextTick(() => syncAllMerchantMarkers());
+  }
+});
 
 const normalizeHistoryMessage = (item) => ({
   key: `history-${item.id}`,
@@ -1064,6 +1409,23 @@ const submitMessage = async () => {
       currentConstraints.value;
     draft.value = "";
     pendingRequest.value = null;
+
+    // 首次消息成功后同步侧边栏标题
+    const historyEntry = historySessions.value.find(
+      (item) => item.sessionId === sessionId.value,
+    );
+    if (
+      historyEntry &&
+      (historyEntry.title === "AI探店对话" ||
+        historyEntry.title === "未命名对话")
+    ) {
+      historyEntry.title = truncateForTitle(content);
+    }
+
+    // 更新地图上的商家标记
+    if (mapReady.value && !mapCollapsed.value) {
+      nextTick(() => syncAllMerchantMarkers());
+    }
   } catch (error) {
     errorMessage.value = error.message || "网络或 AI 服务异常，请稍后重新发送";
   } finally {
@@ -1124,6 +1486,11 @@ const applySuggestion = async (message, suggestion) => {
       Array.isArray(recommendation.limitingConditions)
         ? recommendation.limitingConditions
         : [];
+
+    // 更新地图上的商家标记
+    if (mapReady.value && !mapCollapsed.value) {
+      nextTick(() => syncAllMerchantMarkers());
+    }
   } catch (error) {
     errorMessage.value = error.message || "调整条件后重新推荐失败，请稍后重试";
   } finally {
@@ -1192,6 +1559,37 @@ onMounted(async () => {
   if (historySidebarOpen.value) {
     await loadHistorySessions();
   }
+
+  // 移动端默认折叠地图
+  if (typeof window !== "undefined" && window.innerWidth <= 980) {
+    mapCollapsed.value = true;
+  }
+
+  // 如果历史消息中已有推荐商家，静默获取用户位置
+  if (hasRecommendationsInHistory()) {
+    tryAutoLocation();
+  }
+
+  // 地图在组件挂载后异步初始化（不阻塞页面）
+  nextTick(() => {
+    if (!mapCollapsed.value) {
+      initMap();
+    }
+  });
+});
+
+onUnmounted(() => {
+  // 清理地图资源
+  clearMerchantMarkers();
+  if (userMarkerInstance && mapInstance) {
+    if (userMarkerInstance._label) {
+      mapInstance.removeOverlay(userMarkerInstance._label);
+    }
+    mapInstance.removeOverlay(userMarkerInstance);
+    userMarkerInstance = null;
+  }
+  mapInstance = null;
+  merchantMarkerInstances.length = 0;
 });
 </script>
 
@@ -2643,6 +3041,206 @@ onMounted(async () => {
   color: #9a3412 !important;
 }
 
+/* ---- map panel ---- */
+.map-panel {
+  position: relative;
+  display: flex;
+  width: 400px;
+  min-width: 400px;
+  height: 100%;
+  flex: 0 0 400px;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid #e7e0d8;
+  background: #fcfbf9;
+  transition:
+    width 0.28s ease,
+    min-width 0.28s ease,
+    flex-basis 0.28s ease;
+}
+
+.map-panel.collapsed {
+  width: 44px;
+  min-width: 44px;
+  flex-basis: 44px;
+}
+
+.map-panel-header {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #eee8e1;
+  background: #faf8f5;
+}
+
+.map-panel.collapsed .map-panel-header {
+  padding: 12px 8px;
+  justify-content: center;
+}
+
+.map-panel-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: #312a25;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.map-panel.collapsed .map-panel-title {
+  display: none;
+}
+
+.map-panel-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.map-toggle-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border: 1px solid #e7e0d8;
+  border-radius: 8px;
+  color: #655c54;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background 0.2s;
+}
+
+.map-toggle-button:hover {
+  border-color: #c4b5fd;
+  color: #6d28d9;
+  background: #faf8ff;
+}
+
+.map-toggle-toolbar-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid #c4b5fd;
+  border-radius: 11px;
+  color: #6d28d9;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: #faf8ff;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.map-toggle-toolbar-button:hover {
+  border-color: #8b5cf6;
+  background: #f5f3ff;
+}
+
+.map-toggle-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.map-container {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background: #f0efe9;
+}
+
+.map-panel.collapsed .map-container {
+  display: none;
+}
+
+.map-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #80766e;
+  font-size: 13px;
+  background: rgba(252, 251, 249, 0.85);
+  pointer-events: none;
+}
+
+.map-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #eee8e1;
+  border-top-color: #8b5cf6;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.map-panel.collapsed .map-loading-overlay {
+  display: none;
+}
+
+.map-legend {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 12px;
+  border-top: 1px solid #eee8e1;
+  background: #faf8f5;
+}
+
+.map-panel.collapsed .map-legend {
+  display: none;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #655c54;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.legend-dot.user-dot {
+  background: #ef4444;
+  border: 2px solid #fecaca;
+}
+
+.legend-dot.merchant-dot {
+  background: #3b82f6;
+  border: 2px solid #bfdbfe;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -2690,6 +3288,36 @@ onMounted(async () => {
 
   .merchant-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 移动端地图：默认折叠，展开时作为右侧浮层 */
+  .map-panel {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 285;
+    width: min(380px, calc(100vw - 48px));
+    min-width: 0;
+    height: 100dvh;
+    flex-basis: auto;
+    box-shadow: -12px 0 36px rgba(41, 35, 30, 0.16);
+    transition:
+      transform 0.28s ease,
+      opacity 0.28s ease;
+  }
+
+  .map-panel.collapsed {
+    transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
+    width: min(380px, calc(100vw - 48px));
+    min-width: 0;
+    flex-basis: auto;
+  }
+
+  .map-toggle-toolbar-button {
+    min-height: 40px;
+    padding: 0 10px;
+    font-size: 13px;
   }
 }
 

@@ -1,6 +1,7 @@
 package com.foodadvisor.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -141,7 +142,13 @@ public class DiningDialogueMessageService {
             DialogueMessageRequest request
     ) {
         validateRequest(sessionId, request);
-        validateSessionOwner(sessionId, request.getUserId());
+        ChatSession session =
+                validateSessionOwner(sessionId, request.getUserId());
+
+        updateSessionTitleIfFirstMessage(
+                sessionId,
+                session.getTitle(),
+                request.getContent());
 
         DialogueMessageResponse existing =
                 findCompletedResponse(
@@ -1679,6 +1686,8 @@ public class DiningDialogueMessageService {
             vo.setOperationStatus(
                     merchant.getOperationStatus()
             );
+            vo.setLongitude(merchant.getLongitude());
+            vo.setLatitude(merchant.getLatitude());
             vo.setFinalScore(
                     item.getScore() == null
                             ? null
@@ -2033,5 +2042,50 @@ public class DiningDialogueMessageService {
         } catch (NumberFormatException exception) {
             return null;
         }
+    }
+
+    /**
+     * 当会话标题仍为默认值时，用首条用户消息截断后更新标题。
+     */
+    private void updateSessionTitleIfFirstMessage(
+            Long sessionId,
+            String currentTitle,
+            String userContent
+    ) {
+        if (!ChatSessionService.DEFAULT_TITLE.equals(currentTitle)) {
+            return;
+        }
+
+        String newTitle = truncateTitle(userContent);
+        if (newTitle.equals(currentTitle)) {
+            return;
+        }
+
+        chatSessionMapper.update(
+                null,
+                new LambdaUpdateWrapper<ChatSession>()
+                        .eq(ChatSession::getId, sessionId)
+                        .set(ChatSession::getTitle, newTitle)
+                        .set(ChatSession::getUpdatedAt,
+                                OffsetDateTime.now())
+        );
+    }
+
+    /**
+     * 截断文本至最多 20 个字符作为会话标题。
+     */
+    private String truncateTitle(String text) {
+        if (text == null || text.isBlank()) {
+            return ChatSessionService.DEFAULT_TITLE;
+        }
+
+        String trimmed = text.trim();
+        int maxLen = 20;
+
+        if (trimmed.length() <= maxLen) {
+            return trimmed;
+        }
+
+        return trimmed.substring(0, maxLen);
     }
 }

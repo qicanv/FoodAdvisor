@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>驾车路线规划演示</title>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Microsoft YaHei', sans-serif; }
+        #container { display: flex; height: 100%; }
+        #map-container { flex: 3; height: 100%; }
+        #panel-container { flex: 1; min-width: 300px; background: #f5f7fa; padding: 25px; box-shadow: -2px 0 10px rgba(0,0,0,0.05); overflow-y: auto; }
+        #panel-container h2 { margin-top: 0; color: #1a2b4a; }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; font-weight: 600; margin-bottom: 5px; color: #333; font-size: 14px; }
+        .input-group input { width: 100%; padding: 10px 12px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+        .input-group input:focus { border-color: #4a90d9; outline: none; box-shadow: 0 0 0 3px rgba(74,144,217,0.1); }
+        #plan-btn { width: 100%; padding: 12px; background: #4a90d9; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        #plan-btn:hover { background: #357abd; }
+        #result-panel { margin-top: 20px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); max-height: 500px; overflow-y: auto; font-size: 14px; line-height: 1.6; }
+        #result-panel .route-item { padding: 10px 0; border-bottom: 1px solid #eee; }
+        #result-panel .route-item:last-child { border-bottom: none; }
+        .status-tip { color: #e67e22; font-weight: 500; }
+        @media (max-width: 768px) { #container { flex-direction: column; } #map-container { height: 50vh; } #panel-container { height: 50vh; min-width: auto; } }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="map-container"></div>
+        <div id="panel-container">
+            <h2>🚗 驾车路线规划</h2>
+            <div class="input-group">
+                <label>📍 起点 (自动定位)</label>
+                <input type="text" id="start-input" placeholder="正在获取位置..." disabled>
+            </div>
+            <div class="input-group">
+                <label>🏁 终点 (经纬度)</label>
+                <input type="text" id="end-input" placeholder="例如: 31.222965,121.505821" value="31.222965,121.505821">
+            </div>
+            <button id="plan-btn">规划路线</button>
+            <div id="result-panel">
+                <p style="color: #888; text-align: center;">路线信息将显示在这里</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 百度地图 JS API (请替换您的浏览器端密钥) -->
+    <script src="https://api.map.baidu.com/api?type=webgl&v=1.0&ak=ybFQcloHDTKyOKY9vulNE8Yvmpe4hjtm"></script>
+    <script>
+        let map = null;
+        let currentLocation = null;
+        let polyline = null;
+        let destinationMarker = null;
+
+        function initMap() {
+            map = new BMapGL.Map('map-container');
+            map.enableScrollWheelZoom(true);
+            map.centerAndZoom(new BMapGL.Point(116.403963, 39.915119), 12);
+            map.addControl(new BMapGL.NavigationControl());
+            map.addControl(new BMapGL.ScaleControl());
+            tryLocation();
+        }
+
+        function tryLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        const lng = pos.coords.longitude;
+                        const lat = pos.coords.latitude;
+                        currentLocation = new BMapGL.Point(lng, lat);
+                        document.getElementById('start-input').value = `${lat.toFixed(6)}, ${lng.toFixed(6)} (当前位置)`;
+                        addMarker(currentLocation, '我的位置', '#ff0000');
+                        map.centerAndZoom(currentLocation, 15);
+                    },
+                    (err) => {
+                        console.warn('定位失败:', err);
+                        document.getElementById('start-input').value = '定位失败，使用默认起点(北京)';
+                        currentLocation = new BMapGL.Point(116.403963, 39.915119);
+                        addMarker(currentLocation, '默认起点');
+                    },
+                    { enableHighAccuracy: true, timeout: 5000 }
+                );
+            } else {
+                document.getElementById('start-input').value = '浏览器不支持定位，使用默认起点';
+                currentLocation = new BMapGL.Point(116.403963, 39.915119);
+                addMarker(currentLocation, '默认起点');
+            }
+        }
+
+        function addMarker(point, title, color = '#3388ff') {
+            const marker = new BMapGL.Marker(point);
+            map.addOverlay(marker);
+            const label = new BMapGL.Label(title, { position: point });
+            label.setStyle({ 
+                color: '#333', 
+                fontSize: '12px', 
+                padding: '2px 8px', 
+                background: 'rgba(255,255,255,0.9)', 
+                borderRadius: '4px',
+                fontWeight: 'bold',
+                border: `2px solid ${color}`
+            });
+            map.addOverlay(label);
+            return marker;
+        }
+
+        function drawRoute(routePoints, startPoint, endPoint) {
+            // 清除旧路线
+            if (polyline) {
+                map.removeOverlay(polyline);
+                polyline = null;
+            }
+            
+            // 清除旧的目的地标记
+            if (destinationMarker) {
+                map.removeOverlay(destinationMarker);
+                destinationMarker = null;
+            }
+
+            // 添加目的地标记（终点）
+            if (endPoint) {
+                destinationMarker = addMarker(endPoint, '目的地', '#ff6600');
+            }
+
+            // 绘制路线
+            if (routePoints && routePoints.length > 0) {
+                const points = routePoints.map(p => {
+                    if (typeof p === 'string') {
+                        const [lng, lat] = p.split(',').map(Number);
+                        return new BMapGL.Point(lng, lat);
+                    }
+                    return p;
+                });
+                
+                polyline = new BMapGL.Polyline(points, { 
+                    strokeColor: '#3388ff', 
+                    strokeWeight: 6, 
+                    strokeOpacity: 0.8 
+                });
+                map.addOverlay(polyline);
+                
+                // 调整视野包含起点、终点和路线
+                const allPoints = [startPoint, endPoint, ...points];
+                map.setViewport(allPoints);
+            }
+        }
+
+        // ⭐ 核心修复：从 steps 中提取所有 path 点
+        function extractPathPointsFromSteps(steps) {
+            const allPoints = [];
+            if (!steps || steps.length === 0) {
+                return allPoints;
+            }
+            
+            steps.forEach(step => {
+                if (step.path) {
+                    // step.path 是字符串，如 "116.339,40.010;116.340,40.011"
+                    const points = step.path.split(';');
+                    allPoints.push(...points);
+                }
+            });
+            
+            return allPoints;
+        }
+
+        document.getElementById('plan-btn').addEventListener('click', function() {
+            const endStr = document.getElementById('end-input').value.trim();
+            if (!endStr) {
+                alert('请输入终点经纬度');
+                return;
+            }
+            const endCoords = endStr.split(',').map(Number);
+            if (endCoords.length !== 2 || isNaN(endCoords[0]) || isNaN(endCoords[1])) {
+                alert('请输入正确的经纬度格式，例如: 31.222965,121.505821');
+                return;
+            }
+            
+            if (!currentLocation) {
+                alert('尚未获取到起点位置，请稍后或刷新页面');
+                return;
+            }
+
+            const startLng = currentLocation.lng;
+            const startLat = currentLocation.lat;
+            const endLng = endCoords[1];
+            const endLat = endCoords[0];
+            
+            const endPoint = new BMapGL.Point(endLng, endLat);
+
+            const apiUrl = `/api/route?origin=${startLat},${startLng}&destination=${endLat},${endLng}`;
+            
+            document.getElementById('result-panel').innerHTML = '<p style="color:#888;">⏳ 正在规划路线...</p>';
+            
+            fetch(apiUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        return response.text().then(text => { throw new Error(`后端错误 (${response.status}): ${text}`); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.status !== 0) {
+                        throw new Error(`API错误 (${data.status}): ${data.message || '未知错误'}`);
+                    }
+                    displayRouteResult(data.result, currentLocation, endPoint);
+                })
+                .catch(error => {
+                    document.getElementById('result-panel').innerHTML = `<p style="color:#d32f2f;">❌ 请求失败: ${error.message}</p>`;
+                    console.error('Error:', error);
+                });
+        });
+
+        function displayRouteResult(result, startPoint, endPoint) {
+            if (!result || !result.routes || result.routes.length === 0) {
+                document.getElementById('result-panel').innerHTML = '<p>😅 未找到合适的路线</p>';
+                return;
+            }
+
+            const route = result.routes[0];
+            const steps = route.steps || [];
+            const duration = route.duration || 0;
+            const distance = route.distance || 0;
+            
+            // ⭐ 从每个步骤的 path 中提取所有路线点
+            const pathPoints = extractPathPointsFromSteps(steps);
+
+            // 绘制路线
+            drawRoute(pathPoints, startPoint, endPoint);
+
+            // 显示详细信息
+            let html = `<div style="margin-bottom:10px;font-weight:bold;">🚗 推荐路线 (方案一)</div>`;
+            html += `<div style="color:#555;margin-bottom:12px;">⏱️ 约 ${Math.round(duration/60)} 分钟 · 📏 ${(distance/1000).toFixed(1)} 公里</div>`;
+            html += `<div style="font-size:13px;">`;
+            steps.forEach((step, index) => {
+                const instructions = step.instruction || step.instructions || '...';
+                html += `<div class="route-item">${index+1}. ${instructions.replace(/<[^>]+>/g, '')}</div>`;
+            });
+            html += `</div>`;
+            document.getElementById('result-panel').innerHTML = html;
+        }
+
+        window.onload = initMap;
+    </script>
+</body>
+</html>
