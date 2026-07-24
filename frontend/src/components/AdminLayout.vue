@@ -148,6 +148,7 @@ const allNavItems = [
   { path: '/admin/ai-traces', label: 'AI 请求追踪', allowedRoles: ['ADMIN', 'OPERATOR'], iconViewBox: '0 0 24 24', iconPath: 'M12 3a9 9 0 1 0 9 9 M12 7v5l3 2 M19 3v5h-5' },
   { path: '/admin/reports', label: '举报审核', allowedRoles: ['ADMIN', 'OPERATOR'], iconViewBox: '0 0 24 24', iconPath: 'M3 6h18 M3 12h18 M3 18h18 M8 6v12 M16 6v12' },
   { path: '/admin/sensitive-alerts', label: '敏感预警', allowedRoles: ['ADMIN', 'OPERATOR'], iconViewBox: '0 0 24 24', iconPath: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01' },
+  { path: '/admin/analysis-feedback', label: '分析反馈', allowedRoles: ['ADMIN', 'OPERATOR'], iconViewBox: '0 0 24 24', iconPath: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M9 15l2 2 4-4' },
   { path: '/admin/fraud-cases', label: '刷评检测', allowedRoles: ['ADMIN', 'OPERATOR'], iconViewBox: '0 0 24 24', iconPath: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5' },
 ]
 
