@@ -11,6 +11,7 @@ SCALAR_FIELDS = {
     "perCapitaBudget",
     "distanceKm",
     "minRating",
+    "ratingPreference",
     "businessTime",
     "businessTargetTime",
     "businessTargetNextDay",
@@ -51,6 +52,11 @@ class ConstraintPatchOperations(BaseModel):
         unknown = set(value) - ALL_FIELDS
         if unknown:
             raise ValueError(f"unsupported set fields: {sorted(unknown)}")
+        if (
+            "ratingPreference" in value
+            and value["ratingPreference"] != "HIGH"
+        ):
+            raise ValueError("ratingPreference only supports HIGH")
         return value
 
     @field_validator("add", "remove", "exclude", "unexclude")
@@ -78,6 +84,13 @@ class ConstraintPatchConflict(BaseModel):
     field: str
     message: str
     values: list[str] = Field(default_factory=list)
+
+    @field_validator("field")
+    @classmethod
+    def validate_conflict_field(cls, value: str) -> str:
+        if value not in ALL_FIELDS:
+            raise ValueError(f"unsupported conflict field: {value}")
+        return value
 
 
 class ConstraintPatch(BaseModel):

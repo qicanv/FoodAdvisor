@@ -1071,7 +1071,8 @@ class RecommendationRankingServiceTest {
     }
 
     @Test
-    void shouldRequireLocationWhenDistanceIsSet() {
+    void shouldContinueWithoutLocationAndKeepDistanceSnapshot()
+            throws Exception {
         stubSessionStateAndMerchants(
                 List.of(createMerchant(
                         501L,
@@ -1085,6 +1086,17 @@ class RecommendationRankingServiceTest {
                 }
                 """
         );
+        when(matchScoreCalculator.calculate(
+                any(Merchant.class),
+                any(ConstraintState.class),
+                any(RecommendationWeights.class),
+                nullable(BigDecimal.class),
+                nullable(BigDecimal.class),
+                any()
+        )).thenAnswer(invocation -> Optional.of(
+                createCalculatedResult(
+                        invocation.getArgument(0),
+                        new BigDecimal("80.00"))));
 
         RecommendationRankRequest request =
                 new RecommendationRankRequest();
@@ -1093,15 +1105,20 @@ class RecommendationRankingServiceTest {
         request.setUserLongitude(null);
         request.setWeights(createDefaultWeights());
 
-        ApiException exception =
-                assertThrows(
-                        ApiException.class,
-                        () -> service.rank(1L, request)
-                );
+        RecommendationRankResponse response =
+                service.rank(1L, request);
 
-        assertEquals(
-                "USER_LOCATION_REQUIRED",
-                exception.getCode()
+        ArgumentCaptor<Recommendation> captor =
+                ArgumentCaptor.forClass(Recommendation.class);
+        verify(recommendationMapper).insert(captor.capture());
+        JsonNode parsed = new ObjectMapper().readTree(
+                captor.getValue().getParsedConstraints());
+
+        assertAll(
+                () -> assertTrue(response.getMatched()),
+                () -> assertEquals(
+                        0, new BigDecimal("3").compareTo(
+                                parsed.get("distanceKm").decimalValue()))
         );
     }
 
@@ -1413,6 +1430,31 @@ class RecommendationRankingServiceTest {
                 new ArrayList<>();
         containsNull.add(null);
         assertInvalidAdjustment("cuisines", containsNull);
+    }
+
+    @Test
+    void shouldControlRatingPreferenceAdjustment() {
+        ChatSessionState sessionState =
+                stubSessionStateAndMerchants(
+                        List.of(createMerchant(
+                                607L,
+                                "rating preference adjusted",
+                                new BigDecimal("4.8"),
+                                20
+                        )),
+                        "{}"
+                );
+        stubCalculatedScores();
+
+        service.adjustAndRank(
+                1L,
+                createAdjustRequest(
+                        "ratingPreference", "HIGH"));
+
+        assertTrue(sessionState.getCurrentConstraints()
+                .contains("\"ratingPreference\":\"HIGH\""));
+        assertInvalidAdjustment(
+                "ratingPreference", "LOW");
     }
 
     @Test

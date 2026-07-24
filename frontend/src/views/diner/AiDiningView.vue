@@ -34,17 +34,9 @@
       </button>
 
       <div class="history-sidebar-content">
-        <div
-          v-if="historyLoading"
-          class="history-state"
-        >
-          正在加载...
-        </div>
+        <div v-if="historyLoading" class="history-state">正在加载...</div>
 
-        <div
-          v-else-if="historyError"
-          class="history-state history-error"
-        >
+        <div v-else-if="historyError" class="history-state history-error">
           {{ historyError }}
 
           <button
@@ -56,10 +48,7 @@
           </button>
         </div>
 
-        <div
-          v-else-if="historySessions.length === 0"
-          class="history-state"
-        >
+        <div v-else-if="historySessions.length === 0" class="history-state">
           暂无历史对话
         </div>
 
@@ -85,10 +74,7 @@
                 {{ session.title }}
               </span>
 
-              <span
-                v-if="session.updatedAt"
-                class="history-session-time"
-              >
+              <span v-if="session.updatedAt" class="history-session-time">
                 {{ formatSessionTime(session.updatedAt) }}
               </span>
             </button>
@@ -97,18 +83,10 @@
               type="button"
               class="history-session-delete"
               title="删除对话"
-              :disabled="
-                initializing ||
-                sending ||
-                deletingSessionId !== null
-              "
+              :disabled="initializing || sending || deletingSessionId !== null"
               @click.stop="deleteHistorySession(session)"
             >
-              {{
-                deletingSessionId === session.sessionId
-                  ? '删除中'
-                  : '删除'
-              }}
+              {{ deletingSessionId === session.sessionId ? "删除中" : "删除" }}
             </button>
           </div>
         </div>
@@ -129,7 +107,9 @@
               v-if="!historySidebarOpen"
               type="button"
               class="history-button"
-              :disabled="initializing || sending || adjustingSuggestionKey !== ''"
+              :disabled="
+                initializing || sending || adjustingSuggestionKey !== ''
+              "
               @click="toggleHistorySidebar"
             >
               <span class="history-button-icon">☰</span>
@@ -167,257 +147,262 @@
           </div>
         </div>
 
-      <div
-        v-if="Object.keys(currentConstraints).length"
-        class="constraint-bar"
-      >
-        <span class="constraint-label">当前条件</span>
-        <span class="constraint-content">
-          {{ constraintSummary(currentConstraints) }}
-        </span>
-      </div>
-
-      <section
-        ref="messageListRef"
-        class="message-list"
-        aria-live="polite"
-      >
-        <div v-if="initializing" class="state-panel">
-          <span class="state-spinner"></span>
-          <strong>正在加载会话</strong>
-        </div>
-
-        <div v-else-if="messages.length === 0" class="empty-panel">
-          <div class="empty-icon-shell">
-            <img :src="greedyCat" alt="" class="empty-icon" />
-          </div>
-
-          <h2>想吃什么，直接告诉我</h2>
-        </div>
-
-        <article
-          v-for="message in messages"
-          :key="message.key"
-          class="message-row"
-          :class="message.role === 'USER' ? 'user-row' : 'assistant-row'"
+        <div
+          v-if="Object.keys(currentConstraints).length"
+          class="constraint-bar"
         >
-          <div
-            class="message-avatar"
-            :aria-label="message.role === 'USER' ? '我的头像' : '食尚参谋助手头像'"
-          >
-            <span v-if="message.role === 'USER'">
-              {{ currentUserAvatarText }}
-            </span>
-            <img
-              v-else
-              :src="greedyCat"
-              alt=""
-              class="assistant-image"
-              aria-hidden="true"
-            />
+          <span class="constraint-label">当前条件</span>
+          <span class="constraint-content">
+            {{ constraintSummary(currentConstraints) }}
+          </span>
+        </div>
+
+        <section ref="messageListRef" class="message-list" aria-live="polite">
+          <div v-if="initializing" class="state-panel">
+            <span class="state-spinner"></span>
+            <strong>正在加载会话</strong>
           </div>
 
-          <div class="message-column">
+          <div v-else-if="messages.length === 0" class="empty-panel">
+            <div class="empty-icon-shell">
+              <img :src="greedyCat" alt="" class="empty-icon" />
+            </div>
 
-            <div class="message-bubble">
-              <p>{{ message.content }}</p>
+            <h2>想吃什么，直接告诉我</h2>
+          </div>
 
-              <div v-if="message.notice" class="notice-banner">
-                <span>ℹ</span>
-                {{ message.notice }}
-              </div>
+          <article
+            v-for="message in messages"
+            :key="message.key"
+            class="message-row"
+            :class="message.role === 'USER' ? 'user-row' : 'assistant-row'"
+          >
+            <div
+              class="message-avatar"
+              :aria-label="
+                message.role === 'USER' ? '我的头像' : '食尚参谋助手头像'
+              "
+            >
+              <span v-if="message.role === 'USER'">
+                {{ currentUserAvatarText }}
+              </span>
+              <img
+                v-else
+                :src="greedyCat"
+                alt=""
+                class="assistant-image"
+                aria-hidden="true"
+              />
+            </div>
 
-              <div
-                v-if="message.recommendations.length"
-                class="merchant-grid"
-              >
+            <div class="message-column">
+              <div class="message-bubble">
+                <p>{{ message.content }}</p>
+
+                <div v-if="message.notice" class="notice-banner">
+                  <span>ℹ</span>
+                  {{ message.notice }}
+                </div>
+
                 <div
-                  v-for="merchant in message.recommendations"
-                  :key="merchant.merchantId"
-                  class="merchant-card"
-                  role="button"
-                  tabindex="0"
-                  @click="openMerchant(merchant.merchantId)"
-                  @keydown.enter="openMerchant(merchant.merchantId)"
+                  v-if="message.recommendations.length"
+                  class="merchant-grid"
                 >
-                  <div class="merchant-card-header">
-                    <span class="rank-badge">
-                      TOP {{ merchant.rankNo || '-' }}
-                    </span>
-
-                    <span class="operation-status">
-                      <span class="operation-dot"></span>
-                      {{ operationStatusText(merchant.operationStatus) }}
-                    </span>
-                  </div>
-
-                  <h3>{{ textOr(merchant.merchantName, '商家名称暂无') }}</h3>
-
-                  <div class="merchant-meta">
-                    <span>
-                      {{ textOr(merchant.category || merchant.cuisine, '暂无商家类别') }}
-                    </span>
-                    <span>{{ ratingText(merchant.merchantRating) }}</span>
-                    <span>{{ priceText(merchant.averagePrice) }}</span>
-                    <span>{{ distanceText(merchant.distanceKm) }}</span>
-                  </div>
-
-                  <p class="reason">
-                    {{ textOr(merchant.reason, '暂无推荐理由') }}
-                  </p>
-
-                  <ul
-                    v-if="merchant.riskNotes?.length"
-                    class="risk-list"
-                  >
-                    <li
-                      v-for="risk in merchant.riskNotes"
-                      :key="risk"
-                    >
-                      {{ risk }}
-                    </li>
-                  </ul>
-
                   <div
-                    v-if="Array.isArray(merchant.matchedDishes) && merchant.matchedDishes.length"
-                    class="matched-dishes"
+                    v-for="merchant in message.recommendations"
+                    :key="merchant.merchantId"
+                    class="merchant-card"
+                    role="button"
+                    tabindex="0"
+                    @click="openMerchant(merchant.merchantId)"
+                    @keydown.enter="openMerchant(merchant.merchantId)"
                   >
-                    <span class="matched-dishes-title">匹配菜品</span>
+                    <div class="merchant-card-header">
+                      <span class="rank-badge">
+                        TOP {{ merchant.rankNo || "-" }}
+                      </span>
 
-                    <span
-                      v-for="dish in merchant.matchedDishes.slice(0, 3)"
-                      :key="dish.dishId"
-                      class="matched-dish"
+                      <span class="operation-status">
+                        <span class="operation-dot"></span>
+                        {{ operationStatusText(merchant.operationStatus) }}
+                      </span>
+                    </div>
+
+                    <h3>{{ textOr(merchant.merchantName, "商家名称暂无") }}</h3>
+
+                    <div class="merchant-meta">
+                      <span>
+                        {{
+                          textOr(
+                            merchant.category || merchant.cuisine,
+                            "暂无商家类别",
+                          )
+                        }}
+                      </span>
+                      <span>{{ ratingText(merchant.merchantRating) }}</span>
+                      <span>{{ priceText(merchant.averagePrice) }}</span>
+                      <span>{{ distanceText(merchant.distanceKm) }}</span>
+                    </div>
+
+                    <p class="reason">
+                      {{ textOr(merchant.reason, "暂无推荐理由") }}
+                    </p>
+
+                    <ul v-if="merchant.riskNotes?.length" class="risk-list">
+                      <li v-for="risk in merchant.riskNotes" :key="risk">
+                        {{ risk }}
+                      </li>
+                    </ul>
+
+                    <div
+                      v-if="
+                        Array.isArray(merchant.matchedDishes) &&
+                        merchant.matchedDishes.length
+                      "
+                      class="matched-dishes"
                     >
-                      {{ textOr(dish.dishName, '菜品名称暂无') }}
-                      {{ dish.dishPrice == null ? '价格暂无' : `￥${dish.dishPrice}` }}
-                    </span>
+                      <span class="matched-dishes-title">匹配菜品</span>
+
+                      <span
+                        v-for="dish in merchant.matchedDishes.slice(0, 3)"
+                        :key="dish.dishId"
+                        class="matched-dish"
+                      >
+                        {{ textOr(dish.dishName, "菜品名称暂无") }}
+                        {{
+                          dish.dishPrice == null
+                            ? "价格暂无"
+                            : `￥${dish.dishPrice}`
+                        }}
+                      </span>
+                    </div>
+
+                    <div class="merchant-card-footer">
+                      <span class="merchant-detail-hint">点击查看商家详情</span>
+
+                      <button
+                        type="button"
+                        class="evidence-button"
+                        @click.stop="openEvidence(message, merchant)"
+                      >
+                        查看依据
+                        <span>→</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="message.suggestions.length" class="suggestion-panel">
+                  <div class="panel-heading">
+                    <span class="panel-icon">↻</span>
+                    <strong>可以尝试调整</strong>
                   </div>
 
-                  <div class="merchant-card-footer">
-                    <span class="merchant-detail-hint">点击查看商家详情</span>
-
+                  <div class="suggestion-list">
                     <button
+                      v-for="suggestion in message.suggestions"
+                      :key="suggestion.id || suggestion.displayText"
                       type="button"
-                      class="evidence-button"
-                      @click.stop="openEvidence(message, merchant)"
+                      class="suggestion-button"
+                      :disabled="adjustingSuggestionKey !== ''"
+                      @click="applySuggestion(message, suggestion)"
                     >
-                      查看依据
-                      <span>→</span>
+                      <span>{{
+                        suggestion.displayText || suggestion.reason
+                      }}</span>
+                      <small>
+                        {{
+                          isAdjusting(message, suggestion)
+                            ? "重新推荐中..."
+                            : "调整并重新推荐"
+                        }}
+                      </small>
                     </button>
                   </div>
                 </div>
-              </div>
 
-              <div
-                v-if="message.suggestions.length"
-                class="suggestion-panel"
-              >
-                <div class="panel-heading">
-                  <span class="panel-icon">↻</span>
-                  <strong>可以尝试调整</strong>
+                <div
+                  v-if="message.limitingConditions.length"
+                  class="limiting-panel"
+                >
+                  <div class="panel-heading">
+                    <span class="panel-icon">!</span>
+                    <strong>当前限制条件</strong>
+                  </div>
+
+                  <ul>
+                    <li
+                      v-for="condition in message.limitingConditions"
+                      :key="
+                        condition.field ||
+                        condition.type ||
+                        JSON.stringify(condition)
+                      "
+                    >
+                      {{ condition.description || condition.field }}
+                    </li>
+                  </ul>
                 </div>
-
-                <div class="suggestion-list">
-                  <button
-                    v-for="suggestion in message.suggestions"
-                    :key="suggestion.id || suggestion.displayText"
-                    type="button"
-                    class="suggestion-button"
-                    :disabled="adjustingSuggestionKey !== ''"
-                    @click="applySuggestion(message, suggestion)"
-                  >
-                    <span>{{ suggestion.displayText || suggestion.reason }}</span>
-                    <small>
-                      {{ isAdjusting(message, suggestion) ? '重新推荐中...' : '调整并重新推荐' }}
-                    </small>
-                  </button>
-                </div>
-              </div>
-
-              <div
-                v-if="message.limitingConditions.length"
-                class="limiting-panel"
-              >
-                <div class="panel-heading">
-                  <span class="panel-icon">!</span>
-                  <strong>当前限制条件</strong>
-                </div>
-
-                <ul>
-                  <li
-                    v-for="condition in message.limitingConditions"
-                    :key="condition.field || condition.type || JSON.stringify(condition)"
-                  >
-                    {{ condition.description || condition.field }}
-                  </li>
-                </ul>
               </div>
             </div>
-          </div>
-        </article>
+          </article>
 
-        <div v-if="sending" class="typing-indicator">
-          <span class="typing-avatar" aria-hidden="true">
-            <img :src="greedyCat" alt="" class="assistant-image" />
-          </span>
-          <span class="typing-bubble">
-            <span class="typing-dots">
-              <i></i>
-              <i></i>
-              <i></i>
+          <div v-if="sending" class="typing-indicator">
+            <span class="typing-avatar" aria-hidden="true">
+              <img :src="greedyCat" alt="" class="assistant-image" />
             </span>
-            食尚参谋正在理解需求并筛选商家
-          </span>
+            <span class="typing-bubble">
+              <span class="typing-dots">
+                <i></i>
+                <i></i>
+                <i></i>
+              </span>
+              食尚参谋正在理解需求并筛选商家
+            </span>
+          </div>
+        </section>
+
+        <div v-if="errorMessage" class="error-banner" role="alert">
+          <span class="error-icon">!</span>
+          <span class="error-text">{{ errorMessage }}</span>
+
+          <button
+            v-if="pendingRequest"
+            type="button"
+            class="retry-button"
+            @click="submitMessage"
+          >
+            使用同一请求重试
+          </button>
         </div>
-      </section>
 
-      <div
-        v-if="errorMessage"
-        class="error-banner"
-        role="alert"
-      >
-        <span class="error-icon">!</span>
-        <span class="error-text">{{ errorMessage }}</span>
+        <form class="composer" @submit.prevent="submitMessage">
+          <div class="composer-input-shell">
+            <textarea
+              v-model="draft"
+              maxlength="1000"
+              rows="2"
+              :disabled="initializing || sending"
+              placeholder="输入你的用餐需求..."
+              @keydown.enter.exact.prevent="submitMessage"
+            />
 
-        <button
-          v-if="pendingRequest"
-          type="button"
-          class="retry-button"
-          @click="submitMessage"
-        >
-          使用同一请求重试
-        </button>
-      </div>
+            <div class="composer-footer">
+              <div class="composer-actions">
+                <span class="word-count">{{ draft.length }}/1000</span>
 
-      <form class="composer" @submit.prevent="submitMessage">
-        <div class="composer-input-shell">
-          <textarea
-            v-model="draft"
-            maxlength="1000"
-            rows="2"
-            :disabled="initializing || sending"
-            placeholder="输入你的用餐需求..."
-            @keydown.enter.exact.prevent="submitMessage"
-          />
-
-          <div class="composer-footer">
-            <div class="composer-actions">
-              <span class="word-count">{{ draft.length }}/1000</span>
-
-              <button
-                type="submit"
-                :disabled="initializing || sending || !sessionId"
-              >
-                <span>{{ sending ? '发送中...' : '发送需求' }}</span>
-                <span class="send-icon">↑</span>
-              </button>
+                <button
+                  type="submit"
+                  :disabled="initializing || sending || !sessionId"
+                >
+                  <span>{{ sending ? "发送中..." : "发送需求" }}</span>
+                  <span class="send-icon">↑</span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </form>
-    </main>
-
+        </form>
+      </main>
     </div>
 
     <div
@@ -431,11 +416,7 @@
       class="dialog-mask"
       @click.self="closeEvidence"
     >
-      <section
-        class="evidence-dialog"
-        role="dialog"
-        aria-modal="true"
-      >
+      <section class="evidence-dialog" role="dialog" aria-modal="true">
         <header>
           <div>
             <span class="dialog-eyebrow">推荐可解释性</span>
@@ -451,24 +432,15 @@
           </button>
         </header>
 
-        <div
-          v-if="evidenceLoading"
-          class="dialog-state-panel"
-        >
+        <div v-if="evidenceLoading" class="dialog-state-panel">
           正在加载推荐依据...
         </div>
 
-        <div
-          v-else-if="evidenceError"
-          class="dialog-error-banner"
-        >
+        <div v-else-if="evidenceError" class="dialog-error-banner">
           {{ evidenceError }}
         </div>
 
-        <div
-          v-else-if="!evidences.length"
-          class="dialog-state-panel"
-        >
+        <div v-else-if="!evidences.length" class="dialog-state-panel">
           暂无可查看依据
         </div>
 
@@ -483,24 +455,17 @@
               <span>{{ evidence.merchantName }}</span>
             </div>
 
-            <span
-              v-if="evidence.conditionKey"
-              class="evidence-condition"
-            >
+            <span v-if="evidence.conditionKey" class="evidence-condition">
               对应条件：{{ evidence.conditionKey }}
             </span>
 
             <p v-if="evidence.available">
-              {{ evidence.excerpt || '暂无详细内容' }}
+              {{ evidence.excerpt || "暂无详细内容" }}
             </p>
 
-            <p v-else class="unavailable-text">
-              该评价已删除或当前无权查看
-            </p>
+            <p v-else class="unavailable-text">该评价已删除或当前无权查看</p>
 
-            <small
-              v-if="evidence.available && evidence.reviewTime"
-            >
+            <small v-if="evidence.available && evidence.reviewTime">
               {{ evidence.reviewTime }}
             </small>
           </article>
@@ -511,8 +476,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import {
   adjustDiningRecommendation,
   createDiningSession,
@@ -520,702 +485,714 @@ import {
   getDiningMessages,
   getDiningSessions,
   getRecommendationEvidences,
-  sendDiningMessage
-} from '../../api/aiDining'
-import { logMerchantClick, logSearch } from '../../api/behavior'
-import greedyCat from '../../assets/images/greedy-cat.png'
+  sendDiningMessage,
+} from "../../api/aiDining";
+import { logMerchantClick, logSearch } from "../../api/behavior";
+import greedyCat from "../../assets/images/greedy-cat.png";
 
-const route = useRoute()
-const router = useRouter()
-const sessionId = ref(null)
-const messages = ref([])
-const draft = ref('')
-const initializing = ref(true)
-const sending = ref(false)
-const adjustingSuggestionKey = ref('')
-const errorMessage = ref('')
-const messageListRef = ref(null)
-const currentConstraints = ref({})
-const locationStatus = ref('NOT_REQUESTED')
-const currentLocation = ref(null)
-const evidenceDialogOpen = ref(false)
-const evidenceLoading = ref(false)
-const evidenceError = ref('')
-const evidences = ref([])
-const pendingRequest = ref(null)
+const route = useRoute();
+const router = useRouter();
+const sessionId = ref(null);
+const messages = ref([]);
+const draft = ref("");
+const initializing = ref(true);
+const sending = ref(false);
+const adjustingSuggestionKey = ref("");
+const errorMessage = ref("");
+const messageListRef = ref(null);
+const currentConstraints = ref({});
+const locationStatus = ref("NOT_REQUESTED");
+const currentLocation = ref(null);
+const evidenceDialogOpen = ref(false);
+const evidenceLoading = ref(false);
+const evidenceError = ref("");
+const evidences = ref([]);
+const pendingRequest = ref(null);
 const historySidebarOpen = ref(
-  typeof window !== 'undefined' && window.innerWidth > 980
-)
-const historyLoading = ref(false)
-const historyError = ref('')
-const historySessions = ref([])
-const deletingSessionId = ref(null)
+  typeof window !== "undefined" && window.innerWidth > 980,
+);
+const historyLoading = ref(false);
+const historyError = ref("");
+const historySessions = ref([]);
+const deletingSessionId = ref(null);
 
 const currentUserProfile = () => {
-  const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
-  if (!raw) return null
+  const raw = localStorage.getItem("user") || localStorage.getItem("userInfo");
+  if (!raw) return null;
 
   try {
-    return JSON.parse(raw)
+    return JSON.parse(raw);
   } catch {
-    return null
+    return null;
   }
-}
+};
 
-const currentUserId = () =>
-  currentUserProfile()?.id || 'anonymous'
+const currentUserId = () => currentUserProfile()?.id || "anonymous";
 
 const currentUserAvatarText = computed(() => {
-  const user = currentUserProfile()
+  const user = currentUserProfile();
   const displayName =
-    user?.nickname ||
-    user?.username ||
-    user?.name ||
-    '食客用户'
+    user?.nickname || user?.username || user?.name || "食客用户";
 
-  const firstCharacter = Array.from(String(displayName).trim())[0]
-  return firstCharacter
-    ? firstCharacter.toLocaleUpperCase()
-    : '食'
-})
+  const firstCharacter = Array.from(String(displayName).trim())[0];
+  return firstCharacter ? firstCharacter.toLocaleUpperCase() : "食";
+});
 
-const sessionStorageKey = () => `foodadvisor.aiDining.session.${currentUserId()}`
+const sessionStorageKey = () =>
+  `foodadvisor.aiDining.session.${currentUserId()}`;
 
-const sessionIdOf = session => Number(
-  session?.sessionId ?? session?.id
-)
+const sessionIdOf = (session) => Number(session?.sessionId ?? session?.id);
 
-const normalizeSessionSummary = session => ({
+const normalizeSessionSummary = (session) => ({
   sessionId: sessionIdOf(session),
-  title:
-    session?.title ||
-    session?.sessionTitle ||
-    '未命名对话',
+  title: session?.title || session?.sessionTitle || "未命名对话",
   updatedAt:
-    session?.updatedAt ||
-    session?.lastMessageAt ||
-    session?.createdAt ||
-    ''
-})
+    session?.updatedAt || session?.lastMessageAt || session?.createdAt || "",
+});
 
-const extractSessionList = response => {
-  const data = response?.data
+const extractSessionList = (response) => {
+  const data = response?.data;
 
-  if (Array.isArray(data)) return data
-  if (Array.isArray(data?.sessions)) return data.sessions
-  if (Array.isArray(data?.records)) return data.records
-  if (Array.isArray(data?.items)) return data.items
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.sessions)) return data.sessions;
+  if (Array.isArray(data?.records)) return data.records;
+  if (Array.isArray(data?.items)) return data.items;
 
-  return []
-}
+  return [];
+};
 
-const formatSessionTime = value => {
-  if (!value) return ''
+const formatSessionTime = (value) => {
+  if (!value) return "";
 
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
 
-  return date.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  })
-}
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+};
 
 const createRequestId = () => {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
-  return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `web-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
 
-const textOr = (value, fallback) => value === null || value === undefined || value === '' ? fallback : value
-const hiddenConstraintKeys = new Set([
-  'constraintStrengths'
-])
+const textOr = (value, fallback) =>
+  value === null || value === undefined || value === "" ? fallback : value;
+const hiddenConstraintKeys = new Set(["constraintStrengths", "timezone"]);
+const constraintLabels = {
+  partySize: "用餐人数",
+  totalBudget: "总预算",
+  perCapitaBudget: "人均预算",
+  merchantTypes: "餐厅类型",
+  cuisines: "菜系",
+  tastePreferences: "口味偏好",
+  tasteRestrictions: "饮食限制",
+  dishKeywords: "想吃菜品",
+  excludedCuisines: "排除菜系",
+  excludedMerchantTypes: "排除餐厅类型",
+  scenes: "用餐场景",
+  environmentRequirements: "环境要求",
+};
 
-const constraintSummary = value => Object.entries(value || {})
-  .filter(([key, item]) => {
-    if (hiddenConstraintKeys.has(key)) return false
-    if (item === null || item === undefined || item === '') return false
-    if (Array.isArray(item)) return item.length > 0
+const constraintSummary = (value) =>
+  Object.entries(value || {})
+    .filter(([key, item]) => {
+      if (hiddenConstraintKeys.has(key)) return false;
+      if (item === null || item === undefined || item === "") return false;
+      if (Array.isArray(item)) return item.length > 0;
 
-    // 其他内部对象也不直接渲染，避免再次出现 [object Object]
-    if (typeof item === 'object') return false
+      // 其他内部对象也不直接渲染，避免再次出现 [object Object]
+      if (typeof item === "object") return false;
 
-    return true
-  })
-  .map(([key, item]) => {
-    let displayValue = item
+      return true;
+    })
+    .map(([key, item]) => {
+      if (key === "distanceKm") return `距离 ${item} 公里以内`;
+      if (key === "minRating") return `评分 ${item} 分以上`;
+      if (key === "ratingPreference" && item === "HIGH") return "偏好高评分";
 
-    if (Array.isArray(item)) {
-      displayValue = item.join('、')
-    } else if (typeof item === 'boolean') {
-      displayValue = item ? '是' : '否'
-    }
+      let displayValue = item;
 
-    return `${key}: ${displayValue}`
-  })
-  .join('；')
-const ratingText = value => value === null || value === undefined ? '暂无评分' : `评分 ${value}`
-const priceText = value => value === null || value === undefined ? '人均消费暂无' : `人均 ￥${value}`
-const distanceText = value => value === null || value === undefined ? '距离未知' : `距离 ${value} km`
-const operationStatusText = value => {
-  const labels = { OPERATING: '营业中', SUSPENDED: '暂停营业', CLOSED_PERMANENTLY: '已停业' }
-  return labels[value] || '营业状态未知'
-}
+      if (Array.isArray(item)) {
+        displayValue = item.join("、");
+      } else if (typeof item === "boolean") {
+        displayValue = item ? "是" : "否";
+      }
+
+      return `${constraintLabels[key] || key}: ${displayValue}`;
+    })
+    .join("；");
+const ratingText = (value) =>
+  value === null || value === undefined ? "暂无评分" : `评分 ${value}`;
+const priceText = (value) =>
+  value === null || value === undefined ? "人均消费暂无" : `人均 ￥${value}`;
+const distanceText = (value) =>
+  value === null || value === undefined ? "距离未知" : `距离 ${value} km`;
+const operationStatusText = (value) => {
+  const labels = {
+    OPERATING: "营业中",
+    SUSPENDED: "暂停营业",
+    CLOSED_PERMANENTLY: "已停业",
+  };
+  return labels[value] || "营业状态未知";
+};
 
 const locationButtonText = () =>
-  locationStatus.value === 'LOCATING'
-    ? '正在获取位置...'
-    : locationStatus.value === 'READY'
-      ? '重新获取当前位置'
-      : '使用当前位置'
+  locationStatus.value === "LOCATING"
+    ? "正在获取位置..."
+    : locationStatus.value === "READY"
+      ? "重新获取当前位置"
+      : "使用当前位置";
 
 const locationStatusText = () => {
   const labels = {
-    NOT_REQUESTED: '未获取位置',
-    LOCATING: '正在获取',
-    READY: '已获取当前位置',
-    DENIED: '位置权限已拒绝',
-    UNSUPPORTED: '当前浏览器不支持定位'
-  }
-  return labels[locationStatus.value] || '未获取位置'
-}
+    NOT_REQUESTED: "未获取位置",
+    LOCATING: "正在获取",
+    READY: "已获取当前位置",
+    DENIED: "位置权限已拒绝",
+    UNSUPPORTED: "当前浏览器不支持定位",
+  };
+  return labels[locationStatus.value] || "未获取位置";
+};
 
 const requestCurrentLocation = () => {
   if (!navigator.geolocation) {
-    locationStatus.value = 'UNSUPPORTED'
-    currentLocation.value = null
-    return
+    locationStatus.value = "UNSUPPORTED";
+    currentLocation.value = null;
+    return;
   }
 
-  locationStatus.value = 'LOCATING'
-  errorMessage.value = ''
+  locationStatus.value = "LOCATING";
+  errorMessage.value = "";
   navigator.geolocation.getCurrentPosition(
-    position => {
+    (position) => {
       currentLocation.value = {
         userLatitude: position.coords.latitude,
-        userLongitude: position.coords.longitude
-      }
-      locationStatus.value = 'READY'
+        userLongitude: position.coords.longitude,
+      };
+      locationStatus.value = "READY";
     },
-    error => {
-      currentLocation.value = null
+    (error) => {
+      currentLocation.value = null;
       locationStatus.value =
-        error.code === error.PERMISSION_DENIED
-          ? 'DENIED'
-          : 'NOT_REQUESTED'
+        error.code === error.PERMISSION_DENIED ? "DENIED" : "NOT_REQUESTED";
       errorMessage.value =
         error.code === error.PERMISSION_DENIED
-          ? '您已拒绝位置权限；普通推荐仍可使用，距离推荐需要授权当前位置'
-          : '当前位置获取失败，请稍后重试'
+          ? "您已拒绝位置权限；普通推荐仍可使用，距离推荐需要授权当前位置"
+          : "当前位置获取失败，请稍后重试";
     },
     {
       enableHighAccuracy: false,
       timeout: 10000,
-      maximumAge: 300000
-    }
-  )
-}
+      maximumAge: 300000,
+    },
+  );
+};
 
-const normalizeHistoryMessage = item => ({
+const isConstraintObject = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const normalizeHistoryMessage = (item) => ({
   key: `history-${item.id}`,
   id: item.id,
   role: item.role,
-  content: item.content || '',
+  content: item.content || "",
   requestId: item.requestId,
   responseType: item.responseType,
   recommendationId: item.recommendationId,
-  recommendations: Array.isArray(item.recommendations) ? item.recommendations : [],
-  suggestions: Array.isArray(item.adjustmentSuggestions) ? item.adjustmentSuggestions : [],
-  limitingConditions: Array.isArray(item.limitingConditions) ? item.limitingConditions : [],
-  notice: degradationNotice(item)
-})
+  recommendations: Array.isArray(item.recommendations)
+    ? item.recommendations
+    : [],
+  suggestions: Array.isArray(item.adjustmentSuggestions)
+    ? item.adjustmentSuggestions
+    : [],
+  limitingConditions: Array.isArray(item.limitingConditions)
+    ? item.limitingConditions
+    : [],
+  currentConstraints: isConstraintObject(item.currentConstraints)
+    ? item.currentConstraints
+    : null,
+  notice: degradationNotice(item),
+});
 
-const degradationNotice = data => {
-  if (data?.responseType === 'DATA_ERROR') return '数据服务异常，请稍后重试'
-  if (data?.recommendation?.semanticStatus === 'UNAVAILABLE') return '语义检索暂不可用，本次已使用确定性规则排序'
-  if (data?.degraded && data?.extractor === 'RULE_FALLBACK') return 'AI 理解暂不可用，本次已使用规则安全降级'
-  if (data?.degraded) return '部分 AI 能力暂不可用，核心推荐仍可使用'
-  return ''
-}
+const degradationNotice = (data) => {
+  if (data?.responseType === "DATA_ERROR") return "数据服务异常，请稍后重试";
+  if (data?.recommendation?.semanticStatus === "UNAVAILABLE")
+    return "语义检索暂不可用，本次已使用确定性规则排序";
+  if (data?.degraded && data?.extractor === "RULE_FALLBACK")
+    return "AI 理解暂不可用，本次已使用规则安全降级";
+  if (data?.degraded) return "部分 AI 能力暂不可用，核心推荐仍可使用";
+  return "";
+};
 
 const scrollToBottom = async () => {
-  await nextTick()
+  await nextTick();
   if (messageListRef.value) {
-    messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+    messageListRef.value.scrollTop = messageListRef.value.scrollHeight;
   }
-}
+};
 
-const loadHistory = async id => {
-  const response = await getDiningMessages(id)
-  if (!response.success) throw new Error(response.message || '历史消息加载失败')
-  messages.value = (response.data?.messages || []).map(normalizeHistoryMessage)
-}
+const loadHistory = async (id) => {
+  const response = await getDiningMessages(id);
+  if (!response.success)
+    throw new Error(response.message || "历史消息加载失败");
+  const normalizedMessages = (response.data?.messages || []).map(
+    normalizeHistoryMessage,
+  );
+  messages.value = normalizedMessages;
+  const latestWithConstraints = [...normalizedMessages]
+    .reverse()
+    .find(
+      (item) =>
+        isConstraintObject(item.currentConstraints) &&
+        Object.keys(item.currentConstraints).length > 0,
+    );
+  currentConstraints.value = latestWithConstraints?.currentConstraints || {};
+};
 
 const loadHistorySessions = async () => {
-  historyLoading.value = true
-  historyError.value = ''
+  historyLoading.value = true;
+  historyError.value = "";
 
   try {
-    const response = await getDiningSessions(currentUserId())
+    const response = await getDiningSessions(currentUserId());
 
     if (!response.success) {
-      throw new Error(response.message || '历史对话加载失败')
+      throw new Error(response.message || "历史对话加载失败");
     }
 
     historySessions.value = extractSessionList(response)
       .map(normalizeSessionSummary)
-      .filter(item => Number.isSafeInteger(item.sessionId) && item.sessionId > 0)
+      .filter(
+        (item) => Number.isSafeInteger(item.sessionId) && item.sessionId > 0,
+      )
       .sort((left, right) => {
-        const leftTime = new Date(left.updatedAt || 0).getTime()
-        const rightTime = new Date(right.updatedAt || 0).getTime()
-        return rightTime - leftTime
-      })
+        const leftTime = new Date(left.updatedAt || 0).getTime();
+        const rightTime = new Date(right.updatedAt || 0).getTime();
+        return rightTime - leftTime;
+      });
   } catch (error) {
-    historySessions.value = []
-    historyError.value =
-      error.message || '历史对话加载失败，请稍后重试'
+    historySessions.value = [];
+    historyError.value = error.message || "历史对话加载失败，请稍后重试";
   } finally {
-    historyLoading.value = false
+    historyLoading.value = false;
   }
-}
+};
 
 const isMobileViewport = () =>
-  typeof window !== 'undefined' && window.innerWidth <= 980
+  typeof window !== "undefined" && window.innerWidth <= 980;
 
 const toggleHistorySidebar = async () => {
-  historySidebarOpen.value = !historySidebarOpen.value
+  historySidebarOpen.value = !historySidebarOpen.value;
 
   if (historySidebarOpen.value) {
-    await loadHistorySessions()
+    await loadHistorySessions();
   }
-}
+};
 
 const closeHistorySidebar = () => {
-  historySidebarOpen.value = false
-}
+  historySidebarOpen.value = false;
+};
 
-const switchHistorySession = async session => {
-  const targetSessionId = sessionIdOf(session)
+const switchHistorySession = async (session) => {
+  const targetSessionId = sessionIdOf(session);
 
-  if (
-    !Number.isSafeInteger(targetSessionId) ||
-    targetSessionId <= 0
-  ) {
-    historyError.value = '该历史会话信息无效'
-    return
+  if (!Number.isSafeInteger(targetSessionId) || targetSessionId <= 0) {
+    historyError.value = "该历史会话信息无效";
+    return;
   }
 
   if (targetSessionId === sessionId.value) {
     if (isMobileViewport()) {
-      closeHistorySidebar()
+      closeHistorySidebar();
     }
-    return
+    return;
   }
 
-  initializing.value = true
-  errorMessage.value = ''
+  initializing.value = true;
+  errorMessage.value = "";
 
   try {
-    await loadHistory(targetSessionId)
-    sessionId.value = targetSessionId
-    localStorage.setItem(
-      sessionStorageKey(),
-      String(targetSessionId)
-    )
-    currentConstraints.value = {}
-    pendingRequest.value = null
+    await loadHistory(targetSessionId);
+    sessionId.value = targetSessionId;
+    localStorage.setItem(sessionStorageKey(), String(targetSessionId));
+    pendingRequest.value = null;
     if (isMobileViewport()) {
-      closeHistorySidebar()
+      closeHistorySidebar();
     }
   } catch (error) {
-    historyError.value =
-      error.message || '历史消息加载失败，请稍后重试'
+    historyError.value = error.message || "历史消息加载失败，请稍后重试";
   } finally {
-    initializing.value = false
-    scrollToBottom()
+    initializing.value = false;
+    scrollToBottom();
   }
-}
+};
 
-const deleteHistorySession = async session => {
-  const targetSessionId = sessionIdOf(session)
+const deleteHistorySession = async (session) => {
+  const targetSessionId = sessionIdOf(session);
 
-  if (
-    !Number.isSafeInteger(targetSessionId) ||
-    targetSessionId <= 0
-  ) {
-    historyError.value = '该历史会话信息无效'
-    return
+  if (!Number.isSafeInteger(targetSessionId) || targetSessionId <= 0) {
+    historyError.value = "该历史会话信息无效";
+    return;
   }
 
   const confirmed = window.confirm(
-    `确定删除“${session.title || '该对话'}”吗？\n\n` +
-    '删除后将不再显示，但系统仍会保留相关记录。'
-  )
+    `确定删除“${session.title || "该对话"}”吗？\n\n` +
+      "删除后将不再显示，但系统仍会保留相关记录。",
+  );
 
-  if (!confirmed) return
+  if (!confirmed) return;
 
-  deletingSessionId.value = targetSessionId
-  historyError.value = ''
+  deletingSessionId.value = targetSessionId;
+  historyError.value = "";
 
   try {
-    const response = await deleteDiningSession(targetSessionId)
+    const response = await deleteDiningSession(targetSessionId);
 
     if (!response.success) {
-      throw new Error(response.message || '删除对话失败')
+      throw new Error(response.message || "删除对话失败");
     }
 
     historySessions.value = historySessions.value.filter(
-      item => item.sessionId !== targetSessionId
-    )
+      (item) => item.sessionId !== targetSessionId,
+    );
 
     if (targetSessionId !== sessionId.value) {
-      return
+      return;
     }
 
-    const nextSession = historySessions.value[0]
+    const nextSession = historySessions.value[0];
 
     if (nextSession) {
-      await switchHistorySession(nextSession)
-      return
+      await switchHistorySession(nextSession);
+      return;
     }
 
-    await createSession()
-    resetConversationView()
-    await loadHistorySessions()
+    await createSession();
+    resetConversationView();
+    await loadHistorySessions();
   } catch (error) {
-    historyError.value =
-      error.message || '删除对话失败，请稍后重试'
+    historyError.value = error.message || "删除对话失败，请稍后重试";
   } finally {
-    deletingSessionId.value = null
+    deletingSessionId.value = null;
   }
-}
+};
 
 const createSession = async () => {
-  const response = await createDiningSession('AI探店对话')
+  const response = await createDiningSession("AI探店对话");
   if (!response.success || !response.data?.sessionId) {
-    throw new Error(response.message || '会话创建失败')
+    throw new Error(response.message || "会话创建失败");
   }
-  sessionId.value = response.data.sessionId
-  localStorage.setItem(sessionStorageKey(), String(sessionId.value))
-}
+  sessionId.value = response.data.sessionId;
+  localStorage.setItem(sessionStorageKey(), String(sessionId.value));
+};
 
 const resetConversationView = () => {
-  messages.value = []
-  draft.value = ''
-  currentConstraints.value = {}
-  adjustingSuggestionKey.value = ''
-  errorMessage.value = ''
-  pendingRequest.value = null
+  messages.value = [];
+  draft.value = "";
+  currentConstraints.value = {};
+  adjustingSuggestionKey.value = "";
+  errorMessage.value = "";
+  pendingRequest.value = null;
 
-  evidenceDialogOpen.value = false
-  evidenceLoading.value = false
-  evidenceError.value = ''
-  evidences.value = []
-}
+  evidenceDialogOpen.value = false;
+  evidenceLoading.value = false;
+  evidenceError.value = "";
+  evidences.value = [];
+};
 
 const startNewConversation = async () => {
-  if (
-    initializing.value ||
-    sending.value ||
-    adjustingSuggestionKey.value
-  ) {
-    return
+  if (initializing.value || sending.value || adjustingSuggestionKey.value) {
+    return;
   }
 
-  initializing.value = true
-  errorMessage.value = ''
+  initializing.value = true;
+  errorMessage.value = "";
 
   try {
     // 先成功创建并保存新的 sessionId，
     // 再清空页面，避免创建失败时丢掉当前聊天界面。
-    await createSession()
-    resetConversationView()
+    await createSession();
+    resetConversationView();
 
     if (historySidebarOpen.value) {
-      await loadHistorySessions()
+      await loadHistorySessions();
     }
   } catch (error) {
-    errorMessage.value =
-      error.message || '新建对话失败，请稍后重试'
+    errorMessage.value = error.message || "新建对话失败，请稍后重试";
   } finally {
-    initializing.value = false
-    scrollToBottom()
+    initializing.value = false;
+    scrollToBottom();
   }
-}
+};
 
 const clearDialogueReturnQuery = () => {
-  const nextQuery = { ...route.query }
+  const nextQuery = { ...route.query };
   const hadSessionId = Object.prototype.hasOwnProperty.call(
     nextQuery,
-    'sessionId'
-  )
-  const hadFrom = Object.prototype.hasOwnProperty.call(
-    nextQuery,
-    'from'
-  )
+    "sessionId",
+  );
+  const hadFrom = Object.prototype.hasOwnProperty.call(nextQuery, "from");
 
-  if (!hadSessionId && !hadFrom) return
+  if (!hadSessionId && !hadFrom) return;
 
-  delete nextQuery.sessionId
-  delete nextQuery.from
+  delete nextQuery.sessionId;
+  delete nextQuery.from;
 
-  router.replace({
-    path: route.path,
-    query: nextQuery
-  }).catch(() => {})
-}
+  router
+    .replace({
+      path: route.path,
+      query: nextQuery,
+    })
+    .catch(() => {});
+};
 
 const initialize = async () => {
-  initializing.value = true
-  errorMessage.value = ''
+  initializing.value = true;
+  errorMessage.value = "";
 
   const rawRouteSessionId = Array.isArray(route.query.sessionId)
     ? route.query.sessionId[0]
-    : route.query.sessionId
+    : route.query.sessionId;
 
-  const routeSessionId = Number(rawRouteSessionId)
-  const savedSessionId = Number(
-    localStorage.getItem(sessionStorageKey())
-  )
+  const routeSessionId = Number(rawRouteSessionId);
+  const savedSessionId = Number(localStorage.getItem(sessionStorageKey()));
 
   const preferredSessionId =
     Number.isSafeInteger(routeSessionId) && routeSessionId > 0
       ? routeSessionId
-      : savedSessionId
+      : savedSessionId;
 
   try {
-    if (
-      Number.isSafeInteger(preferredSessionId) &&
-      preferredSessionId > 0
-    ) {
-      sessionId.value = preferredSessionId
+    if (Number.isSafeInteger(preferredSessionId) && preferredSessionId > 0) {
+      sessionId.value = preferredSessionId;
 
       // URL 中的 sessionId 优先，并同步为当前本地会话。
-      localStorage.setItem(
-        sessionStorageKey(),
-        String(preferredSessionId)
-      )
+      localStorage.setItem(sessionStorageKey(), String(preferredSessionId));
 
-      await loadHistory(preferredSessionId)
+      await loadHistory(preferredSessionId);
 
-      if (
-        Number.isSafeInteger(routeSessionId) &&
-        routeSessionId > 0
-      ) {
-        clearDialogueReturnQuery()
+      if (Number.isSafeInteger(routeSessionId) && routeSessionId > 0) {
+        clearDialogueReturnQuery();
       }
     } else {
-      await createSession()
+      await createSession();
     }
   } catch (error) {
-    localStorage.removeItem(sessionStorageKey())
-    messages.value = []
+    localStorage.removeItem(sessionStorageKey());
+    messages.value = [];
 
     try {
-      await createSession()
+      await createSession();
     } catch (createError) {
       errorMessage.value =
-        createError.message || '探店助手暂时不可用，请稍后重试'
+        createError.message || "探店助手暂时不可用，请稍后重试";
     }
   } finally {
-    initializing.value = false
-    scrollToBottom()
+    initializing.value = false;
+    scrollToBottom();
   }
-}
+};
 
 const submitMessage = async () => {
-  if (sending.value || initializing.value) return
-  const content = draft.value.trim()
+  if (sending.value || initializing.value) return;
+  const content = draft.value.trim();
   if (!content) {
-    errorMessage.value = '请输入有效的用餐需求，不能只输入空格或换行'
-    return
+    errorMessage.value = "请输入有效的用餐需求，不能只输入空格或换行";
+    return;
   }
 
-  const userId = currentUserId()
-  logSearch({ userId: userId !== 'anonymous' ? userId : undefined, keyword: content }).catch(() => {})
+  const userId = currentUserId();
+  logSearch({
+    userId: userId !== "anonymous" ? userId : undefined,
+    keyword: content,
+  }).catch(() => {});
 
   const requestId =
     pendingRequest.value?.content === content
       ? pendingRequest.value.requestId
-      : createRequestId()
-  pendingRequest.value = { content, requestId }
-  sending.value = true
-  errorMessage.value = ''
+      : createRequestId();
+  pendingRequest.value = { content, requestId };
+  sending.value = true;
+  errorMessage.value = "";
   try {
     const response = await sendDiningMessage(
       sessionId.value,
       content,
       requestId,
-      currentLocation.value
-    )
+      currentLocation.value,
+    );
     if (!response.success || !response.data) {
-      if (response.message?.includes('缺少当前位置')) {
-        throw new Error('该需求包含距离条件，请先点击“使用当前位置”并授权定位')
+      if (response.message?.includes("缺少当前位置")) {
+        throw new Error("该需求包含距离条件，请先点击“使用当前位置”并授权定位");
       }
-      throw new Error(response.message || '消息发送失败')
+      throw new Error(response.message || "消息发送失败");
     }
 
-    const data = response.data
+    const data = response.data;
     messages.value.push({
       key: `user-${data.userMessageId || requestId}`,
-      role: 'USER',
+      role: "USER",
       content,
       requestId,
       recommendations: [],
       suggestions: [],
-      limitingConditions: []
-    })
+      limitingConditions: [],
+    });
     messages.value.push({
       key: `assistant-${data.assistantMessageId || requestId}`,
       id: data.assistantMessageId,
-      role: 'ASSISTANT',
-      content: data.assistantText || data.recommendation?.message || '请求已处理',
+      role: "ASSISTANT",
+      content:
+        data.assistantText || data.recommendation?.message || "请求已处理",
       requestId,
       responseType: data.responseType,
       recommendationId: data.recommendation?.recommendationId,
       recommendations: data.recommendation?.results || [],
       suggestions: data.recommendation?.adjustmentSuggestions || [],
       limitingConditions: data.recommendation?.limitingConditions || [],
-      notice: degradationNotice(data)
-    })
+      notice: degradationNotice(data),
+    });
     currentConstraints.value =
       data.recommendation?.currentConstraints ||
       data.currentConstraints ||
-      currentConstraints.value
-    draft.value = ''
-    pendingRequest.value = null
+      currentConstraints.value;
+    draft.value = "";
+    pendingRequest.value = null;
   } catch (error) {
-    errorMessage.value = error.message || '网络或 AI 服务异常，请稍后重新发送'
+    errorMessage.value = error.message || "网络或 AI 服务异常，请稍后重新发送";
   } finally {
-    sending.value = false
-    scrollToBottom()
+    sending.value = false;
+    scrollToBottom();
   }
-}
+};
 
 const suggestionKey = (message, suggestion) =>
-  `${message.key}:${suggestion.id || suggestion.field || suggestion.displayText}`
+  `${message.key}:${suggestion.id || suggestion.field || suggestion.displayText}`;
 
 const isAdjusting = (message, suggestion) =>
-  adjustingSuggestionKey.value === suggestionKey(message, suggestion)
+  adjustingSuggestionKey.value === suggestionKey(message, suggestion);
 
 const applySuggestion = async (message, suggestion) => {
-  if (adjustingSuggestionKey.value || !sessionId.value) return
+  if (adjustingSuggestionKey.value || !sessionId.value) return;
   if (!suggestion?.field || suggestion.suggestedValue === undefined) {
-    errorMessage.value = '该调整建议缺少有效参数，请刷新后重试'
-    return
+    errorMessage.value = "该调整建议缺少有效参数，请刷新后重试";
+    return;
   }
 
-  adjustingSuggestionKey.value = suggestionKey(message, suggestion)
-  errorMessage.value = ''
+  adjustingSuggestionKey.value = suggestionKey(message, suggestion);
+  errorMessage.value = "";
   try {
     const response = await adjustDiningRecommendation(
       sessionId.value,
       message.id,
       suggestion.field,
       suggestion.suggestedValue,
-      currentLocation.value
-    )
+      currentLocation.value,
+    );
     if (!response.success || !response.data) {
-      throw new Error(response.message || '调整条件后重新推荐失败')
+      throw new Error(response.message || "调整条件后重新推荐失败");
     }
 
-    const recommendation = response.data
+    const recommendation = response.data;
     currentConstraints.value =
-      recommendation.currentConstraints ||
-      recommendation.constraints ||
-      {}
-    message.responseType = recommendation.status
-    message.recommendationId = recommendation.recommendationId
+      recommendation.currentConstraints || recommendation.constraints || {};
+    message.responseType = recommendation.status;
+    message.recommendationId = recommendation.recommendationId;
     message.content =
       recommendation.message ||
-      (recommendation.status === 'SUCCESS'
+      (recommendation.status === "SUCCESS"
         ? `已为你找到 ${recommendation.resultCount || 0} 家符合条件的商家`
-        : '当前仍没有完全匹配的结果')
+        : "当前仍没有完全匹配的结果");
     message.recommendations =
-      recommendation.status === 'SUCCESS' && Array.isArray(recommendation.results)
+      recommendation.status === "SUCCESS" &&
+      Array.isArray(recommendation.results)
         ? recommendation.results
-        : []
+        : [];
     message.suggestions =
-      recommendation.status === 'NO_MATCH' &&
+      recommendation.status === "NO_MATCH" &&
       Array.isArray(recommendation.adjustmentSuggestions)
         ? recommendation.adjustmentSuggestions
-        : []
+        : [];
     message.limitingConditions =
-      recommendation.status === 'NO_MATCH' &&
+      recommendation.status === "NO_MATCH" &&
       Array.isArray(recommendation.limitingConditions)
         ? recommendation.limitingConditions
-        : []
+        : [];
   } catch (error) {
-    errorMessage.value =
-      error.message || '调整条件后重新推荐失败，请稍后重试'
+    errorMessage.value = error.message || "调整条件后重新推荐失败，请稍后重试";
   } finally {
-    adjustingSuggestionKey.value = ''
-    scrollToBottom()
+    adjustingSuggestionKey.value = "";
+    scrollToBottom();
   }
-}
+};
 
-const openMerchant = merchantId => {
-  if (!merchantId) return
+const openMerchant = (merchantId) => {
+  if (!merchantId) return;
 
-  const userId = currentUserId()
+  const userId = currentUserId();
 
   logMerchantClick({
-    userId: userId !== 'anonymous' ? userId : undefined,
-    merchantId
-  }).catch(() => {})
+    userId: userId !== "anonymous" ? userId : undefined,
+    merchantId,
+  }).catch(() => {});
 
   router.push({
     path: `/diner/merchant/${merchantId}`,
     query: {
-      from: 'ai-dining',
-      sessionId: String(sessionId.value)
-    }
-  })
-}
+      from: "ai-dining",
+      sessionId: String(sessionId.value),
+    },
+  });
+};
 
-const evidenceTypeText = type => ({
-  REVIEW: '用户评价',
-  MERCHANT: '商家资料',
-  DISH: '菜单菜品'
-}[type] || '推荐依据')
+const evidenceTypeText = (type) =>
+  ({
+    REVIEW: "用户评价",
+    MERCHANT: "商家资料",
+    DISH: "菜单菜品",
+  })[type] || "推荐依据";
 
 const openEvidence = async (message, merchant) => {
-  evidenceDialogOpen.value = true
-  evidenceLoading.value = true
-  evidenceError.value = ''
-  evidences.value = []
+  evidenceDialogOpen.value = true;
+  evidenceLoading.value = true;
+  evidenceError.value = "";
+  evidences.value = [];
   if (!message.recommendationId) {
-    evidenceLoading.value = false
-    return
+    evidenceLoading.value = false;
+    return;
   }
   try {
     const response = await getRecommendationEvidences(
       message.recommendationId,
-      merchant.merchantId
-    )
-    if (!response.success) throw new Error(response.message || '推荐依据加载失败')
-    evidences.value = response.data || []
+      merchant.merchantId,
+    );
+    if (!response.success)
+      throw new Error(response.message || "推荐依据加载失败");
+    evidences.value = response.data || [];
   } catch (error) {
-    evidenceError.value = error.message || '推荐依据加载失败，请稍后重试'
+    evidenceError.value = error.message || "推荐依据加载失败，请稍后重试";
   } finally {
-    evidenceLoading.value = false
+    evidenceLoading.value = false;
   }
-}
+};
 
 const closeEvidence = () => {
-  evidenceDialogOpen.value = false
-}
+  evidenceDialogOpen.value = false;
+};
 
 onMounted(async () => {
-  await initialize()
+  await initialize();
 
   if (historySidebarOpen.value) {
-    await loadHistorySessions()
+    await loadHistorySessions();
   }
-})
+});
 </script>
 
 <style scoped>
@@ -1238,11 +1215,7 @@ onMounted(async () => {
   overflow: hidden;
   color: #29231e;
   font-family:
-    "Microsoft YaHei",
-    "PingFang SC",
-    "Noto Sans SC",
-    Arial,
-    sans-serif;
+    "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif;
   background:
     radial-gradient(
       circle at 12% 4%,
@@ -1462,12 +1435,11 @@ onMounted(async () => {
   gap: 18px;
   padding: 11px 18px;
   border-bottom: 1px solid #eee8e1;
-  background:
-    linear-gradient(
-      135deg,
-      rgba(255, 250, 245, 0.98),
-      rgba(250, 248, 255, 0.98)
-    );
+  background: linear-gradient(
+    135deg,
+    rgba(255, 250, 245, 0.98),
+    rgba(250, 248, 255, 0.98)
+  );
 }
 
 .assistant-toolbar-actions {
@@ -1512,7 +1484,6 @@ onMounted(async () => {
   background: linear-gradient(135deg, #fff7ed, #fef2f2);
   box-shadow: 0 6px 14px rgba(194, 65, 12, 0.08);
 }
-
 
 .location-toolbar {
   display: flex;
@@ -1679,17 +1650,12 @@ onMounted(async () => {
   object-fit: contain;
 }
 
-
 .empty-panel h2 {
   margin: 0;
   color: #29231e;
   font-size: 29px;
   line-height: 1.4;
 }
-
-
-
-
 
 .state-panel {
   gap: 8px;
@@ -1700,7 +1666,6 @@ onMounted(async () => {
   color: #4d453e;
   font-size: 17px;
 }
-
 
 .state-spinner {
   width: 34px;
@@ -1764,7 +1729,6 @@ onMounted(async () => {
 .user-row .message-column {
   align-items: flex-end;
 }
-
 
 .message-bubble {
   width: fit-content;
@@ -1846,12 +1810,11 @@ onMounted(async () => {
   border: 1px solid #e8e1da;
   border-radius: 16px;
   text-align: left;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(255, 255, 255, 0.98),
-      rgba(255, 250, 245, 0.94)
-    );
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(255, 250, 245, 0.94)
+  );
   cursor: pointer;
   transition:
     transform 0.22s,
@@ -2268,7 +2231,6 @@ onMounted(async () => {
   padding: 4px 4px 1px 10px;
 }
 
-
 .composer-actions {
   display: flex;
   flex: 0 0 auto;
@@ -2324,7 +2286,6 @@ onMounted(async () => {
   color: #6d28d9;
   background: rgba(255, 255, 255, 0.9);
 }
-
 
 .history-sidebar {
   display: flex;
@@ -2681,7 +2642,6 @@ onMounted(async () => {
 .unavailable-text {
   color: #9a3412 !important;
 }
-
 
 @keyframes spin {
   to {

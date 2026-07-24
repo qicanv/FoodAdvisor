@@ -820,7 +820,9 @@ public class DialogueService {
                         || hasValues(
                                 safeConstraints
                                         .getEnvironmentRequirements()
-                        );
+                        )
+                        || ConstraintState.RATING_PREFERENCE_HIGH.equals(
+                                safeConstraints.getRatingPreference());
 
         if (!hasPreference) {
             missingFields.add(FIELD_CUISINES);

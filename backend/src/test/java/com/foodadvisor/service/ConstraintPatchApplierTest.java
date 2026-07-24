@@ -111,6 +111,35 @@ class ConstraintPatchApplierTest {
         assertTrue(result.changedFields().contains("businessTargetNextDay"));
     }
 
+    @Test
+    void controlsAndClearsRatingPreference() {
+        ConstraintState current = new ConstraintState();
+        ConstraintPatch highPatch = patch();
+        highPatch.getOperations().setSetValues(Map.of(
+                "ratingPreference", "HIGH"));
+
+        ConstraintPatchApplier.PatchResult high =
+                applier.apply(current, highPatch);
+        assertEquals("HIGH", high.state().getRatingPreference());
+        assertTrue(high.changedFields().contains("ratingPreference"));
+
+        ConstraintPatch invalidPatch = patch();
+        invalidPatch.getOperations().setSetValues(Map.of(
+                "ratingPreference", "LOW"));
+        ConstraintState unchanged =
+                applier.apply(high.state(), invalidPatch).state();
+        assertEquals("HIGH", unchanged.getRatingPreference());
+
+        ConstraintPatch clearPatch = patch();
+        clearPatch.getOperations().setClear(List.of(
+                "ratingPreference"));
+        ConstraintPatchApplier.PatchResult cleared =
+                applier.apply(unchanged, clearPatch);
+        assertNull(cleared.state().getRatingPreference());
+        assertTrue(cleared.changedFields()
+                .contains("ratingPreference"));
+    }
+
     private ConstraintPatch patch() {
         ConstraintPatch patch = new ConstraintPatch();
         patch.setOperations(new ConstraintPatchOperations());

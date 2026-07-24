@@ -31,7 +31,8 @@ public class AiTraceSanitizer {
             "partysize", "totalbudget", "percapitabudget", "merchanttypes",
             "cuisines", "tastepreferences", "tasterestrictions",
             "dishkeywords", "excludedcuisines", "excludedmerchanttypes",
-            "distancekm", "minrating", "scenes", "environmentrequirements",
+            "distancekm", "minrating", "ratingpreference", "scenes",
+            "environmentrequirements",
             "businesstime", "businesstargettime", "businesstargetnextday",
 
             /*

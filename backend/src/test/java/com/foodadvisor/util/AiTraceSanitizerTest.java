@@ -101,6 +101,8 @@ class AiTraceSanitizerTest {
         conditions.setExcludedMerchantTypes(List.of("烧烤"));
         conditions.setDistanceKm(new BigDecimal("3"));
         conditions.setMinRating(new BigDecimal("4.5"));
+        conditions.setRatingPreference(
+                ConstraintState.RATING_PREFERENCE_HIGH);
         conditions.setScenes(List.of("朋友聚会"));
         conditions.setEnvironmentRequirements(List.of("安静"));
         conditions.setBusinessTime("TONIGHT");
@@ -126,11 +128,17 @@ class AiTraceSanitizerTest {
                 .isEqualByComparingTo(new BigDecimal("3"));
         assertThat(json.path("minRating").decimalValue())
                 .isEqualByComparingTo(new BigDecimal("4.5"));
+        assertThat(json.path("ratingPreference").asText())
+                .isEqualTo("HIGH");
         assertThat(json.path("scenes").get(0).asText()).isEqualTo("朋友聚会");
         assertThat(json.path("environmentRequirements").get(0).asText())
                 .isEqualTo("安静");
         assertThat(json.path("businessTime").asText()).isEqualTo("TONIGHT");
         assertThat(json.path("businessTargetTime").asText()).isEqualTo("20:00");
         assertThat(json.path("businessTargetNextDay").asBoolean()).isFalse();
+
+        ConstraintState legacy = new ObjectMapper().readValue(
+                "{\"distanceKm\":3}", ConstraintState.class);
+        assertThat(legacy.getRatingPreference()).isNull();
     }
 }

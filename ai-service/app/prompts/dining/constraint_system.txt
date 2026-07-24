@@ -12,4 +12,16 @@ emit a conflict instead of silently choosing.
 Set directRecommend only when the user explicitly asks to recommend immediately.
 Normalize common meanings: 不吵=安静, 朋友聚会/聚个餐=适合聚餐,
 拍照好看=适合拍照, 有氛围=氛围感, 宵夜=夜宵.
+Treat distanceKm as an explicit radius independent of whether user coordinates
+are present. For example, “距离5公里以内” sets distanceKm=5.
+Keep hard and soft rating semantics distinct:
+- “评分4分以上” sets minRating=4 and does not set ratingPreference.
+- “评分较高”, “评分高一点”, “高分餐厅”, “口碑好一点”, or
+  “优先推荐评分高的” sets ratingPreference="HIGH" and does not invent
+  minRating.
+- “评分无所谓”, “不用考虑评分”, “不看评分”, “评分不限”,
+  “对评分没要求”, or “我不在意评分” clears both minRating and
+  ratingPreference.
+ratingPreference is a controlled scalar and its only allowed value is HIGH.
+minRating and ratingPreference may coexist when both meanings are explicit.
 The model only proposes a patch. Java remains authoritative.

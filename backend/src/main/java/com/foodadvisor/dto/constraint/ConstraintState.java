@@ -17,6 +17,8 @@ import java.util.Map;
 @Data
 public class ConstraintState {
 
+    public static final String RATING_PREFERENCE_HIGH = "HIGH";
+
     /**
      * 用餐人数。
      * 例如：“四个人” -> 4
@@ -87,6 +89,11 @@ public class ConstraintState {
      * 例如：“至少4.5分” -> 4.5
      */
     private BigDecimal minRating;
+
+    /**
+     * 评分软排序偏好。当前仅支持 HIGH，不作为最低评分硬过滤条件。
+     */
+    private String ratingPreference;
 
     /**
      * 用餐场景。

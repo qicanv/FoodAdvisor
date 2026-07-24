@@ -359,12 +359,6 @@ public class RecommendationRankingService {
         ConstraintState constraints =
                 parseConstraints(sessionState);
 
-        validateLocationForDistance(
-                constraints,
-                request.getUserLatitude(),
-                request.getUserLongitude()
-        );
-
         RecommendationWeights weights =
                 resolveWeights(request);
 
@@ -710,28 +704,6 @@ public class RecommendationRankingService {
                     HttpStatus.INTERNAL_SERVER_ERROR,
                     "CONSTRAINTS_PARSE_FAILED",
                     "会话消费需求数据解析失败"
-            );
-        }
-    }
-
-    private void validateLocationForDistance(
-            ConstraintState constraints,
-            BigDecimal userLatitude,
-            BigDecimal userLongitude
-    ) {
-        if (constraints == null
-                || constraints.getDistanceKm() == null
-                || constraints.getDistanceKm()
-                .compareTo(BigDecimal.ZERO) <= 0) {
-            return;
-        }
-
-        if (userLatitude == null
-                || userLongitude == null) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "USER_LOCATION_REQUIRED",
-                    "已设置距离要求，但缺少当前位置"
             );
         }
     }
@@ -2866,6 +2838,14 @@ private void applyDishKeywordFilter(
                     constraints.setMinRating(
                             readRating(value)
                     );
+            case "ratingPreference" -> {
+                if (!ConstraintState.RATING_PREFERENCE_HIGH.equals(value)) {
+                    throw invalidAdjustment(
+                            "ratingPreference仅支持HIGH");
+                }
+                constraints.setRatingPreference(
+                        ConstraintState.RATING_PREFERENCE_HIGH);
+            }
             case "businessTime" -> {
                 constraints.setBusinessTime(null);
                 constraints.setBusinessTargetTime(null);
@@ -3144,6 +3124,11 @@ private void applyDishKeywordFilter(
         );
         copy.setDistanceKm(source.getDistanceKm());
         copy.setMinRating(source.getMinRating());
+        copy.setRatingPreference(
+                ConstraintState.RATING_PREFERENCE_HIGH.equals(
+                        source.getRatingPreference())
+                        ? ConstraintState.RATING_PREFERENCE_HIGH
+                        : null);
         copy.setScenes(copyList(source.getScenes()));
         copy.setEnvironmentRequirements(
                 copyList(

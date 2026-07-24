@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.foodadvisor.dto.ai.DialogueExtractAiRequest;
 import com.foodadvisor.dto.ai.DialogueExtractAiResponse;
 import com.foodadvisor.dto.constraint.ConstraintExtractResponse;
+import com.foodadvisor.dto.constraint.ConstraintConflictVO;
+import com.foodadvisor.dto.constraint.ConstraintPatch;
+import com.foodadvisor.dto.constraint.ConstraintPatchOperations;
 import com.foodadvisor.dto.constraint.ConstraintState;
 import com.foodadvisor.entity.ChatMessage;
 import com.foodadvisor.entity.ChatSession;
@@ -27,6 +30,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -406,6 +410,175 @@ class ConstraintExtractionServiceAiTest {
                         "川菜",
                         json.get("cuisines").get(0).asText()
                 )
+        );
+    }
+
+    @Test
+    void shouldSupplementDistanceWhenAiSuccessOmitsIt()
+            throws Exception {
+        stubSessionAndPersistence(null);
+        ConstraintState aiExtracted = new ConstraintState();
+        aiExtracted.setCuisines(List.of("川菜"));
+        DialogueExtractAiResponse aiResponse = aiResponse(
+                "MERCHANT_RECOMMENDATION",
+                aiExtracted,
+                List.of(),
+                false
+        );
+        ConstraintPatch patch = new ConstraintPatch();
+        ConstraintPatchOperations operations =
+                new ConstraintPatchOperations();
+        operations.setAdd(java.util.Map.of(
+                "cuisines", List.of("川菜")));
+        patch.setOperations(operations);
+        aiResponse.setPatch(patch);
+        when(aiClientService.extractDialogueConstraints(any()))
+                .thenReturn(aiResponse);
+
+        ConstraintExtractResponse response = service.extractAndMerge(
+                1L,
+                1L,
+                "两个人，人均100元，距离5公里以内，想吃川菜。",
+                "req-distance-supplement"
+        );
+
+        ArgumentCaptor<ConstraintExtraction> captor =
+                ArgumentCaptor.forClass(ConstraintExtraction.class);
+        verify(constraintExtractionMapper).insert(captor.capture());
+        JsonNode extractedJson = objectMapper.readTree(
+                captor.getValue().getExtractedConstraints());
+        JsonNode mergedJson = objectMapper.readTree(
+                captor.getValue().getMergedConstraints());
+        JsonNode changedJson = objectMapper.readTree(
+                captor.getValue().getChangedFields());
+
+        assertAll(
+                () -> assertEquals(
+                        0, new BigDecimal("5").compareTo(
+                                response.getExtracted().getDistanceKm())),
+                () -> assertEquals(
+                        0, new BigDecimal("5").compareTo(
+                                response.getMerged().getDistanceKm())),
+                () -> assertTrue(response.getChanges()
+                        .contains("distanceKm")),
+                () -> assertEquals(
+                        0, new BigDecimal("5").compareTo(
+                                extractedJson.get("distanceKm")
+                                        .decimalValue())),
+                () -> assertEquals(
+                        0, new BigDecimal("5").compareTo(
+                                mergedJson.get("distanceKm")
+                                        .decimalValue())),
+                () -> assertTrue(changedJson.toString()
+                        .contains("distanceKm"))
+        );
+    }
+
+    @Test
+    void shouldKeepAiClearAndConflictFromRuleSupplement() {
+        ChatSessionState oldState = new ChatSessionState();
+        oldState.setId(10L);
+        oldState.setSessionId(1L);
+        oldState.setVersion(1);
+        oldState.setCurrentConstraints(
+                "{\"distanceKm\":3,\"merchantTypes\":[],"
+                        + "\"cuisines\":[],\"tastePreferences\":[],"
+                        + "\"tasteRestrictions\":[],\"dishKeywords\":[],"
+                        + "\"excludedCuisines\":[],"
+                        + "\"excludedMerchantTypes\":[],\"scenes\":[],"
+                        + "\"environmentRequirements\":[]}");
+        stubSessionAndPersistence(oldState);
+
+        DialogueExtractAiResponse clearResponse = aiResponse(
+                "CONSTRAINT_UPDATE", new ConstraintState(),
+                List.of("distanceKm"), false);
+        ConstraintPatch clearPatch = new ConstraintPatch();
+        ConstraintPatchOperations clearOperations =
+                new ConstraintPatchOperations();
+        clearOperations.setClear(List.of("distanceKm"));
+        clearPatch.setOperations(clearOperations);
+        clearResponse.setPatch(clearPatch);
+
+        DialogueExtractAiResponse conflictResponse = aiResponse(
+                "CONSTRAINT_UPDATE", new ConstraintState(),
+                List.of(), false);
+        ConstraintPatch conflictPatch = new ConstraintPatch();
+        conflictPatch.setConflicts(List.of(
+                new ConstraintConflictVO(
+                        "distanceKm", "距离条件冲突")));
+        conflictResponse.setPatch(conflictPatch);
+
+        when(aiClientService.extractDialogueConstraints(any()))
+                .thenReturn(clearResponse, conflictResponse);
+
+        ConstraintExtractResponse cleared = service.extractAndMerge(
+                1L, 1L, "距离仍然5公里以内", "req-clear-distance");
+        ConstraintExtractResponse conflicted = service.extractAndMerge(
+                1L, 1L, "距离5公里以内", "req-conflict-distance");
+
+        assertAll(
+                () -> assertEquals(
+                        null, cleared.getMerged().getDistanceKm()),
+                () -> assertEquals(
+                        null, cleared.getExtracted().getDistanceKm()),
+                () -> assertEquals(
+                        null, conflicted.getExtracted().getDistanceKm()),
+                () -> assertEquals(
+                        1, conflicted.getConflicts().size())
+        );
+    }
+
+    @Test
+    void shouldDistinguishAndClearRatingConditions() {
+        ChatSessionState oldState = new ChatSessionState();
+        oldState.setId(10L);
+        oldState.setSessionId(1L);
+        oldState.setVersion(1);
+        oldState.setCurrentConstraints(
+                "{\"minRating\":4.0,\"ratingPreference\":\"HIGH\","
+                        + "\"merchantTypes\":[],\"cuisines\":[],"
+                        + "\"tastePreferences\":[],"
+                        + "\"tasteRestrictions\":[],\"dishKeywords\":[],"
+                        + "\"excludedCuisines\":[],"
+                        + "\"excludedMerchantTypes\":[],\"scenes\":[],"
+                        + "\"environmentRequirements\":[]}");
+        stubSessionAndPersistence(oldState);
+        when(aiClientService.extractDialogueConstraints(any()))
+                .thenReturn(
+                        aiResponse("CONSTRAINT_UPDATE",
+                                new ConstraintState(), List.of(), false),
+                        aiResponse("CONSTRAINT_UPDATE",
+                                new ConstraintState(), List.of(), false),
+                        aiResponse("CONSTRAINT_UPDATE",
+                                new ConstraintState(), List.of(), false)
+                );
+
+        ConstraintExtractResponse fuzzy = service.extractAndMerge(
+                1L, 1L, "评分较高、适合聚餐", "req-rating-high");
+        ConstraintExtractResponse numeric = service.extractAndMerge(
+                1L, 1L, "评分4分以上", "req-rating-min");
+        ConstraintExtractResponse cleared = service.extractAndMerge(
+                1L, 1L, "不用考虑评分", "req-rating-clear");
+
+        assertAll(
+                () -> assertEquals(
+                        ConstraintState.RATING_PREFERENCE_HIGH,
+                        fuzzy.getExtracted().getRatingPreference()),
+                () -> assertEquals(
+                        null, fuzzy.getExtracted().getMinRating()),
+                () -> assertEquals(
+                        0, new BigDecimal("4").compareTo(
+                                numeric.getExtracted().getMinRating())),
+                () -> assertEquals(
+                        null, numeric.getExtracted()
+                                .getRatingPreference()),
+                () -> assertEquals(
+                        null, cleared.getMerged().getMinRating()),
+                () -> assertEquals(
+                        null, cleared.getMerged().getRatingPreference()),
+                () -> assertTrue(cleared.getChanges()
+                        .containsAll(List.of(
+                                "minRating", "ratingPreference")))
         );
     }
 
