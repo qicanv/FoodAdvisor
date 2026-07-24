@@ -797,17 +797,6 @@ public class RecommendationEvaluationRunService {
         List<Map<String, Object>> failureReasons =
                 new ArrayList<>(comparison.failureReasons());
 
-        if (extracted.getDistanceKm() != null
-                && (userLatitude == null || userLongitude == null)) {
-            Map<String, Object> reason = new LinkedHashMap<>();
-            reason.put("type", "LOCATION_MISSING");
-            reason.put(
-                    "message",
-                    "Distance constraint requires latitude and longitude"
-            );
-            failureReasons.add(reason);
-        }
-
         EvaluationMatches matches =
                 calculateRecommendations(
                         candidates,

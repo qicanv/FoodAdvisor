@@ -31,6 +31,8 @@ public class ConstraintPatchApplier {
         ensureLists(state);
         normalize(before);
         normalize(state);
+        validateNumbers(before);
+        validateNumbers(state);
         List<ConstraintConflictVO> conflicts = new ArrayList<>();
         if (patch == null) {
             return new PatchResult(state, List.of(), conflicts);
@@ -68,6 +70,12 @@ public class ConstraintPatchApplier {
                 case "perCapitaBudget" -> state.setPerCapitaBudget(decimal(value));
                 case "distanceKm" -> state.setDistanceKm(decimal(value));
                 case "minRating" -> state.setMinRating(decimal(value));
+                case "ratingPreference" -> {
+                    if (ConstraintState.RATING_PREFERENCE_HIGH.equals(value)) {
+                        state.setRatingPreference(
+                                ConstraintState.RATING_PREFERENCE_HIGH);
+                    }
+                }
                 case "businessTime" -> state.setBusinessTime(text(value));
                 case "businessTargetTime" -> state.setBusinessTargetTime(text(value));
                 case "businessTargetNextDay" ->
@@ -113,6 +121,7 @@ public class ConstraintPatchApplier {
                 case "perCapitaBudget" -> state.setPerCapitaBudget(null);
                 case "distanceKm" -> state.setDistanceKm(null);
                 case "minRating" -> state.setMinRating(null);
+                case "ratingPreference" -> state.setRatingPreference(null);
                 case "businessTime" -> state.setBusinessTime(null);
                 case "businessTargetTime" -> state.setBusinessTargetTime(null);
                 case "businessTargetNextDay" -> state.setBusinessTargetNextDay(null);
@@ -233,6 +242,10 @@ public class ConstraintPatchApplier {
                 || state.getMinRating().compareTo(new BigDecimal("5")) > 0)) {
             state.setMinRating(null);
         }
+        if (!ConstraintState.RATING_PREFERENCE_HIGH.equals(
+                state.getRatingPreference())) {
+            state.setRatingPreference(null);
+        }
     }
 
     private void recalculatePerCapita(
@@ -274,6 +287,8 @@ public class ConstraintPatchApplier {
                 after.getExcludedMerchantTypes());
         compare(changes, "distanceKm", before.getDistanceKm(), after.getDistanceKm());
         compare(changes, "minRating", before.getMinRating(), after.getMinRating());
+        compare(changes, "ratingPreference", before.getRatingPreference(),
+                after.getRatingPreference());
         compare(changes, "scenes", before.getScenes(), after.getScenes());
         compare(changes, "environmentRequirements",
                 before.getEnvironmentRequirements(), after.getEnvironmentRequirements());

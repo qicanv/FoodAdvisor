@@ -21,6 +21,7 @@ import com.foodadvisor.entity.ChatSessionState;
 import com.foodadvisor.mapper.ChatSessionStateMapper;
 import com.foodadvisor.dto.constraint.ConstraintExtractResponse;
 import com.foodadvisor.dto.constraint.ConstraintPatch;
+import com.foodadvisor.dto.constraint.ConstraintPatchOperations;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.foodadvisor.trace.AiTraceContext;
@@ -32,6 +33,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -177,12 +179,20 @@ public class ConstraintExtractionService {
      */
     private static final Pattern DISTANCE_PATTERN =
             Pattern.compile(
-                    "(?:附近|距离)?"
-                            + "\\s*("
+                    "(?:(?:距离)?\\s*("
                             + DECIMAL_OR_CHINESE_NUMBER
                             + ")"
                             + "\\s*公里"
-                            + "\\s*(?:内|以内|之内)?"
+                            + "\\s*(?:内|以内|之内)"
+                            + "|附近\\s*("
+                            + DECIMAL_OR_CHINESE_NUMBER
+                            + ")\\s*公里)"
+            );
+
+    private static final Pattern RELAXED_DISTANCE_PATTERN =
+            Pattern.compile(
+                    "(?:距离)?(?:远一点|远点)(?:也)?可以"
+                            + "|距离不限|远近无所谓|多远都可以"
             );
 
     /**
@@ -218,6 +228,24 @@ public class ConstraintExtractionService {
                     "评分\\s*(?:在)?\\s*"
                             + "([0-5](?:\\.\\d+)?)"
                             + "\\s*(?:以上|及以上|起)"
+            );
+
+    private static final Pattern HIGH_RATING_PREFERENCE_PATTERN =
+            Pattern.compile(
+                    "评分(?:较高|高一点|高些|高的)"
+                            + "|高分餐厅"
+                            + "|口碑(?:好一点|好些)"
+                            + "|优先推荐评分高"
+            );
+
+    private static final Pattern RATING_CLEAR_PATTERN =
+            Pattern.compile(
+                    "评分无所谓"
+                            + "|不用考虑评分"
+                            + "|不看评分"
+                            + "|评分不限"
+                            + "|对评分没要求"
+                            + "|我不在意评分"
             );
 
     private final ChatSessionMapper chatSessionMapper;
@@ -334,7 +362,7 @@ public class ConstraintExtractionService {
 
         if (aiExtraction == null) {
             extracted = extractByRules(message);
-            clearedFields = List.of();
+            clearedFields = extractClearedFieldsByRules(message);
             intent = "MERCHANT_RECOMMENDATION";
             extractor = "RULE_FALLBACK";
             degraded = true;
@@ -483,7 +511,7 @@ public class ConstraintExtractionService {
             recordRuleFallback(context);
             return new PreparedExtraction(
                     extractByRules(message),
-                    List.of(),
+                    extractClearedFieldsByRules(message),
                     "MERCHANT_RECOMMENDATION",
                     "RULE_FALLBACK",
                     true,
@@ -868,14 +896,15 @@ public class ConstraintExtractionService {
                             ? aiClientService.extractDialogueConstraints(request)
                             : aiClientService.extractDialogueConstraints(request, context);
 
-            return validateAiResponse(response);
+            return validateAiResponse(response, message);
         } catch (Exception ignored) {
             return null;
         }
     }
 
     private AiExtractionResult validateAiResponse(
-            DialogueExtractAiResponse response
+            DialogueExtractAiResponse response,
+            String message
     ) {
         if (response == null
                 || !"AI_MODEL".equals(response.getExtractor())
@@ -883,7 +912,7 @@ public class ConstraintExtractionService {
             return null;
         }
 
-        return new AiExtractionResult(
+        AiExtractionResult result = new AiExtractionResult(
                 normalizeIntent(response.getIntent()),
                 sanitizeAiConstraints(
                         response.getExtractedConstraints()
@@ -897,6 +926,234 @@ public class ConstraintExtractionService {
                 response.getPromptVersion(),
                 response.getPatch()
         );
+        return supplementDeterministicFields(result, message);
+    }
+
+    /**
+     * AI-first 提取成功后，仅对 AI patch 未触碰的确定性字段做规则补全。
+     * 这既避免覆盖 AI 的 set/clear/conflict，也避免成功响应因漏字段而丢条件。
+     */
+    private AiExtractionResult supplementDeterministicFields(
+            AiExtractionResult result,
+            String message
+    ) {
+        ConstraintState extracted = result.extracted();
+        List<String> clearedFields =
+                new ArrayList<>(result.clearedFields());
+        ConstraintPatch patch = result.patch();
+        ConstraintPatchOperations operations = patch == null
+                ? null : patch.getOperations();
+        if (patch != null && operations == null) {
+            operations = new ConstraintPatchOperations();
+            patch.setOperations(operations);
+        }
+        if (operations != null && operations.getSetValues() == null) {
+            operations.setSetValues(new LinkedHashMap<>());
+        }
+        if (operations != null && operations.getClear() == null) {
+            operations.setClear(new ArrayList<>());
+        }
+        if (operations != null) {
+            clearedFields.addAll(
+                    sanitizeClearedFields(operations.getClear()));
+        }
+
+        LinkedHashSet<String> touched =
+                collectTouchedFields(patch, clearedFields);
+
+        if (operations != null) {
+            projectPatchScalarsToExtracted(
+                    extracted, operations.getSetValues());
+        }
+
+        /*
+         * 兼容旧版 AI 响应：如果同时返回 legacy extracted/clearedFields
+         * 和空 patch，先把已提取结果投影到 patch，确保应用阶段不会丢失。
+         */
+        if (operations != null) {
+            projectLegacyScalarToPatch(
+                    operations, touched, "distanceKm",
+                    extracted.getDistanceKm());
+            projectLegacyScalarToPatch(
+                    operations, touched, "minRating",
+                    extracted.getMinRating());
+            projectLegacyScalarToPatch(
+                    operations, touched, "ratingPreference",
+                    extracted.getRatingPreference());
+            for (String field : clearedFields) {
+                if (operations.getClear() != null
+                        && !operations.getClear().contains(field)) {
+                    operations.getClear().add(field);
+                }
+                touched.add(field);
+            }
+        }
+
+        ConstraintState ruleExtracted = extractByRules(message);
+        supplementScalarField(
+                extracted, operations, touched, "distanceKm",
+                ruleExtracted.getDistanceKm());
+        supplementScalarField(
+                extracted, operations, touched, "minRating",
+                ruleExtracted.getMinRating());
+        supplementScalarField(
+                extracted, operations, touched, "ratingPreference",
+                ruleExtracted.getRatingPreference());
+
+        for (String field : extractClearedFieldsByRules(message)) {
+            if (touched.contains(field)) {
+                continue;
+            }
+            clearedFields.add(field);
+            touched.add(field);
+            clearExtractedScalar(extracted, field);
+            if (operations != null
+                    && !operations.getClear().contains(field)) {
+                operations.getClear().add(field);
+            }
+        }
+
+        return new AiExtractionResult(
+                result.intent(),
+                extracted,
+                new ArrayList<>(new LinkedHashSet<>(clearedFields)),
+                result.extractor(),
+                result.degraded(),
+                result.modelName(),
+                result.promptVersion(),
+                patch
+        );
+    }
+
+    private LinkedHashSet<String> collectTouchedFields(
+            ConstraintPatch patch,
+            List<String> clearedFields
+    ) {
+        LinkedHashSet<String> touched = new LinkedHashSet<>(clearedFields);
+        if (patch == null) {
+            return touched;
+        }
+        ConstraintPatchOperations operations = patch.getOperations();
+        if (operations != null) {
+            addMapKeys(touched, operations.getSetValues());
+            addMapKeys(touched, operations.getAdd());
+            addMapKeys(touched, operations.getRemove());
+            addMapKeys(touched, operations.getExclude());
+            addMapKeys(touched, operations.getUnexclude());
+            if (operations.getClear() != null) {
+                touched.addAll(operations.getClear());
+            }
+        }
+        if (patch.getConflicts() != null) {
+            for (ConstraintConflictVO conflict : patch.getConflicts()) {
+                if (conflict != null && conflict.getField() != null) {
+                    touched.add(conflict.getField());
+                }
+            }
+        }
+        return touched;
+    }
+
+    private void addMapKeys(
+            LinkedHashSet<String> touched,
+            Map<String, ?> values
+    ) {
+        if (values != null) {
+            touched.addAll(values.keySet());
+        }
+    }
+
+    private void projectLegacyScalarToPatch(
+            ConstraintPatchOperations operations,
+            LinkedHashSet<String> touched,
+            String field,
+            Object value
+    ) {
+        if (value == null || touched.contains(field)) {
+            return;
+        }
+        operations.getSetValues().put(field, value);
+        touched.add(field);
+    }
+
+    private void projectPatchScalarsToExtracted(
+            ConstraintState extracted,
+            Map<String, Object> values
+    ) {
+        if (values == null) {
+            return;
+        }
+        BigDecimal distance = decimalValue(values.get("distanceKm"));
+        if (extracted.getDistanceKm() == null
+                && distance != null
+                && distance.compareTo(BigDecimal.ZERO) > 0
+                && distance.compareTo(new BigDecimal("100")) <= 0) {
+            extracted.setDistanceKm(distance);
+        }
+        BigDecimal minRating = decimalValue(values.get("minRating"));
+        if (extracted.getMinRating() == null
+                && minRating != null
+                && minRating.compareTo(BigDecimal.ZERO) >= 0
+                && minRating.compareTo(new BigDecimal("5")) <= 0) {
+            extracted.setMinRating(minRating);
+        }
+        if (extracted.getRatingPreference() == null
+                && ConstraintState.RATING_PREFERENCE_HIGH.equals(
+                        values.get("ratingPreference"))) {
+            extracted.setRatingPreference(
+                    ConstraintState.RATING_PREFERENCE_HIGH);
+        }
+    }
+
+    private BigDecimal decimalValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private void supplementScalarField(
+            ConstraintState extracted,
+            ConstraintPatchOperations operations,
+            LinkedHashSet<String> touched,
+            String field,
+            Object value
+    ) {
+        if (value == null || touched.contains(field)) {
+            return;
+        }
+        switch (field) {
+            case "distanceKm" ->
+                    extracted.setDistanceKm((BigDecimal) value);
+            case "minRating" ->
+                    extracted.setMinRating((BigDecimal) value);
+            case "ratingPreference" ->
+                    extracted.setRatingPreference((String) value);
+            default -> {
+                return;
+            }
+        }
+        if (operations != null) {
+            operations.getSetValues().put(field, value);
+        }
+        touched.add(field);
+    }
+
+    private void clearExtractedScalar(
+            ConstraintState extracted,
+            String field
+    ) {
+        switch (field) {
+            case "minRating" -> extracted.setMinRating(null);
+            case "ratingPreference" ->
+                    extracted.setRatingPreference(null);
+            default -> {
+            }
+        }
     }
 
     private String normalizeIntent(String intent) {
@@ -950,6 +1207,11 @@ public class ConstraintExtractionService {
                 new BigDecimal("5")
         ) <= 0) {
             target.setMinRating(source.getMinRating());
+        }
+        if (ConstraintState.RATING_PREFERENCE_HIGH.equals(
+                source.getRatingPreference())) {
+            target.setRatingPreference(
+                    ConstraintState.RATING_PREFERENCE_HIGH);
         }
 
         target.setMerchantTypes(
@@ -1064,6 +1326,7 @@ public class ConstraintExtractionService {
                         "excludedMerchantTypes",
                         "distanceKm",
                         "minRating",
+                        "ratingPreference",
                         "scenes",
                         "environmentRequirements",
                         "businessTime",
@@ -1121,6 +1384,8 @@ public class ConstraintExtractionService {
                         );
                 case "distanceKm" -> state.setDistanceKm(null);
                 case "minRating" -> state.setMinRating(null);
+                case "ratingPreference" ->
+                        state.setRatingPreference(null);
                 case "scenes" ->
                         state.setScenes(new ArrayList<>());
                 case "environmentRequirements" ->
@@ -1254,6 +1519,7 @@ public class ConstraintExtractionService {
         extractSceneAndEnvironment(message, state);
         extractDistance(message, state);
         extractMinRating(message, state);
+        extractRatingPreference(message, state);
         extractBusinessTime(message, state);
         calculatePerCapitaBudget(state);
 
@@ -1523,6 +1789,9 @@ public class ConstraintExtractionService {
         if (message == null || message.isBlank()) {
             return;
         }
+        if (RELAXED_DISTANCE_PATTERN.matcher(message).find()) {
+            return;
+        }
 
         Matcher matcher =
                 DISTANCE_PATTERN.matcher(message);
@@ -1532,7 +1801,10 @@ public class ConstraintExtractionService {
         }
 
         BigDecimal distance =
-                parseNumberAsBigDecimal(matcher.group(1));
+                parseNumberAsBigDecimal(
+                        matcher.group(1) != null
+                                ? matcher.group(1)
+                                : matcher.group(2));
 
         if (distance != null
                 && distance.compareTo(BigDecimal.ZERO) > 0) {
@@ -1593,6 +1865,30 @@ public class ConstraintExtractionService {
         if (validRating) {
             state.setMinRating(rating);
         }
+    }
+
+    private void extractRatingPreference(
+            String message,
+            ConstraintState state
+    ) {
+        if (message == null || message.isBlank()
+                || RATING_CLEAR_PATTERN.matcher(message).find()) {
+            return;
+        }
+        if (HIGH_RATING_PREFERENCE_PATTERN.matcher(message).find()) {
+            state.setRatingPreference(
+                    ConstraintState.RATING_PREFERENCE_HIGH);
+        }
+    }
+
+    private List<String> extractClearedFieldsByRules(
+            String message
+    ) {
+        if (message == null || message.isBlank()
+                || !RATING_CLEAR_PATTERN.matcher(message).find()) {
+            return List.of();
+        }
+        return List.of("minRating", "ratingPreference");
     }
 
     /**
@@ -2253,6 +2549,11 @@ public class ConstraintExtractionService {
 
         copy.setDistanceKm(source.getDistanceKm());
         copy.setMinRating(source.getMinRating());
+        copy.setRatingPreference(
+                ConstraintState.RATING_PREFERENCE_HIGH.equals(
+                        source.getRatingPreference())
+                        ? ConstraintState.RATING_PREFERENCE_HIGH
+                        : null);
 
         copy.setScenes(
                 copyList(source.getScenes())
@@ -2345,6 +2646,11 @@ public class ConstraintExtractionService {
             merged.setMinRating(
                     extracted.getMinRating()
             );
+        }
+        if (ConstraintState.RATING_PREFERENCE_HIGH.equals(
+                extracted.getRatingPreference())) {
+            merged.setRatingPreference(
+                    ConstraintState.RATING_PREFERENCE_HIGH);
         }
 
         if (extracted.getBusinessTime() != null) {
@@ -2815,6 +3121,12 @@ public class ConstraintExtractionService {
                 "minRating",
                 safeOld.getMinRating(),
                 safeMerged.getMinRating()
+        );
+        addChangeIfDifferent(
+                changes,
+                "ratingPreference",
+                safeOld.getRatingPreference(),
+                safeMerged.getRatingPreference()
         );
 
         addListChangeIfDifferent(

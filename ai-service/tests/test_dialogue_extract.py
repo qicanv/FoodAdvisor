@@ -459,3 +459,100 @@ def test_normalize_model_result_converts_constraints_alias() -> None:
         "cuisines": ["川菜"],
         "distanceKm": 3,
     }
+
+
+def test_dialogue_accepts_high_rating_preference_and_legacy_projection(
+    monkeypatch,
+):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={"ratingPreference": "HIGH"},
+        ),
+    )
+
+    body = post_extract(
+        request_body("评分较高、适合聚餐")
+    ).json()
+
+    assert body["extractedConstraints"]["ratingPreference"] == "HIGH"
+    assert body["patch"]["operations"]["set"]["ratingPreference"] == "HIGH"
+    assert body["extractedConstraints"]["minRating"] is None
+
+
+def test_dialogue_rejects_unknown_rating_preference(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={"ratingPreference": "LOW"},
+        ),
+    )
+
+    assert post_extract(
+        request_body("评分低一点")
+    ).status_code == 502
+
+
+def test_dialogue_keeps_distance_without_coordinates(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={"distanceKm": 5},
+        ),
+    )
+
+    body = post_extract(
+        request_body("距离5公里以内")
+    ).json()
+
+    assert body["extractedConstraints"]["distanceKm"] == 5
+    assert body["patch"]["operations"]["set"]["distanceKm"] == 5
+
+
+def test_dialogue_distinguishes_numeric_and_fuzzy_rating(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={"minRating": 4.0},
+        ),
+    )
+    numeric = post_extract(
+        request_body("评分4分以上")
+    ).json()
+
+    mock_model(
+        monkeypatch,
+        success_result(
+            extractedConstraints={"ratingPreference": "HIGH"},
+        ),
+    )
+    fuzzy = post_extract(
+        request_body("评分高一点")
+    ).json()
+
+    assert numeric["extractedConstraints"]["minRating"] == 4.0
+    assert numeric["extractedConstraints"]["ratingPreference"] is None
+    assert fuzzy["extractedConstraints"]["ratingPreference"] == "HIGH"
+    assert fuzzy["extractedConstraints"]["minRating"] is None
+
+
+def test_dialogue_clears_both_rating_conditions(monkeypatch):
+    mock_model(
+        monkeypatch,
+        success_result(
+            intent="CONSTRAINT_UPDATE",
+            extractedConstraints={},
+            clearedFields=["minRating", "ratingPreference"],
+        ),
+    )
+
+    body = post_extract(
+        request_body("不用考虑评分")
+    ).json()
+
+    assert body["clearedFields"] == [
+        "minRating", "ratingPreference"
+    ]
+    assert body["patch"]["operations"]["clear"] == [
+        "minRating", "ratingPreference"
+    ]

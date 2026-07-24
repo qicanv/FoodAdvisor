@@ -40,6 +40,8 @@ public class MatchScoreCalculator {
     private static final BigDecimal ONE = BigDecimal.ONE;
     private static final BigDecimal HALF = new BigDecimal("0.5");
     private static final BigDecimal FIVE = new BigDecimal("5");
+    private static final BigDecimal HIGH_RATING_BONUS_MAX =
+            new BigDecimal("5");
     private static final BigDecimal ONE_HUNDRED =
             new BigDecimal("100");
 
@@ -136,6 +138,28 @@ public class MatchScoreCalculator {
                         ratingResult.explanation()
                 )
         );
+
+        if (ConstraintState.RATING_PREFERENCE_HIGH.equals(
+                safeConstraints.getRatingPreference())
+                && merchant.getRating() != null) {
+            BigDecimal preferenceFactor = clampFactor(
+                    merchant.getRating().divide(
+                            FIVE, 6, RoundingMode.HALF_UP));
+            finalScore = finalScore.add(
+                    addScoreItem(
+                            result.getScoreItems(),
+                            "ratingPreference",
+                            HIGH_RATING_BONUS_MAX,
+                            preferenceFactor,
+                            "高评分偏好奖励随商家评分单调增加，最高5分"
+                    )
+            );
+            matchedConditions.add(
+                    "符合高评分偏好（"
+                            + formatNumber(merchant.getRating())
+                            + "分）"
+            );
+        }
 
         FactorResult priceResult =
                 calculatePriceFactor(
@@ -248,7 +272,8 @@ public class MatchScoreCalculator {
         }
 
         result.setFinalScore(
-                finalScore.setScale(2, RoundingMode.HALF_UP)
+                finalScore.min(ONE_HUNDRED)
+                        .setScale(2, RoundingMode.HALF_UP)
         );
 
         result.setReason(buildReason(result));
@@ -381,25 +406,25 @@ public class MatchScoreCalculator {
 
         if (maximumDistance != null
                 && maximumDistance.compareTo(ZERO) > 0) {
-            if (userLatitude == null
-                    || userLongitude == null
-                    || merchant.getLatitude() == null
-                    || merchant.getLongitude() == null) {
-                return false;
-            }
+            if (userLatitude != null && userLongitude != null) {
+                if (merchant.getLatitude() == null
+                        || merchant.getLongitude() == null) {
+                    return false;
+                }
 
-            BigDecimal actualDistance =
-                    calculateDistanceKm(
-                            userLatitude,
-                            userLongitude,
-                            merchant.getLatitude(),
-                            merchant.getLongitude()
-                    );
+                BigDecimal actualDistance =
+                        calculateDistanceKm(
+                                userLatitude,
+                                userLongitude,
+                                merchant.getLatitude(),
+                                merchant.getLongitude()
+                        );
 
-            if (actualDistance.compareTo(
-                    maximumDistance
-            ) > 0) {
-                return false;
+                if (actualDistance.compareTo(
+                        maximumDistance
+                ) > 0) {
+                    return false;
+                }
             }
         }
 
@@ -665,12 +690,16 @@ public class MatchScoreCalculator {
     ) {
         if (userLatitude == null
                 || userLongitude == null) {
-            riskNotes.add("未提供用户位置，本次不计距离得分");
+            String risk = constraints.getDistanceKm() != null
+                    && constraints.getDistanceKm().compareTo(ZERO) > 0
+                    ? "距离条件已保留，但由于尚未获得当前位置，本次未执行真实距离筛选。"
+                    : "未提供用户位置，本次不计距离得分";
+            riskNotes.add(risk);
 
             return new DistanceResult(
                     ZERO,
                     null,
-                    "用户位置缺失，距离得分为0"
+                    risk
             );
         }
 

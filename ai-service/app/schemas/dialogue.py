@@ -1,6 +1,6 @@
 from enum import Enum
 from math import isfinite
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from app.schemas.constraint_patch import ConstraintPatch
@@ -19,6 +19,7 @@ ALLOWED_FIELDS = {
     "excludedMerchantTypes",
     "distanceKm",
     "minRating",
+    "ratingPreference",
     "scenes",
     "environmentRequirements",
     "businessTime",
@@ -53,6 +54,7 @@ class ConstraintStateModel(BaseModel):
     excludedMerchantTypes: list[str] = Field(default_factory=list)
     distanceKm: Optional[float] = Field(default=None, gt=0, le=100)
     minRating: Optional[float] = Field(default=None, ge=0, le=5)
+    ratingPreference: Optional[Literal["HIGH"]] = None
     scenes: list[str] = Field(default_factory=list)
     environmentRequirements: list[str] = Field(default_factory=list)
     businessTime: Optional[str] = None

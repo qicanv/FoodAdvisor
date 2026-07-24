@@ -884,6 +884,48 @@ class DiningDialogueMessageServiceTest {
     }
 
     @Test
+    void shouldRestoreConstraintsFromResponseSnapshotAndTolerateMalformedHistory() {
+        when(chatSessionMapper.selectById(1L))
+                .thenReturn(activeSession());
+        ChatMessage snapshotMessage = message(
+                21L,
+                "ASSISTANT",
+                "req-snapshot-constraints",
+                "{\"responseSnapshot\":{\"currentConstraints\":{"
+                        + "\"distanceKm\":5,"
+                        + "\"ratingPreference\":\"HIGH\"}}}"
+        );
+        ChatMessage malformedMessage = message(
+                22L,
+                "ASSISTANT",
+                "req-malformed-constraints",
+                "{\"currentConstraints\":\"legacy-invalid\"}"
+        );
+        when(chatMessageMapper.selectList(any()))
+                .thenReturn(List.of(
+                        snapshotMessage, malformedMessage));
+
+        DialogueHistoryResponse history =
+                service.listMessages(1L, 1L);
+
+        assertAll(
+                () -> assertEquals(
+                        0, new BigDecimal("5").compareTo(
+                                history.getMessages().get(0)
+                                        .getCurrentConstraints()
+                                        .getDistanceKm())),
+                () -> assertEquals(
+                        ConstraintState.RATING_PREFERENCE_HIGH,
+                        history.getMessages().get(0)
+                                .getCurrentConstraints()
+                                .getRatingPreference()),
+                () -> assertEquals(
+                        null, history.getMessages().get(1)
+                                .getCurrentConstraints())
+        );
+    }
+
+    @Test
     void shouldReturnHistoryWithRecommendationCardsFromDatabase() {
         when(chatSessionMapper.selectById(1L))
                 .thenReturn(activeSession());

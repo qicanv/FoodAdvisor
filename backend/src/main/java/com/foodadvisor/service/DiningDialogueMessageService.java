@@ -1541,19 +1541,37 @@ public class DiningDialogueMessageService {
                         }
                 )
         );
-        Object currentConstraints =
-                metadata.get("currentConstraints");
-        if (currentConstraints != null) {
-            vo.setCurrentConstraints(
-                    objectMapper.convertValue(
-                            currentConstraints,
-                            com.foodadvisor.dto.constraint
-                                    .ConstraintState.class
-                    )
-            );
-        }
+        vo.setCurrentConstraints(
+                readCurrentConstraints(metadata)
+        );
 
         return vo;
+    }
+
+    private com.foodadvisor.dto.constraint.ConstraintState
+            readCurrentConstraints(
+            Map<String, Object> metadata
+    ) {
+        Object value = metadata.get("currentConstraints");
+        if (value == null) {
+            Object snapshot = metadata.get("responseSnapshot");
+            if (snapshot instanceof Map<?, ?> snapshotMap) {
+                value = snapshotMap.get("currentConstraints");
+            }
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return objectMapper.convertValue(
+                    value,
+                    com.foodadvisor.dto.constraint
+                            .ConstraintState.class
+            );
+        } catch (IllegalArgumentException ignored) {
+            // 兼容缺字段或结构异常的历史消息，不阻断整个历史列表。
+            return null;
+        }
     }
 
     private <T> T readMetadataList(

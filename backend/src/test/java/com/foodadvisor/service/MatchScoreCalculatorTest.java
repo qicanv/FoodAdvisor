@@ -190,6 +190,81 @@ class MatchScoreCalculatorTest {
     }
 
     @Test
+    void shouldKeepDistanceConditionWithoutUserCoordinates() {
+        RecommendationItemVO result = calculator.calculate(
+                createBaseMerchant(),
+                createBaseConstraints(),
+                createDefaultWeights(),
+                null,
+                null,
+                java.util.Map.of()
+        ).orElseThrow();
+
+        assertAll(
+                () -> assertEquals(null, result.getDistanceKm()),
+                () -> assertTrue(result.getRiskNotes().contains(
+                        "距离条件已保留，但由于尚未获得当前位置，本次未执行真实距离筛选。"))
+        );
+    }
+
+    @Test
+    void shouldRejectMerchantWithoutCoordinatesWhenUserLocationExists() {
+        Merchant merchant = createBaseMerchant();
+        merchant.setLatitude(null);
+        merchant.setLongitude(null);
+
+        Optional<RecommendationItemVO> result = calculator.calculate(
+                merchant,
+                createBaseConstraints(),
+                createDefaultWeights(),
+                new BigDecimal("30.5728"),
+                new BigDecimal("104.0668"),
+                java.util.Map.of()
+        );
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void shouldApplyBoundedHighRatingPreferenceWithoutHardFiltering() {
+        ConstraintState constraints = createBaseConstraints();
+        constraints.setMinRating(null);
+        constraints.setRatingPreference(
+                ConstraintState.RATING_PREFERENCE_HIGH);
+
+        Merchant lowRated = createBaseMerchant();
+        lowRated.setRating(new BigDecimal("3.2"));
+        Merchant highRated = createBaseMerchant();
+        highRated.setRating(new BigDecimal("4.8"));
+
+        RecommendationItemVO lowResult = calculator.calculate(
+                lowRated, constraints, createDefaultWeights(),
+                new BigDecimal("30.5728"),
+                new BigDecimal("104.0668"), java.util.Map.of()
+        ).orElseThrow();
+        RecommendationItemVO highResult = calculator.calculate(
+                highRated, constraints, createDefaultWeights(),
+                new BigDecimal("30.5728"),
+                new BigDecimal("104.0668"), java.util.Map.of()
+        ).orElseThrow();
+
+        assertAll(
+                () -> assertTrue(lowResult.getScoreItems()
+                        .containsKey("ratingPreference")),
+                () -> assertTrue(highResult.getScoreItems()
+                        .get("ratingPreference").getScore()
+                        .compareTo(lowResult.getScoreItems()
+                                .get("ratingPreference").getScore()) > 0),
+                () -> assertTrue(highResult.getScoreItems()
+                        .get("ratingPreference").getScore()
+                        .compareTo(new BigDecimal("5")) <= 0),
+                () -> assertTrue(highResult.getMatchedConditions()
+                        .stream().anyMatch(text ->
+                                text.contains("符合高评分偏好")))
+        );
+    }
+
+    @Test
     void shouldFilterMerchantWhenCuisineDoesNotMatch() {
         Merchant merchant = createBaseMerchant();
         merchant.setCuisine("cantonese");

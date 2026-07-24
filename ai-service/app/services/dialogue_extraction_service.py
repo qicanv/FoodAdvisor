@@ -43,7 +43,7 @@ MERCHANT_RECOMMENDATION, CONSTRAINT_UPDATE, GENERAL_CHAT, UNKNOWN.
 Allowed constraint fields:
 partySize, totalBudget, perCapitaBudget, merchantTypes, cuisines,
 tastePreferences, tasteRestrictions, dishKeywords, excludedCuisines,
-excludedMerchantTypes, distanceKm, minRating, scenes,
+excludedMerchantTypes, distanceKm, minRating, ratingPreference, scenes,
 environmentRequirements, businessTime, businessTargetTime,
 businessTargetNextDay.
 
@@ -61,6 +61,14 @@ Rules:
 11. Never put negated foods such as "不吃香菜" in dishKeywords.
 12. Do not treat cuisines, budgets, distances, or party size as dishes.
 13. confidence must be a number between 0 and 1.
+14. distanceKm is independent of latitude/longitude. Preserve an explicit
+    radius even when the request has no coordinates.
+15. A numeric threshold such as "评分4分以上" sets minRating=4 and does not
+    imply ratingPreference.
+16. A fuzzy preference such as "评分较高", "高分餐厅", or "口碑好一点" sets
+    ratingPreference="HIGH" and does not invent minRating.
+17. "评分无所谓", "不用考虑评分", or "不看评分" clears both minRating and
+    ratingPreference.
 
 Examples:
 - "两个人100元吃火锅"
@@ -73,6 +81,10 @@ Examples:
 - "四个人，人均八十元，想吃川菜，距离三公里以内"
   means partySize=4, perCapitaBudget=80, cuisines=["川菜"],
   and distanceKm=3.
+- "评分4分以上" means minRating=4, without ratingPreference.
+- "评分较高、适合聚餐" means ratingPreference="HIGH", without minRating.
+- "不用考虑评分" means clearedFields contains both minRating and
+  ratingPreference.
 """
 
 
