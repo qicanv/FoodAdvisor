@@ -2,11 +2,24 @@
   <div class="ai-dining-page">
     <header class="page-header">
       <button class="back-button" type="button" @click="router.push('/diner/home')">← 返回首页</button>
-      <div>
+      <div class="page-title">
         <h1>AI 探店</h1>
         <p>直接描述人数、预算、菜系、距离和用餐场景</p>
       </div>
-      <span class="session-state">{{ sessionId ? '会话已保存' : '正在准备会话' }}</span>
+      <div class="header-actions">
+        <span class="session-state">
+          {{ sessionId ? '会话已保存' : '正在准备会话' }}
+        </span>
+
+        <button
+          type="button"
+          class="new-session-button"
+          :disabled="initializing || sending || adjustingSuggestionKey !== ''"
+          @click="startNewConversation"
+        >
+          ＋ 新建对话
+        </button>
+      </div>
     </header>
 
     <main class="dialogue-shell">
@@ -186,7 +199,7 @@
 
 <script setup>
 import { nextTick, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   adjustDiningRecommendation,
   createDiningSession,
@@ -196,6 +209,7 @@ import {
 } from '../../api/aiDining'
 import { logMerchantClick, logSearch } from '../../api/behavior'
 
+const route = useRoute()
 const router = useRouter()
 const sessionId = ref(null)
 const messages = ref([])
@@ -365,24 +379,119 @@ const createSession = async () => {
   localStorage.setItem(sessionStorageKey(), String(sessionId.value))
 }
 
+const resetConversationView = () => {
+  messages.value = []
+  draft.value = ''
+  currentConstraints.value = {}
+  adjustingSuggestionKey.value = ''
+  errorMessage.value = ''
+  pendingRequest.value = null
+
+  evidenceDialogOpen.value = false
+  evidenceLoading.value = false
+  evidenceError.value = ''
+  evidences.value = []
+}
+
+const startNewConversation = async () => {
+  if (
+    initializing.value ||
+    sending.value ||
+    adjustingSuggestionKey.value
+  ) {
+    return
+  }
+
+  initializing.value = true
+  errorMessage.value = ''
+
+  try {
+    // 先成功创建并保存新的 sessionId，
+    // 再清空页面，避免创建失败时丢掉当前聊天界面。
+    await createSession()
+    resetConversationView()
+  } catch (error) {
+    errorMessage.value =
+      error.message || '新建对话失败，请稍后重试'
+  } finally {
+    initializing.value = false
+    scrollToBottom()
+  }
+}
+
+const clearDialogueReturnQuery = () => {
+  const nextQuery = { ...route.query }
+  const hadSessionId = Object.prototype.hasOwnProperty.call(
+    nextQuery,
+    'sessionId'
+  )
+  const hadFrom = Object.prototype.hasOwnProperty.call(
+    nextQuery,
+    'from'
+  )
+
+  if (!hadSessionId && !hadFrom) return
+
+  delete nextQuery.sessionId
+  delete nextQuery.from
+
+  router.replace({
+    path: route.path,
+    query: nextQuery
+  }).catch(() => {})
+}
+
 const initialize = async () => {
   initializing.value = true
   errorMessage.value = ''
-  const savedId = Number(localStorage.getItem(sessionStorageKey()))
+
+  const rawRouteSessionId = Array.isArray(route.query.sessionId)
+    ? route.query.sessionId[0]
+    : route.query.sessionId
+
+  const routeSessionId = Number(rawRouteSessionId)
+  const savedSessionId = Number(
+    localStorage.getItem(sessionStorageKey())
+  )
+
+  const preferredSessionId =
+    Number.isSafeInteger(routeSessionId) && routeSessionId > 0
+      ? routeSessionId
+      : savedSessionId
+
   try {
-    if (Number.isSafeInteger(savedId) && savedId > 0) {
-      sessionId.value = savedId
-      await loadHistory(savedId)
+    if (
+      Number.isSafeInteger(preferredSessionId) &&
+      preferredSessionId > 0
+    ) {
+      sessionId.value = preferredSessionId
+
+      // URL 中的 sessionId 优先，并同步为当前本地会话。
+      localStorage.setItem(
+        sessionStorageKey(),
+        String(preferredSessionId)
+      )
+
+      await loadHistory(preferredSessionId)
+
+      if (
+        Number.isSafeInteger(routeSessionId) &&
+        routeSessionId > 0
+      ) {
+        clearDialogueReturnQuery()
+      }
     } else {
       await createSession()
     }
   } catch (error) {
     localStorage.removeItem(sessionStorageKey())
     messages.value = []
+
     try {
       await createSession()
     } catch (createError) {
-      errorMessage.value = createError.message || 'AI 探店暂时不可用，请稍后重试'
+      errorMessage.value =
+        createError.message || 'AI 探店暂时不可用，请稍后重试'
     }
   } finally {
     initializing.value = false
@@ -522,11 +631,22 @@ const applySuggestion = async (message, suggestion) => {
 }
 
 const openMerchant = merchantId => {
-  if (merchantId) {
-    const userId = currentUserId()
-    logMerchantClick({ userId: userId !== 'anonymous' ? userId : undefined, merchantId }).catch(() => {})
-    router.push(`/diner/merchant/${merchantId}`)
-  }
+  if (!merchantId) return
+
+  const userId = currentUserId()
+
+  logMerchantClick({
+    userId: userId !== 'anonymous' ? userId : undefined,
+    merchantId
+  }).catch(() => {})
+
+  router.push({
+    path: `/diner/merchant/${merchantId}`,
+    query: {
+      from: 'ai-dining',
+      sessionId: String(sessionId.value)
+    }
+  })
 }
 
 const evidenceTypeText = type => ({
@@ -567,11 +687,47 @@ onMounted(initialize)
 
 <style scoped>
 .ai-dining-page { min-height: 100vh; padding: 24px; background: #f4f5fb; color: #1f2937; }
-.page-header { max-width: 1120px; margin: 0 auto 18px; display: grid; grid-template-columns: 160px 1fr 160px; align-items: center; }
+.page-header {
+  max-width: 1120px;
+  margin: 0 auto 18px;
+  display: grid;
+  grid-template-columns: 160px 1fr 230px;
+  align-items: center;
+}
 .page-header h1 { margin: 0; text-align: center; font-size: 30px; }
 .page-header p { margin: 6px 0 0; text-align: center; color: #667085; }
 .back-button { justify-self: start; border: 0; background: transparent; color: #5b5bd6; cursor: pointer; font-size: 15px; }
-.session-state { justify-self: end; color: #667085; font-size: 13px; }
+.header-actions {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.session-state {
+  color: #667085;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.new-session-button {
+  padding: 8px 13px;
+  border: 1px solid #7c3aed;
+  border-radius: 9px;
+  color: #6d28d9;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.new-session-button:hover:not(:disabled) {
+  background: #f5f3ff;
+}
+
+.new-session-button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
 .dialogue-shell { max-width: 1120px; margin: 0 auto; overflow: hidden; border-radius: 20px; background: #fff; box-shadow: 0 12px 36px rgba(31, 41, 55, .1); }
 .location-toolbar { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid #eaecf0; background: #fafafa; }
 .location-button { min-width: 132px; padding: 8px 13px; border: 1px solid #8b5cf6; border-radius: 9px; color: #6d28d9; background: #fff; cursor: pointer; }
@@ -629,9 +785,20 @@ onMounted(initialize)
 @media (max-width: 760px) {
   .ai-dining-page { padding: 12px; }
   .page-header { grid-template-columns: 1fr auto; }
-  .page-header > div { grid-column: 1 / -1; grid-row: 1; margin-bottom: 16px; }
+  .page-title {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    margin-bottom: 16px;
+  }
   .back-button { grid-row: 2; }
-  .session-state { grid-row: 2; }
+  .header-actions {
+    grid-row: 2;
+    justify-self: end;
+  }
+
+  .session-state {
+    display: none;
+  }
   .message-list { height: calc(100vh - 300px); padding: 16px; }
   .message-bubble { max-width: 94%; }
   .merchant-grid { grid-template-columns: 1fr; }

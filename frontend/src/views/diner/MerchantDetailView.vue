@@ -2,8 +2,8 @@
   <div class="merchant-detail">
     <nav class="detail-nav">
       <div class="nav-container">
-        <button class="back-btn" @click="goBack">
-          <span>← 返回榜单</span>
+        <button type="button" class="back-btn" @click="goBack">
+          <span>{{ backButtonText }}</span>
         </button>
         <div class="logo-section">
           <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="logo-img" />
@@ -461,6 +461,31 @@ import { getMerchantReviews, getMerchantReviewTags, getReviewAnalysis } from '..
 
 const router = useRouter()
 const route = useRoute()
+const sourcePage = computed(() => {
+  const rawSource = Array.isArray(route.query.from)
+    ? route.query.from[0]
+    : route.query.from
+
+  return rawSource || ''
+})
+
+const returnSessionId = computed(() => {
+  const rawSessionId = Array.isArray(route.query.sessionId)
+    ? route.query.sessionId[0]
+    : route.query.sessionId
+
+  const parsedSessionId = Number(rawSessionId)
+
+  return Number.isSafeInteger(parsedSessionId) && parsedSessionId > 0
+    ? parsedSessionId
+    : null
+})
+
+const backButtonText = computed(() =>
+  sourcePage.value === 'ai-dining'
+    ? '← 返回对话'
+    : '← 返回榜单'
+)
 const merchant = ref(null)
 const reviews = ref([])
 const dishes = ref([])
@@ -990,7 +1015,21 @@ const submitReview = async () => {
 }
 
 const goBack = () => {
-  router.push('/diner/ranking')
+  if (sourcePage.value === 'ai-dining') {
+    router.push({
+      name: 'diner-ai-dining',
+      query: returnSessionId.value
+        ? {
+            sessionId: String(returnSessionId.value)
+          }
+        : {}
+    })
+    return
+  }
+
+  router.push({
+    name: 'diner-ranking'
+  })
 }
 
 const goToProfile = () => {
