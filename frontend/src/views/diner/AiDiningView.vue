@@ -7,7 +7,9 @@
     >
       <div class="history-sidebar-header">
         <div class="history-sidebar-title">
-          <span class="history-sidebar-logo">✨</span>
+          <span class="history-sidebar-logo" aria-hidden="true">
+            <img :src="greedyCat" alt="" class="assistant-image" />
+          </span>
           <strong>历史对话</strong>
         </div>
 
@@ -114,74 +116,56 @@
     </aside>
 
     <div class="ai-dining-main">
-    <header class="page-header">
-      <div class="header-container">
-        <div class="header-leading">
-          <button
-            v-if="!historySidebarOpen"
-            type="button"
-            class="history-button"
-            :disabled="initializing || sending || adjustingSuggestionKey !== ''"
-            @click="toggleHistorySidebar"
-          >
-            <span class="history-button-icon">☰</span>
-            历史对话
-          </button>
-        </div>
-
-        <div class="page-title">
-          <div class="title-line">
-            <h1>AI 探店</h1>
-            <span class="online-badge">
-              <span class="online-dot"></span>
-              在线
+      <main class="dialogue-shell">
+        <div class="assistant-toolbar">
+          <div class="assistant-profile">
+            <span class="assistant-avatar" aria-hidden="true">
+              <img :src="greedyCat" alt="" class="assistant-image" />
             </span>
           </div>
+
+          <div class="assistant-toolbar-actions">
+            <button
+              v-if="!historySidebarOpen"
+              type="button"
+              class="history-button"
+              :disabled="initializing || sending || adjustingSuggestionKey !== ''"
+              @click="toggleHistorySidebar"
+            >
+              <span class="history-button-icon">☰</span>
+              历史对话
+            </button>
+
+            <div class="location-toolbar">
+              <button
+                type="button"
+                class="location-button"
+                :disabled="locationStatus === 'LOCATING'"
+                @click="requestCurrentLocation"
+              >
+                <span class="location-icon">⌖</span>
+                {{ locationButtonText() }}
+              </button>
+
+              <span class="location-status">
+                <span
+                  class="location-status-dot"
+                  :class="{ ready: locationStatus === 'READY' }"
+                ></span>
+                {{ locationStatusText() }}
+              </span>
+            </div>
+
+            <button
+              class="back-button"
+              type="button"
+              @click="router.push('/diner/home')"
+            >
+              <span class="back-icon">⌂</span>
+              <span>返回首页</span>
+            </button>
+          </div>
         </div>
-
-        <div class="header-actions">
-          <button
-            class="back-button"
-            type="button"
-            @click="router.push('/diner/home')"
-          >
-            <span class="back-icon">⌂</span>
-            <span>返回首页</span>
-          </button>
-        </div>
-      </div>
-    </header>
-
-    <main class="dialogue-shell">
-      <div class="assistant-toolbar">
-        <div class="assistant-profile">
-          <span class="assistant-avatar">✨</span>
-
-          <span class="assistant-copy">
-            <strong>食尚参谋 AI 助手</strong>
-          </span>
-        </div>
-
-        <div class="location-toolbar">
-          <button
-            type="button"
-            class="location-button"
-            :disabled="locationStatus === 'LOCATING'"
-            @click="requestCurrentLocation"
-          >
-            <span class="location-icon">⌖</span>
-            {{ locationButtonText() }}
-          </button>
-
-          <span class="location-status">
-            <span
-              class="location-status-dot"
-              :class="{ ready: locationStatus === 'READY' }"
-            ></span>
-            {{ locationStatusText() }}
-          </span>
-        </div>
-      </div>
 
       <div
         v-if="Object.keys(currentConstraints).length"
@@ -205,7 +189,7 @@
 
         <div v-else-if="messages.length === 0" class="empty-panel">
           <div class="empty-icon-shell">
-            <span class="empty-icon">✨</span>
+            <img :src="greedyCat" alt="" class="empty-icon" />
           </div>
 
           <h2>想吃什么，直接告诉我</h2>
@@ -217,14 +201,23 @@
           class="message-row"
           :class="message.role === 'USER' ? 'user-row' : 'assistant-row'"
         >
-          <div class="message-avatar">
-            {{ message.role === 'USER' ? '我' : '✨' }}
+          <div
+            class="message-avatar"
+            :aria-label="message.role === 'USER' ? '我的头像' : '食尚参谋助手头像'"
+          >
+            <span v-if="message.role === 'USER'">
+              {{ currentUserAvatarText }}
+            </span>
+            <img
+              v-else
+              :src="greedyCat"
+              alt=""
+              class="assistant-image"
+              aria-hidden="true"
+            />
           </div>
 
           <div class="message-column">
-            <div class="message-role">
-              {{ message.role === 'USER' ? '我' : 'AI 探店助手' }}
-            </div>
 
             <div class="message-bubble">
               <p>{{ message.content }}</p>
@@ -365,14 +358,16 @@
         </article>
 
         <div v-if="sending" class="typing-indicator">
-          <span class="typing-avatar">✨</span>
+          <span class="typing-avatar" aria-hidden="true">
+            <img :src="greedyCat" alt="" class="assistant-image" />
+          </span>
           <span class="typing-bubble">
             <span class="typing-dots">
               <i></i>
               <i></i>
               <i></i>
             </span>
-            AI 正在理解需求并筛选商家
+            食尚参谋正在理解需求并筛选商家
           </span>
         </div>
       </section>
@@ -516,7 +511,7 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   adjustDiningRecommendation,
@@ -528,6 +523,7 @@ import {
   sendDiningMessage
 } from '../../api/aiDining'
 import { logMerchantClick, logSearch } from '../../api/behavior'
+import greedyCat from '../../assets/images/greedy-cat.png'
 
 const route = useRoute()
 const router = useRouter()
@@ -555,15 +551,33 @@ const historyError = ref('')
 const historySessions = ref([])
 const deletingSessionId = ref(null)
 
-const currentUserId = () => {
+const currentUserProfile = () => {
   const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
-  if (!raw) return 'anonymous'
+  if (!raw) return null
+
   try {
-    return JSON.parse(raw)?.id || 'anonymous'
+    return JSON.parse(raw)
   } catch {
-    return 'anonymous'
+    return null
   }
 }
+
+const currentUserId = () =>
+  currentUserProfile()?.id || 'anonymous'
+
+const currentUserAvatarText = computed(() => {
+  const user = currentUserProfile()
+  const displayName =
+    user?.nickname ||
+    user?.username ||
+    user?.name ||
+    '食客用户'
+
+  const firstCharacter = Array.from(String(displayName).trim())[0]
+  return firstCharacter
+    ? firstCharacter.toLocaleUpperCase()
+    : '食'
+})
 
 const sessionStorageKey = () => `foodadvisor.aiDining.session.${currentUserId()}`
 
@@ -1004,7 +1018,7 @@ const initialize = async () => {
       await createSession()
     } catch (createError) {
       errorMessage.value =
-        createError.message || 'AI 探店暂时不可用，请稍后重试'
+        createError.message || '探店助手暂时不可用，请稍后重试'
     }
   } finally {
     initializing.value = false
@@ -1257,40 +1271,12 @@ onMounted(async () => {
   font-family: inherit;
 }
 
-.page-header {
-  width: 100%;
-  flex: 0 0 auto;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(229, 222, 212, 0.84);
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(18px);
-}
-
-.header-container {
-  display: grid;
-  width: calc(100% - 48px);
-  max-width: 1180px;
-  min-width: 0;
-  margin: 0 auto;
-  grid-template-columns: minmax(150px, 0.65fr) minmax(0, 1.5fr) minmax(150px, 0.65fr);
-  align-items: center;
-  gap: 24px;
-}
-
-.header-leading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-start;
-}
-
 .back-button {
   display: inline-flex;
   width: fit-content;
   max-width: 100%;
   align-items: center;
   gap: 8px;
-  justify-self: end;
   padding: 10px 13px;
   border: 1px solid #e7e0d8;
   border-radius: 12px;
@@ -1319,90 +1305,11 @@ onMounted(async () => {
   line-height: 1;
 }
 
-.page-title {
-  min-width: 0;
-  text-align: center;
-}
-
-.title-eyebrow {
-  display: inline-flex;
-  margin-bottom: 2px;
-  color: #7c3aed;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.title-line {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
-.page-title h1 {
-  margin: 0;
-  color: #29231e;
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 1.25;
-  letter-spacing: -1px;
-}
-
-.online-badge {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
-  border: 1px solid #d1fae5;
-  border-radius: 999px;
-  color: #15803d;
-  font-size: 12px;
-  font-weight: 700;
-  background: #f0fdf4;
-}
-
-.online-dot,
-.session-dot,
 .location-status-dot,
 .operation-dot {
   display: inline-block;
   flex: 0 0 auto;
   border-radius: 50%;
-}
-
-.online-dot {
-  width: 7px;
-  height: 7px;
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
-}
-
-
-.header-actions {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.session-state {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-  color: #80766e;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.session-dot {
-  width: 7px;
-  height: 7px;
-  background: #a78bfa;
 }
 
 .history-button {
@@ -1537,7 +1444,7 @@ onMounted(async () => {
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  margin: 8px auto 12px;
+  margin: 12px auto;
   overflow: hidden;
   border: 1px solid rgba(229, 222, 212, 0.84);
   border-radius: 24px;
@@ -1563,6 +1470,15 @@ onMounted(async () => {
     );
 }
 
+.assistant-toolbar-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .assistant-profile {
   display: flex;
   min-width: 0;
@@ -1578,27 +1494,23 @@ onMounted(async () => {
   place-items: center;
 }
 
+.assistant-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .assistant-avatar {
   width: 38px;
   height: 38px;
-  border: 1px solid #ddd6fe;
+  overflow: hidden;
+  border: 1px solid #f7c6b5;
   border-radius: 12px;
-  font-size: 18px;
-  background: #f5f3ff;
-  box-shadow: 0 6px 14px rgba(109, 40, 217, 0.08);
-}
-
-.assistant-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.assistant-copy strong {
-  color: #312a25;
-  font-size: 15px;
-  line-height: 1.4;
+  font-size: 21px;
+  line-height: 1;
+  background: linear-gradient(135deg, #fff7ed, #fef2f2);
+  box-shadow: 0 6px 14px rgba(194, 65, 12, 0.08);
 }
 
 
@@ -1748,7 +1660,7 @@ onMounted(async () => {
   height: 76px;
   margin-bottom: 16px;
   place-items: center;
-  border: 1px solid #ddd6fe;
+  border: 1px solid #f7c6b5;
   border-radius: 24px;
   background:
     radial-gradient(
@@ -1756,12 +1668,15 @@ onMounted(async () => {
       rgba(255, 255, 255, 0.9),
       transparent 36%
     ),
-    linear-gradient(135deg, #f5f3ff, #ede9fe);
-  box-shadow: 0 14px 30px rgba(109, 40, 217, 0.1);
+    linear-gradient(135deg, #fff7ed, #fef2f2);
+  box-shadow: 0 14px 30px rgba(194, 65, 12, 0.1);
 }
 
 .empty-icon {
-  font-size: 34px;
+  display: block;
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
 }
 
 
@@ -1803,7 +1718,7 @@ onMounted(async () => {
   min-width: 0;
   align-items: flex-start;
   gap: 11px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .user-row {
@@ -1813,18 +1728,28 @@ onMounted(async () => {
 .message-avatar {
   width: 38px;
   height: 38px;
-  margin-top: 21px;
+  margin-top: 0;
+  overflow: hidden;
   border: 1px solid #e4ddd6;
   border-radius: 13px;
   color: #6d28d9;
-  font-size: 15px;
+  font-size: 19px;
   font-weight: 700;
+  line-height: 1;
   background: #f5f3ff;
+}
+
+.message-avatar > span {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
 }
 
 .user-row .message-avatar {
   border-color: #fed7aa;
   color: #c2410c;
+  font-size: 15px;
   background: #fff3e8;
 }
 
@@ -1840,13 +1765,6 @@ onMounted(async () => {
   align-items: flex-end;
 }
 
-.message-role {
-  margin: 0 4px 6px;
-  color: #8a8178;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.4;
-}
 
 .message-bubble {
   width: fit-content;
@@ -2203,9 +2121,12 @@ onMounted(async () => {
 .typing-avatar {
   width: 38px;
   height: 38px;
-  border: 1px solid #ddd6fe;
+  overflow: hidden;
+  border: 1px solid #f7c6b5;
   border-radius: 13px;
-  background: #f5f3ff;
+  font-size: 19px;
+  line-height: 1;
+  background: linear-gradient(135deg, #fff7ed, #fef2f2);
 }
 
 .typing-bubble {
@@ -2440,11 +2361,14 @@ onMounted(async () => {
   display: grid;
   width: 30px;
   height: 30px;
+  overflow: hidden;
   flex: 0 0 30px;
   place-items: center;
-  border: 1px solid #ddd6fe;
+  border: 1px solid #f7c6b5;
   border-radius: 9px;
-  background: #f5f3ff;
+  font-size: 17px;
+  line-height: 1;
+  background: linear-gradient(135deg, #fff7ed, #fef2f2);
 }
 
 .history-close-button {
@@ -2800,14 +2724,6 @@ onMounted(async () => {
     backdrop-filter: blur(3px);
   }
 
-  .header-container {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .session-state {
-    display: none;
-  }
-
   .assistant-row .message-column {
     width: calc(100% - 49px);
   }
@@ -2818,36 +2734,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 760px) {
-  .page-header {
-    padding: 14px 0;
-  }
-
-  .header-container {
-    width: calc(100% - 32px);
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
-  }
-
-  .page-title {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    padding-bottom: 4px;
-  }
-
-  .page-title h1 {
-    font-size: 30px;
-  }
-
-  .header-leading {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .header-actions {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
   .dialogue-shell {
     width: calc(100% - 16px);
     margin: 6px auto 8px;
@@ -2855,14 +2741,20 @@ onMounted(async () => {
   }
 
   .assistant-toolbar {
-    align-items: flex-start;
+    align-items: stretch;
     flex-direction: column;
     gap: 12px;
   }
 
-  .location-toolbar {
+  .assistant-toolbar-actions {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+  }
+
+  .location-toolbar {
+    min-width: 0;
+    flex: 1 1 auto;
+    justify-content: flex-end;
   }
 
   .message-list {
@@ -2905,22 +2797,27 @@ onMounted(async () => {
 }
 
 @media (max-width: 520px) {
-  .title-eyebrow,
-  .online-badge {
-    display: none;
-  }
-
-  .page-title h1 {
-    font-size: 28px;
+  .assistant-toolbar-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
   }
 
   .back-button,
-  .history-button,
-  .new-session-button {
+  .history-button {
     min-height: 40px;
     padding-right: 11px;
     padding-left: 11px;
     font-size: 13px;
+  }
+
+  .history-button {
+    justify-self: start;
+  }
+
+  .back-button {
+    justify-self: end;
   }
 
   .location-status {
@@ -2928,6 +2825,9 @@ onMounted(async () => {
   }
 
   .location-toolbar {
+    width: 100%;
+    grid-column: 1 / -1;
+    grid-row: 2;
     justify-content: flex-start;
   }
 
@@ -2959,7 +2859,7 @@ onMounted(async () => {
   }
 
   .message-avatar {
-    margin-top: 20px;
+    margin-top: 0;
   }
 
   .merchant-card-footer {
