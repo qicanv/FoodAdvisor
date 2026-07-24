@@ -18,13 +18,23 @@
         </button>
 
         <div class="nav-actions">
-          <button type="button" class="profile-btn" @click="goToProfile">
+          <button
+            type="button"
+            class="profile-btn"
+            aria-label="进入我的个人中心，查看评价、消息和账户设置"
+            title="进入我的个人中心"
+            @click="goToProfile"
+          >
             <span class="profile-avatar">👤</span>
 
             <span class="profile-copy">
-              <small>当前食客</small>
-              <strong>{{ userInfo.username || '食客用户' }}</strong>
+              <strong>我的</strong>
+              <small>
+                {{ userInfo.username || '食客用户' }} · 评价/消息
+              </small>
             </span>
+
+            <span class="profile-arrow">→</span>
           </button>
 
           <button type="button" class="logout-btn" @click="handleLogout">
@@ -884,56 +894,90 @@ const handleMerchantClick = (restaurant) => {
 
 .profile-btn {
   display: flex;
-  min-width: 150px;
-  max-width: 220px;
+  min-width: 218px;
+  max-width: 280px;
+  min-height: 48px;
   align-items: center;
   gap: 10px;
-  padding: 7px 13px 7px 8px;
-  border: 1px solid #ebe5de;
+  padding: 6px 11px 6px 8px;
+  border: 1px solid #f0d7c2;
   border-radius: 14px;
   color: #39332e;
   font: inherit;
   text-align: left;
-  background: #fff;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(255, 248, 241, 0.98)
+    );
+  box-shadow: 0 4px 13px rgba(124, 89, 54, 0.05);
   cursor: pointer;
   transition:
+    transform 0.2s,
     border-color 0.2s,
     box-shadow 0.2s;
 }
 
 .profile-btn:hover {
-  border-color: #fdba74;
-  box-shadow: 0 5px 16px rgba(124, 89, 54, 0.08);
+  transform: translateY(-1px);
+  border-color: #fb923c;
+  box-shadow: 0 8px 20px rgba(124, 89, 54, 0.1);
 }
 
 .profile-avatar {
   display: grid;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   place-items: center;
   border-radius: 11px;
-  background: #fff3e8;
+  font-size: 17px;
+  background: #fff0e3;
 }
 
 .profile-copy {
   display: flex;
   min-width: 0;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 1px;
-}
-
-.profile-copy small {
-  color: #a0978e;
-  font-size: 11px;
+  gap: 2px;
 }
 
 .profile-copy strong {
   overflow: hidden;
-  max-width: 120px;
-  font-size: 14px;
+  color: #322c27;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.profile-copy small {
+  overflow: hidden;
+  color: #9a8f85;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-arrow {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  place-items: center;
+  border-radius: 8px;
+  color: #c2410c;
+  font-size: 16px;
+  background: #fff0e3;
+  transition: transform 0.2s;
+}
+
+.profile-btn:hover .profile-arrow {
+  transform: translateX(2px);
 }
 
 .logout-btn {
@@ -1896,10 +1940,39 @@ const handleMerchantClick = (restaurant) => {
   }
 
   .profile-btn {
-    min-width: auto;
+    min-width: 112px;
+    max-width: 150px;
+    min-height: 42px;
+    gap: 7px;
+    padding: 5px 8px 5px 6px;
   }
 
-  .profile-copy,
+  .profile-avatar {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+    font-size: 15px;
+  }
+
+  .profile-copy {
+    display: flex;
+  }
+
+  .profile-copy strong {
+    font-size: 14px;
+  }
+
+  .profile-copy small {
+    display: none;
+  }
+
+  .profile-arrow {
+    width: 24px;
+    height: 24px;
+    flex-basis: 24px;
+    font-size: 14px;
+  }
+
   .logout-btn {
     display: none;
   }
