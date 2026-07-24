@@ -314,14 +314,26 @@
                   <div class="merchant-card-footer">
                     <span class="merchant-detail-hint">点击查看商家详情</span>
 
-                    <button
-                      type="button"
-                      class="evidence-button"
-                      @click.stop="openEvidence(message, merchant)"
-                    >
-                      查看依据
-                      <span>→</span>
-                    </button>
+                    <div class="merchant-card-actions">
+                      <button
+                        type="button"
+                        class="route-button"
+                        :disabled="sending || routeLoading"
+                        @click.stop="openRoutePanel(merchant)"
+                      >
+                        到这儿去
+                        <span>🧭</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        class="evidence-button"
+                        @click.stop="openEvidence(message, merchant)"
+                      >
+                        查看依据
+                        <span>→</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -475,6 +487,55 @@
           推荐商家
         </span>
       </div>
+
+      <div
+        v-if="routePanelOpen"
+        class="route-info-panel"
+      >
+        <div class="route-panel-header">
+          <div class="route-panel-title">
+            <span class="route-panel-icon">🧭</span>
+            <span>到 <strong>{{ routeTargetMerchant?.merchantName || '目的地' }}</strong></span>
+          </div>
+
+          <button
+            type="button"
+            class="route-panel-close"
+            @click="closeRoutePanel"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="route-modes">
+          <button
+            v-for="mode in routeModes"
+            :key="mode.key"
+            type="button"
+            class="route-mode-tab"
+            :class="{ active: activeRouteMode === mode.key }"
+            :disabled="routeLoading"
+            @click="switchRouteMode(mode.key)"
+          >
+            <span class="mode-icon">{{ mode.icon }}</span>
+            <span class="mode-label">{{ mode.label }}</span>
+            <span
+              v-if="routeDurations[mode.key] != null"
+              class="mode-duration"
+            >
+              约{{ formatDuration(routeDurations[mode.key]) }}
+            </span>
+            <span v-else class="mode-duration pending">—</span>
+          </button>
+        </div>
+
+        <div
+          v-if="routeLoading"
+          class="route-loading-tip"
+        >
+          正在规划路线...
+        </div>
+      </div>
     </aside>
 
     <div
@@ -614,6 +675,19 @@ const mapReady = ref(false)
 let mapInstance = null
 let userMarkerInstance = null
 const merchantMarkerInstances = []
+
+// ---- route state ----
+const routePanelOpen = ref(false)
+const routeTargetMerchant = ref(null)
+const routeLoading = ref(false)
+const activeRouteMode = ref('driving')
+const routeDurations = ref({})
+let routeInstances = []
+const routeModes = [
+  { key: 'walking', label: '步行', icon: '🚶' },
+  { key: 'transit', label: '公交', icon: '🚌' },
+  { key: 'driving', label: '驾车', icon: '🚗' }
+]
 
 const currentUserId = () => {
   const raw = localStorage.getItem('user') || localStorage.getItem('userInfo')
@@ -1042,6 +1116,8 @@ const syncAllMerchantMarkers = () => {
 
   if (lastAssistantMsg) {
     addMerchantMarkers(lastAssistantMsg.recommendations)
+  } else {
+    clearMerchantMarkers()
   }
 }
 
@@ -1576,6 +1652,246 @@ const closeEvidence = () => {
   evidenceDialogOpen.value = false
 }
 
+// ---------- route planning ----------
+
+const formatDuration = seconds => {
+  if (seconds == null || isNaN(seconds) || seconds < 0) return '—'
+  const mins = Math.round(seconds / 60)
+  if (mins < 1) return '<1分钟'
+  if (mins < 60) return `${mins}分钟`
+  const hours = Math.floor(mins / 60)
+  const remain = mins % 60
+  return remain > 0 ? `${hours}小时${remain}分钟` : `${hours}小时`
+}
+
+const clearRouteLines = () => {
+  routeInstances.forEach(r => {
+    try { r.clearResults() } catch (e) { /* ignore */ }
+  })
+  routeInstances = []
+}
+
+const clearRouteOnMap = () => {
+  clearRouteLines()
+}
+
+/**
+ * 通过 Vite 代理调用百度路线 REST API，从 JSON 中提取 routes[0].duration。
+ * 此方法经 Python 测试验证可靠，不依赖 BMapGL 的 getDuration()。
+ */
+const fetchDurationFromApi = async (mode, originLat, originLng, destLat, destLng) => {
+  const url =
+    `/api/baidu-map/directionlite/v1/${mode}` +
+    `?origin=${originLat},${originLng}` +
+    `&destination=${destLat},${destLng}` +
+    `&ak=naT7GCQRPdJs4a22oe33dsoFXPV3Oku6` +
+    `&coord_type=bd09ll&ret_coordtype=bd09ll&output=json`
+
+  const resp = await fetch(url)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const data = await resp.json()
+  if (data.status !== 0) throw new Error(`API status=${data.status}`)
+  const routes = data.result?.routes
+  if (!routes || routes.length === 0) throw new Error('No routes')
+
+  // 取 routes[0].duration 作为总时间（Python 测试已验证可靠性）
+  const d = routes[0].duration
+  return (d != null && !isNaN(d) && d > 0) ? d : null
+}
+
+/**
+ * 并行请求三种出行方式的时间，全部完成后更新 UI。
+ * 优先 REST API，失败则用 BMapGL 兜底。
+ */
+const fetchAllDurations = async () => {
+  const loc = currentLocation.value
+  const merchant = routeTargetMerchant.value
+  if (!loc?.userLatitude || !loc?.userLongitude ||
+      !merchant?.latitude || !merchant?.longitude) {
+    routeLoading.value = false
+    return
+  }
+
+  const oLat = loc.userLatitude
+  const oLng = loc.userLongitude
+  const dLat = merchant.latitude
+  const dLng = merchant.longitude
+  const modes = ['walking', 'transit', 'driving']
+  const start = new BMapGL.Point(oLng, oLat)
+  const end = new BMapGL.Point(dLng, dLat)
+
+  // 主路径：REST API
+  const results = await Promise.allSettled(
+    modes.map(m => fetchDurationFromApi(m, oLat, oLng, dLat, dLng))
+  )
+
+  const durations = {}
+  const failedModes = []
+  modes.forEach((mode, i) => {
+    if (results[i].status === 'fulfilled' && results[i].value != null) {
+      durations[mode] = results[i].value
+    } else {
+      failedModes.push(mode)
+    }
+  })
+
+  // 兜底：REST API 失败的模式改用 BMapGL 提取时间
+  if (failedModes.length > 0) {
+    await new Promise(resolve => {
+      let pending = failedModes.length
+      const done = () => { pending--; if (pending <= 0) resolve() }
+
+      failedModes.forEach(mode => {
+        let ri
+        if (mode === 'walking') {
+          ri = new BMapGL.WalkingRoute(mapInstance, {
+            renderOptions: { map: mapInstance, autoViewport: false }
+          })
+        } else if (mode === 'transit') {
+          ri = new BMapGL.TransitRoute(mapInstance, {
+            renderOptions: { map: mapInstance, autoViewport: false }
+          })
+        } else {
+          ri = new BMapGL.DrivingRoute(mapInstance, {
+            renderOptions: { map: mapInstance, autoViewport: false }
+          })
+        }
+
+        ri.setSearchCompleteCallback(() => {
+          try {
+            const res = ri.getResults()
+            if (res && res.getNumPlans() > 0) {
+              const plan = res.getPlan(0)
+              // 尝试 getDuration，再尝试遍历 step 累加
+              let d = plan.getDuration()
+              if (d == null || isNaN(d) || d <= 0) {
+                d = 0
+                for (let si = 0; si < plan.getNumSteps(); si++) {
+                  const sd = plan.getStep(si).getDuration()
+                  if (sd != null && !isNaN(sd) && sd > 0) d += sd
+                }
+              }
+              durations[mode] = d > 0 ? d : null
+            }
+          } catch (e) { /* ignore */ }
+          done()
+        })
+        ri.search(start, end)
+      })
+    })
+  }
+
+  routeDurations.value = { ...durations }
+  routeLoading.value = false
+}
+
+/**
+ * 仅用 BMapGL 在地图上绘制当前选中方式的路线（不负责时间提取）。
+ */
+const drawRouteOnMap = (mode) => {
+  if (!mapInstance || !mapReady.value) return
+  const loc = currentLocation.value
+  const merchant = routeTargetMerchant.value
+  if (!loc?.userLatitude || !loc?.userLongitude ||
+      !merchant?.latitude || !merchant?.longitude) return
+
+  clearRouteLines()
+  const start = new BMapGL.Point(loc.userLongitude, loc.userLatitude)
+  const end = new BMapGL.Point(merchant.longitude, merchant.latitude)
+
+  let ri
+  if (mode === 'walking') {
+    ri = new BMapGL.WalkingRoute(mapInstance, {
+      renderOptions: { map: mapInstance, autoViewport: true }
+    })
+  } else if (mode === 'transit') {
+    ri = new BMapGL.TransitRoute(mapInstance, {
+      renderOptions: { map: mapInstance, autoViewport: true }
+    })
+  } else {
+    ri = new BMapGL.DrivingRoute(mapInstance, {
+      renderOptions: { map: mapInstance, autoViewport: true }
+    })
+  }
+  ri.search(start, end)
+  routeInstances.push(ri)
+}
+
+const switchRouteMode = (mode) => {
+  if (routeLoading.value || activeRouteMode.value === mode) return
+  activeRouteMode.value = mode
+  drawRouteOnMap(mode)
+}
+
+const openRoutePanel = async (merchant) => {
+  if (
+    !merchant?.latitude || !merchant?.longitude
+  ) {
+    return
+  }
+
+  // ensure location is available
+  if (locationStatus.value !== 'READY' || !currentLocation.value) {
+    if (!navigator.geolocation) {
+      errorMessage.value = '当前浏览器不支持定位，无法规划路线'
+      return
+    }
+    await new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          currentLocation.value = {
+            userLatitude: position.coords.latitude,
+            userLongitude: position.coords.longitude
+          }
+          locationStatus.value = 'READY'
+          updateUserLocationOnMap(
+            position.coords.latitude,
+            position.coords.longitude
+          )
+          resolve()
+        },
+        () => {
+          errorMessage.value = '需要位置权限才能规划路线，请先点击"使用当前位置"'
+          resolve()
+        },
+        { enableHighAccuracy: false, timeout: 8000 }
+      )
+    })
+    if (locationStatus.value !== 'READY') return
+  }
+
+  // ensure map is ready
+  if (!mapReady.value) {
+    mapCollapsed.value = false
+    await nextTick()
+    try { await initMap() } catch (e) { /* ignore */ }
+  } else if (mapCollapsed.value) {
+    mapCollapsed.value = false
+    await nextTick()
+    if (mapInstance) {
+      setTimeout(() => mapInstance.resize(), 300)
+    }
+  }
+
+  routeTargetMerchant.value = merchant
+  routeDurations.value = {}
+  activeRouteMode.value = 'driving'
+  routeLoading.value = true
+  routePanelOpen.value = true
+
+  // 并行：REST API 获取时间 + BMapGL 绘制路线
+  fetchAllDurations()
+  drawRouteOnMap(activeRouteMode.value)
+}
+
+const closeRoutePanel = () => {
+  routePanelOpen.value = false
+  routeTargetMerchant.value = null
+  clearRouteLines()
+  routeDurations.value = {}
+  routeLoading.value = false
+}
+
 onMounted(async () => {
   await initialize()
 
@@ -1602,6 +1918,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // 清理路线资源
+  clearRouteLines()
   // 清理地图资源
   clearMerchantMarkers()
   if (userMarkerInstance && mapInstance) {
@@ -2512,6 +2830,184 @@ onUnmounted(() => {
   background: #faf8ff;
 }
 
+.merchant-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.route-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 38px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid #fdba74;
+  border-radius: 9px;
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #fffaf5;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.route-button:hover:not(:disabled) {
+  border-color: #f97316;
+  background: #fff7ed;
+}
+
+.route-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.route-button span {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.route-info-panel {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid #eee8e1;
+  background: #faf8f5;
+}
+
+.route-panel-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-panel-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #312a25;
+}
+
+.route-panel-title strong {
+  color: #6d28d9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.route-panel-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.route-panel-close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border: 1px solid #e7e0d8;
+  border-radius: 7px;
+  color: #7d746c;
+  font-size: 18px;
+  line-height: 1;
+  background: #fff;
+  cursor: pointer;
+}
+
+.route-panel-close:hover {
+  border-color: #fdba74;
+  color: #c2410c;
+  background: #fff8f1;
+}
+
+.route-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.route-mode-tab {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e8e1da;
+  border-radius: 9px;
+  text-align: left;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.route-mode-tab:hover:not(:disabled):not(.active) {
+  border-color: #c4b5fd;
+  background: #faf8ff;
+}
+
+.route-mode-tab.active {
+  border-color: #8b5cf6;
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.route-mode-tab:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.mode-icon {
+  font-size: 18px;
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
+.mode-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: #4d453e;
+}
+
+.route-mode-tab.active .mode-label {
+  color: #5b21b6;
+}
+
+.mode-duration {
+  margin-left: auto;
+  font-weight: 700;
+  color: #c2410c;
+  white-space: nowrap;
+}
+
+.mode-duration.pending {
+  color: #9a9087;
+  font-weight: 400;
+}
+
+.route-loading-tip {
+  text-align: center;
+  color: #80766e;
+  font-size: 12px;
+  padding: 4px 0;
+}
+
 .suggestion-panel,
 .limiting-panel {
   min-width: 0;
@@ -3339,7 +3835,8 @@ onUnmounted(() => {
   background: #faf8f5;
 }
 
-.map-panel.collapsed .map-legend {
+.map-panel.collapsed .map-legend,
+.map-panel.collapsed .route-info-panel {
   display: none;
 }
 
@@ -3606,6 +4103,16 @@ onUnmounted(() => {
   .merchant-card-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .merchant-card-actions {
+    width: 100%;
+    flex-direction: row;
+  }
+
+  .route-button {
+    flex: 1;
+    justify-content: center;
   }
 
   .evidence-button {
