@@ -8,6 +8,14 @@ export const createDiningSession = (title = '') => {
   )
 }
 
+export const getDiningSessions = () => {
+  return request.get('/api/diner/sessions')
+}
+
+export const deleteDiningSession = sessionId => {
+  return request.delete(`/api/diner/sessions/${sessionId}`)
+}
+
 export const getDiningMessages = sessionId => {
   return request.get(`/api/diner/sessions/${sessionId}/messages`)
 }
