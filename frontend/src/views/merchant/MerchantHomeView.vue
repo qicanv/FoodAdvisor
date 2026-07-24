@@ -1,5 +1,5 @@
 <template>
-  <MerchantLayout title="店铺首页" subtitle="查看今日经营数据和快捷操作">
+  <MerchantLayout title="商户首页" subtitle="查看今日经营数据和快捷操作">
     <div class="dashboard-container">
       <div class="today-section">
         <div class="today-header">
@@ -157,18 +157,18 @@
       <div class="bottom-section">
         <div class="card">
           <div class="card-header">
-            <h3>今日评价</h3>
+            <h3>最近评价</h3>
             <button class="view-all-btn" @click="navigateTo('/merchant/reviews')">查看全部</button>
           </div>
           <div class="card-content">
-            <div v-if="todayReviews.length > 0" class="review-list">
-              <div v-for="review in todayReviews" :key="review.id" class="review-item">
+            <div v-if="recentReviews.length > 0" class="review-list">
+              <div v-for="review in recentReviews" :key="review.id" class="review-item">
                 <div class="review-rating">
                   <span v-for="i in 5" :key="i" class="star" :class="{ filled: i <= review.rating }">★</span>
                 </div>
                 <div class="review-content">
                   <p class="review-text">{{ review.content }}</p>
-                  <p class="review-meta">{{ review.username }} · {{ review.createdAt }}</p>
+                  <p class="review-meta">{{ review.merchantName }} · {{ review.username }} · {{ review.time }}</p>
                 </div>
               </div>
             </div>
@@ -177,7 +177,7 @@
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
               </svg>
-              <p>今日暂无评价</p>
+              <p>暂无评价</p>
             </div>
           </div>
         </div>
@@ -256,11 +256,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import MerchantLayout from '../../components/MerchantLayout.vue'
+import { getMerchantReviews } from '../../api/reviewAnalysis'
+import { getMyMerchants } from '../../api/merchantConsole'
 
 const router = useRouter()
+const activeStoreId = inject('activeMerchantId', ref(null))
 
 const todayDate = computed(() => {
   const now = new Date()
@@ -284,7 +287,7 @@ const todayStats = ref({
 
 const shortcuts = ref([
   { id: 1, path: '/merchant/dishes', label: '菜品管理', color: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)' },
-  { id: 2, path: '/merchant/statistics', label: '经营统计', color: 'linear-gradient(135deg, #1890ff 0%, #40a9ff 100%)' },
+  { id: 2, path: '/merchant/reviews', label: '评价管理', color: 'linear-gradient(135deg, #1890ff 0%, #40a9ff 100%)' },
 ])
 
 const showAddShortcut = ref(false)
@@ -294,7 +297,7 @@ const colorError = ref('')
 const availableFeatures = [
   { path: '/merchant/home', label: '店铺首页', iconViewBox: '0 0 24 24', iconPath: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z M9 22l3-3 3 3' },
   { path: '/merchant/dishes', label: '菜品管理', iconViewBox: '0 0 24 24', iconPath: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 7a4 4 0 1 1 0 8 4 4 0 0 1 0-8z' },
-  { path: '/merchant/statistics', label: '经营统计', iconViewBox: '0 0 24 24', iconPath: 'M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z' },
+  { path: '/merchant/reviews', label: '评价管理', iconViewBox: '0 0 24 24', iconPath: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' },
 ]
 
 const availableColors = [
@@ -308,11 +311,75 @@ const availableColors = [
   'linear-gradient(135deg, #531dab 0%, #722ed1 100%)',
 ]
 
-const todayReviews = ref([
-  { id: 1, rating: 5, content: '菜品味道很好，服务态度也不错，下次还会再来！', username: '吃货小明', createdAt: '今天 14:30' },
-  { id: 2, rating: 4, content: '环境整洁，上菜速度快，整体体验满意。', username: '美食家阿华', createdAt: '今天 12:15' },
-  { id: 3, rating: 5, content: '性价比很高，推荐他们家的招牌菜！', username: '探店达人', createdAt: '今天 10:00' },
-])
+const recentReviews = ref([])
+const merchantMap = ref({})
+
+const formatReviewTime = (dateStr) => {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now - d
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffHours < 1) {
+    const diffMins = Math.floor(diffMs / (1000 * 60))
+    return diffMins <= 0 ? '刚刚' : `${diffMins}分钟前`
+  } else if (diffHours < 24) {
+    return `${diffHours}小时前`
+  } else if (diffDays < 7) {
+    return `${diffDays}天前`
+  } else {
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+}
+
+const loadRecentReviews = async () => {
+  try {
+    // Load all stores for name mapping
+    const storeResp = await getMyMerchants()
+    if (storeResp.success && storeResp.data) {
+      storeResp.data.forEach(s => {
+        merchantMap.value[s.id] = s.name
+      })
+    }
+
+    // Get reviews for active store
+    const storeId = activeStoreId.value
+    if (!storeId) {
+      // If no active store, try to get reviews for the first store
+      const stores = storeResp?.data || []
+      if (stores.length === 0) return
+      const firstId = stores[0].id
+      const resp = await getMerchantReviews(firstId, { pageNum: 1, pageSize: 3 })
+      if (resp.success && resp.data) {
+        recentReviews.value = (resp.data.records || resp.data || []).slice(0, 3).map(r => ({
+          id: r.id,
+          rating: Number(r.rating) || 0,
+          content: r.content || '',
+          username: r.nickname || r.username || '匿名用户',
+          merchantName: merchantMap.value[r.merchantId] || '未知店铺',
+          time: formatReviewTime(r.publishedAt || r.createdAt)
+        }))
+      }
+      return
+    }
+
+    const resp = await getMerchantReviews(storeId, { pageNum: 1, pageSize: 3 })
+    if (resp.success && resp.data) {
+      recentReviews.value = (resp.data.records || resp.data || []).slice(0, 3).map(r => ({
+        id: r.id,
+        rating: Number(r.rating) || 0,
+        content: r.content || '',
+        username: r.nickname || r.username || '匿名用户',
+        merchantName: merchantMap.value[r.merchantId] || '未知店铺',
+        time: formatReviewTime(r.publishedAt || r.createdAt)
+      }))
+    }
+  } catch (error) {
+    console.error('加载最近评价失败:', error)
+  }
+}
 
 const businessAdvice = ref([
   { type: 'success', content: '今日午市客流量较高，建议增加人手准备' },
@@ -357,6 +424,7 @@ const removeShortcut = (id) => {
 }
 
 onMounted(() => {
+  loadRecentReviews()
 })
 </script>
 
