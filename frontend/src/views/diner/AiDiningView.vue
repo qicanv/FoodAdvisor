@@ -290,14 +290,26 @@
                     <div class="merchant-card-footer">
                       <span class="merchant-detail-hint">点击查看商家详情</span>
 
-                      <button
-                        type="button"
-                        class="evidence-button"
-                        @click.stop="openEvidence(message, merchant)"
-                      >
-                        查看依据
-                        <span>→</span>
-                      </button>
+                      <div class="merchant-card-actions">
+                        <button
+                          type="button"
+                          class="route-button"
+                          :disabled="sending || routeLoading"
+                          @click.stop="openRoutePanel(merchant)"
+                        >
+                          到这儿去
+                          <span>🧭</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          class="evidence-button"
+                          @click.stop="openEvidence(message, merchant)"
+                        >
+                          查看依据
+                          <span>→</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -431,11 +443,17 @@
           :title="mapCollapsed ? '展开地图' : '收起地图'"
           @click="toggleMap"
         >
-          {{ mapCollapsed ? "‹" : "›" }}
+          {{ mapCollapsed ? '‹' : '›' }}
         </button>
       </div>
-      <div ref="mapContainerRef" class="map-container"></div>
-      <div v-if="!mapReady" class="map-loading-overlay">
+      <div
+        ref="mapContainerRef"
+        class="map-container"
+      ></div>
+      <div
+        v-if="!mapReady"
+        class="map-loading-overlay"
+      >
         <span class="map-loading-spinner"></span>
         <span>地图加载中...</span>
       </div>
@@ -448,6 +466,55 @@
           <span class="legend-dot merchant-dot"></span>
           推荐商家
         </span>
+      </div>
+
+      <div
+        v-if="routePanelOpen"
+        class="route-info-panel"
+      >
+        <div class="route-panel-header">
+          <div class="route-panel-title">
+            <span class="route-panel-icon">🧭</span>
+            <span>到 <strong>{{ routeTargetMerchant?.merchantName || '目的地' }}</strong></span>
+          </div>
+
+          <button
+            type="button"
+            class="route-panel-close"
+            @click="closeRoutePanel"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="route-modes">
+          <button
+            v-for="mode in routeModes"
+            :key="mode.key"
+            type="button"
+            class="route-mode-tab"
+            :class="{ active: activeRouteMode === mode.key }"
+            :disabled="routeLoading"
+            @click="switchRouteMode(mode.key)"
+          >
+            <span class="mode-icon">{{ mode.icon }}</span>
+            <span class="mode-label">{{ mode.label }}</span>
+            <span
+              v-if="routeDurations[mode.key] != null"
+              class="mode-duration"
+            >
+              约{{ formatDuration(routeDurations[mode.key]) }}
+            </span>
+            <span v-else class="mode-duration pending">—</span>
+          </button>
+        </div>
+
+        <div
+          v-if="routeLoading"
+          class="route-loading-tip"
+        >
+          正在规划路线...
+        </div>
       </div>
     </aside>
 
@@ -569,6 +636,19 @@ const mapReady = ref(false);
 let mapInstance = null;
 let userMarkerInstance = null;
 const merchantMarkerInstances = [];
+
+// ---- route state ----
+const routePanelOpen = ref(false);
+const routeTargetMerchant = ref(null);
+const routeLoading = ref(false);
+const activeRouteMode = ref("driving");
+const routeDurations = ref({});
+let routeInstances = [];
+const routeModes = [
+  { key: "walking", label: "步行", icon: "🚶" },
+  { key: "transit", label: "公交", icon: "🚌" },
+  { key: "driving", label: "驾车", icon: "🚗" },
+];
 
 const currentUserProfile = () => {
   const raw = localStorage.getItem("user") || localStorage.getItem("userInfo");
@@ -765,21 +845,20 @@ const isConstraintObject = (value) =>
 
 // 静默获取位置（不显示错误提示），用于页面加载时自动定位
 const tryAutoLocation = () => {
-  if (!navigator.geolocation) return;
-  if (locationStatus.value === "READY" || locationStatus.value === "LOCATING")
-    return;
+  if (!navigator.geolocation) return
+  if (locationStatus.value === 'READY' || locationStatus.value === 'LOCATING') return
 
   navigator.geolocation.getCurrentPosition(
-    (position) => {
+    position => {
       currentLocation.value = {
         userLatitude: position.coords.latitude,
-        userLongitude: position.coords.longitude,
-      };
-      locationStatus.value = "READY";
+        userLongitude: position.coords.longitude
+      }
+      locationStatus.value = 'READY'
       updateUserLocationOnMap(
         position.coords.latitude,
-        position.coords.longitude,
-      );
+        position.coords.longitude
+      )
     },
     () => {
       // 静默失败，不显示错误
@@ -787,75 +866,78 @@ const tryAutoLocation = () => {
     {
       enableHighAccuracy: false,
       timeout: 8000,
-      maximumAge: 300000,
-    },
-  );
-};
+      maximumAge: 300000
+    }
+  )
+}
 
 // 检查当前消息中是否有推荐商家
 const hasRecommendationsInHistory = () => {
   return messages.value.some(
-    (m) => m.role === "ASSISTANT" && m.recommendations?.length,
-  );
-};
+    m => m.role === 'ASSISTANT' && m.recommendations?.length
+  )
+}
 
 // ---------- map helpers ----------
 const toggleMap = () => {
-  mapCollapsed.value = !mapCollapsed.value;
+  mapCollapsed.value = !mapCollapsed.value
   if (!mapCollapsed.value && !mapReady.value) {
-    nextTick(() => initMap());
+    nextTick(() => initMap())
   } else if (!mapCollapsed.value && mapReady.value) {
     nextTick(() => {
       if (mapInstance) {
         // 百度地图容器尺寸变化后需要重新设置中心点
         setTimeout(() => {
-          mapInstance.resize();
-          fitMapToAllMarkers();
-        }, 300);
+          mapInstance.resize()
+          fitMapToAllMarkers()
+        }, 300)
       }
-    });
+    })
   }
-};
+}
 
 const waitForBMapGL = () => {
   return new Promise((resolve, reject) => {
-    if (typeof BMapGL !== "undefined") {
-      resolve();
-      return;
+    if (typeof BMapGL !== 'undefined') {
+      resolve()
+      return
     }
-    let attempts = 0;
-    const maxAttempts = 15;
+    let attempts = 0
+    const maxAttempts = 15
     const interval = setInterval(() => {
-      attempts++;
-      if (typeof BMapGL !== "undefined") {
-        clearInterval(interval);
-        resolve();
+      attempts++
+      if (typeof BMapGL !== 'undefined') {
+        clearInterval(interval)
+        resolve()
       } else if (attempts >= maxAttempts) {
-        clearInterval(interval);
-        reject(new Error("百度地图加载超时"));
+        clearInterval(interval)
+        reject(new Error('百度地图加载超时'))
       }
-    }, 200);
-  });
-};
+    }, 200)
+  })
+}
 
 const initMap = async () => {
-  if (!mapContainerRef.value || mapReady.value) return;
+  if (!mapContainerRef.value || mapReady.value) return
 
   try {
-    await waitForBMapGL();
+    await waitForBMapGL()
   } catch {
-    return;
+    return
   }
 
-  mapInstance = new BMapGL.Map(mapContainerRef.value);
-  mapInstance.enableScrollWheelZoom(true);
-  mapInstance.addControl(new BMapGL.NavigationControl());
-  mapInstance.addControl(new BMapGL.ScaleControl());
+  mapInstance = new BMapGL.Map(mapContainerRef.value)
+  mapInstance.enableScrollWheelZoom(true)
+  mapInstance.addControl(new BMapGL.NavigationControl())
+  mapInstance.addControl(new BMapGL.ScaleControl())
 
   // 默认中心：成都
-  mapInstance.centerAndZoom(new BMapGL.Point(104.0668, 30.5728), 13);
+  mapInstance.centerAndZoom(
+    new BMapGL.Point(104.0668, 30.5728),
+    13
+  )
 
-  mapReady.value = true;
+  mapReady.value = true
 
   // 如果已有当前位置，立即添加标记
   if (
@@ -864,120 +946,128 @@ const initMap = async () => {
   ) {
     updateUserLocationOnMap(
       currentLocation.value.userLatitude,
-      currentLocation.value.userLongitude,
-    );
+      currentLocation.value.userLongitude
+    )
   }
 
   // 如果已有推荐结果，添加商家标记
-  syncAllMerchantMarkers();
-};
+  syncAllMerchantMarkers()
+}
 
 const updateUserLocationOnMap = (lat, lng) => {
-  if (!mapInstance || !mapReady.value) return;
-  if (lat == null || lng == null) return;
+  if (!mapInstance || !mapReady.value) return
+  if (lat == null || lng == null) return
 
   // 清除旧标记与标签
   if (userMarkerInstance) {
     if (userMarkerInstance._label) {
-      mapInstance.removeOverlay(userMarkerInstance._label);
+      mapInstance.removeOverlay(userMarkerInstance._label)
     }
-    mapInstance.removeOverlay(userMarkerInstance);
-    userMarkerInstance = null;
+    mapInstance.removeOverlay(userMarkerInstance)
+    userMarkerInstance = null
   }
 
-  const point = new BMapGL.Point(lng, lat);
-  userMarkerInstance = new BMapGL.Marker(point);
-  mapInstance.addOverlay(userMarkerInstance);
+  const point = new BMapGL.Point(lng, lat)
+  userMarkerInstance = new BMapGL.Marker(point)
+  mapInstance.addOverlay(userMarkerInstance)
 
-  const label = new BMapGL.Label("我的位置", {
+  const label = new BMapGL.Label('我的位置', {
     position: point,
-    offset: new BMapGL.Size(0, -30),
-  });
+    offset: new BMapGL.Size(0, -30)
+  })
   label.setStyle({
-    color: "#333",
-    fontSize: "12px",
-    padding: "2px 8px",
-    background: "rgba(255,255,255,0.92)",
-    borderRadius: "4px",
-    fontWeight: "bold",
-    border: "2px solid #ef4444",
-  });
-  mapInstance.addOverlay(label);
-  userMarkerInstance._label = label;
+    color: '#333',
+    fontSize: '12px',
+    padding: '2px 8px',
+    background: 'rgba(255,255,255,0.92)',
+    borderRadius: '4px',
+    fontWeight: 'bold',
+    border: '2px solid #ef4444'
+  })
+  mapInstance.addOverlay(label)
+  userMarkerInstance._label = label
 
-  fitMapToAllMarkers();
-};
+  fitMapToAllMarkers()
+}
 
 const clearMerchantMarkers = () => {
-  if (!mapInstance) return;
-  merchantMarkerInstances.forEach((m) => {
-    mapInstance.removeOverlay(m);
-    if (m._label) mapInstance.removeOverlay(m._label);
-  });
-  merchantMarkerInstances.length = 0;
-};
+  if (!mapInstance) return
+  merchantMarkerInstances.forEach(m => {
+    mapInstance.removeOverlay(m)
+    if (m._label) mapInstance.removeOverlay(m._label)
+  })
+  merchantMarkerInstances.length = 0
+}
 
 // 蓝色箭头图标（SVG data URL）
 const BLUE_MARKER_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">' +
-    '<defs><filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.25"/></filter></defs>' +
-    '<g filter="url(#shadow)">' +
-    '<path d="M16 2C9.37 2 4 7.37 4 14c0 9 12 24 12 24s12-15 12-24c0-6.63-5.37-12-12-12z" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5"/>' +
-    '<circle cx="16" cy="14" r="5" fill="white"/>' +
-    "</g></svg>",
-)}`;
+  '<defs><filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.25"/></filter></defs>' +
+  '<g filter="url(#shadow)">' +
+  '<path d="M16 2C9.37 2 4 7.37 4 14c0 9 12 24 12 24s12-15 12-24c0-6.63-5.37-12-12-12z" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5"/>' +
+  '<circle cx="16" cy="14" r="5" fill="white"/>' +
+  '</g></svg>'
+)}`
 
 const addMerchantMarkers = (merchants) => {
-  if (!mapInstance || !mapReady.value) return;
-  if (!merchants || merchants.length === 0) return;
+  if (!mapInstance || !mapReady.value) return
+  if (!merchants || merchants.length === 0) return
 
   // 清除旧商家标记
-  clearMerchantMarkers();
+  clearMerchantMarkers()
 
-  const blueIcon = new BMapGL.Icon(BLUE_MARKER_SVG, new BMapGL.Size(32, 40), {
-    anchor: new BMapGL.Size(16, 40),
-    imageSize: new BMapGL.Size(32, 40),
-  });
+  const blueIcon = new BMapGL.Icon(
+    BLUE_MARKER_SVG,
+    new BMapGL.Size(32, 40),
+    {
+      anchor: new BMapGL.Size(16, 40),
+      imageSize: new BMapGL.Size(32, 40)
+    }
+  )
 
   merchants.forEach((merchant, index) => {
-    const lat = merchant.latitude != null ? Number(merchant.latitude) : null;
-    const lng = merchant.longitude != null ? Number(merchant.longitude) : null;
+    const lat = merchant.latitude != null
+      ? Number(merchant.latitude)
+      : null
+    const lng = merchant.longitude != null
+      ? Number(merchant.longitude)
+      : null
 
-    if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return;
+    if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return
 
-    const point = new BMapGL.Point(lng, lat);
+    const point = new BMapGL.Point(lng, lat)
 
     // 蓝色箭头图标标记
-    const marker = new BMapGL.Marker(point, { icon: blueIcon });
-    mapInstance.addOverlay(marker);
+    const marker = new BMapGL.Marker(point, { icon: blueIcon })
+    mapInstance.addOverlay(marker)
 
     // 标签
-    const labelText = merchant.merchantName || `推荐 #${index + 1}`;
+    const labelText = merchant.merchantName || `推荐 #${index + 1}`
     const label = new BMapGL.Label(labelText, {
       position: point,
-      offset: new BMapGL.Size(0, -42),
-    });
+      offset: new BMapGL.Size(0, -42)
+    })
     label.setStyle({
-      color: "#1d4ed8",
-      fontSize: "12px",
-      padding: "2px 8px",
-      background: "rgba(255,255,255,0.92)",
-      borderRadius: "4px",
-      fontWeight: "bold",
-      border: "2px solid #3b82f6",
-    });
-    mapInstance.addOverlay(label);
-    marker._label = label;
-    merchantMarkerInstances.push(marker);
-  });
+      color: '#1d4ed8',
+      fontSize: '12px',
+      padding: '2px 8px',
+      background: 'rgba(255,255,255,0.92)',
+      borderRadius: '4px',
+      fontWeight: 'bold',
+      border: '2px solid #3b82f6'
+    })
+    mapInstance.addOverlay(label)
+    marker._label = label
+    merchantMarkerInstances.push(marker)
+  })
 
-  fitMapToAllMarkers();
-};
+  fitMapToAllMarkers()
+}
 
 const fitMapToAllMarkers = () => {
-  if (!mapInstance || !mapReady.value) return;
+  if (!mapInstance || !mapReady.value) return
 
-  const allPoints = [];
+  const allPoints = []
 
   // 用户位置
   if (
@@ -987,62 +1077,63 @@ const fitMapToAllMarkers = () => {
     allPoints.push(
       new BMapGL.Point(
         currentLocation.value.userLongitude,
-        currentLocation.value.userLatitude,
-      ),
-    );
+        currentLocation.value.userLatitude
+      )
+    )
   }
 
   // 商家标记位置
-  merchantMarkerInstances.forEach((m) => {
-    allPoints.push(m.getPosition());
-  });
+  merchantMarkerInstances.forEach(m => {
+    allPoints.push(m.getPosition())
+  })
 
-  if (allPoints.length === 0) return;
+  if (allPoints.length === 0) return
   if (allPoints.length === 1) {
-    mapInstance.centerAndZoom(allPoints[0], 15);
-    return;
+    mapInstance.centerAndZoom(allPoints[0], 15)
+    return
   }
 
   mapInstance.setViewport(allPoints, {
-    margins: [40, 40, 40, 40],
-  });
-};
+    margins: [40, 40, 40, 40]
+  })
+}
 
 const syncAllMerchantMarkers = () => {
-  if (!mapInstance || !mapReady.value) return;
+  if (!mapInstance || !mapReady.value) return
 
   // 收集当前所有消息中最后一条 assistant 消息的推荐商家
   const lastAssistantMsg = [...messages.value]
     .reverse()
-    .find((m) => m.role === "ASSISTANT" && m.recommendations?.length);
+    .find(m => m.role === 'ASSISTANT' && m.recommendations?.length)
 
   if (lastAssistantMsg) {
-    addMerchantMarkers(lastAssistantMsg.recommendations);
+    addMerchantMarkers(lastAssistantMsg.recommendations)
+  } else {
+    clearMerchantMarkers()
   }
-};
+}
 
 // 监听消息变化，自动更新地图上的商家标记
 watch(
-  () =>
-    messages.value
-      .filter((m) => m.role === "ASSISTANT" && m.recommendations?.length)
-      .map((m) => m.key),
+  () => messages.value
+    .filter(m => m.role === 'ASSISTANT' && m.recommendations?.length)
+    .map(m => m.key),
   () => {
     if (mapReady.value && !mapCollapsed.value) {
-      nextTick(() => syncAllMerchantMarkers());
+      nextTick(() => syncAllMerchantMarkers())
     }
   },
-  { deep: false },
-);
+  { deep: false }
+)
 
 // 地图初始化完成后，同步已有的推荐商家标记
 watch(mapReady, (ready) => {
   if (ready && !mapCollapsed.value && hasRecommendationsInHistory()) {
-    nextTick(() => syncAllMerchantMarkers());
+    nextTick(() => syncAllMerchantMarkers())
   }
-});
+})
 
-const normalizeHistoryMessage = (item) => ({
+const normalizeHistoryMessage = item => ({
   key: `history-${item.id}`,
   id: item.id,
   role: item.role,
@@ -1553,6 +1644,246 @@ const closeEvidence = () => {
   evidenceDialogOpen.value = false;
 };
 
+// ---------- route planning ----------
+
+const formatDuration = seconds => {
+  if (seconds == null || isNaN(seconds) || seconds < 0) return '—'
+  const mins = Math.round(seconds / 60)
+  if (mins < 1) return '<1分钟'
+  if (mins < 60) return `${mins}分钟`
+  const hours = Math.floor(mins / 60)
+  const remain = mins % 60
+  return remain > 0 ? `${hours}小时${remain}分钟` : `${hours}小时`
+}
+
+const clearRouteLines = () => {
+  routeInstances.forEach(r => {
+    try { r.clearResults() } catch (e) { /* ignore */ }
+  })
+  routeInstances = []
+}
+
+const clearRouteOnMap = () => {
+  clearRouteLines()
+}
+
+/**
+ * 通过 Vite 代理调用百度路线 REST API，从 JSON 中提取 routes[0].duration。
+ * 此方法经 Python 测试验证可靠，不依赖 BMapGL 的 getDuration()。
+ */
+const fetchDurationFromApi = async (mode, originLat, originLng, destLat, destLng) => {
+  const url =
+    `/api/baidu-map/directionlite/v1/${mode}` +
+    `?origin=${originLat},${originLng}` +
+    `&destination=${destLat},${destLng}` +
+    `&ak=naT7GCQRPdJs4a22oe33dsoFXPV3Oku6` +
+    `&coord_type=bd09ll&ret_coordtype=bd09ll&output=json`
+
+  const resp = await fetch(url)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  const data = await resp.json()
+  if (data.status !== 0) throw new Error(`API status=${data.status}`)
+  const routes = data.result?.routes
+  if (!routes || routes.length === 0) throw new Error('No routes')
+
+  // 取 routes[0].duration 作为总时间（Python 测试已验证可靠性）
+  const d = routes[0].duration
+  return (d != null && !isNaN(d) && d > 0) ? d : null
+}
+
+/**
+ * 并行请求三种出行方式的时间，全部完成后更新 UI。
+ * 优先 REST API，失败则用 BMapGL 兜底。
+ */
+const fetchAllDurations = async () => {
+  const loc = currentLocation.value
+  const merchant = routeTargetMerchant.value
+  if (!loc?.userLatitude || !loc?.userLongitude ||
+      !merchant?.latitude || !merchant?.longitude) {
+    routeLoading.value = false
+    return
+  }
+
+  const oLat = loc.userLatitude
+  const oLng = loc.userLongitude
+  const dLat = merchant.latitude
+  const dLng = merchant.longitude
+  const modes = ['walking', 'transit', 'driving']
+  const start = new BMapGL.Point(oLng, oLat)
+  const end = new BMapGL.Point(dLng, dLat)
+
+  // 主路径：REST API
+  const results = await Promise.allSettled(
+    modes.map(m => fetchDurationFromApi(m, oLat, oLng, dLat, dLng))
+  )
+
+  const durations = {}
+  const failedModes = []
+  modes.forEach((mode, i) => {
+    if (results[i].status === 'fulfilled' && results[i].value != null) {
+      durations[mode] = results[i].value
+    } else {
+      failedModes.push(mode)
+    }
+  })
+
+  // 兜底：REST API 失败的模式改用 BMapGL 提取时间
+  if (failedModes.length > 0) {
+    await new Promise(resolve => {
+      let pending = failedModes.length
+      const done = () => { pending--; if (pending <= 0) resolve() }
+
+      failedModes.forEach(mode => {
+        let ri
+        if (mode === 'walking') {
+          ri = new BMapGL.WalkingRoute(mapInstance, {
+            renderOptions: { map: mapInstance, autoViewport: false }
+          })
+        } else if (mode === 'transit') {
+          ri = new BMapGL.TransitRoute(mapInstance, {
+            renderOptions: { map: mapInstance, autoViewport: false }
+          })
+        } else {
+          ri = new BMapGL.DrivingRoute(mapInstance, {
+            renderOptions: { map: mapInstance, autoViewport: false }
+          })
+        }
+
+        ri.setSearchCompleteCallback(() => {
+          try {
+            const res = ri.getResults()
+            if (res && res.getNumPlans() > 0) {
+              const plan = res.getPlan(0)
+              // 尝试 getDuration，再尝试遍历 step 累加
+              let d = plan.getDuration()
+              if (d == null || isNaN(d) || d <= 0) {
+                d = 0
+                for (let si = 0; si < plan.getNumSteps(); si++) {
+                  const sd = plan.getStep(si).getDuration()
+                  if (sd != null && !isNaN(sd) && sd > 0) d += sd
+                }
+              }
+              durations[mode] = d > 0 ? d : null
+            }
+          } catch (e) { /* ignore */ }
+          done()
+        })
+        ri.search(start, end)
+      })
+    })
+  }
+
+  routeDurations.value = { ...durations }
+  routeLoading.value = false
+}
+
+/**
+ * 仅用 BMapGL 在地图上绘制当前选中方式的路线（不负责时间提取）。
+ */
+const drawRouteOnMap = (mode) => {
+  if (!mapInstance || !mapReady.value) return
+  const loc = currentLocation.value
+  const merchant = routeTargetMerchant.value
+  if (!loc?.userLatitude || !loc?.userLongitude ||
+      !merchant?.latitude || !merchant?.longitude) return
+
+  clearRouteLines()
+  const start = new BMapGL.Point(loc.userLongitude, loc.userLatitude)
+  const end = new BMapGL.Point(merchant.longitude, merchant.latitude)
+
+  let ri
+  if (mode === 'walking') {
+    ri = new BMapGL.WalkingRoute(mapInstance, {
+      renderOptions: { map: mapInstance, autoViewport: true }
+    })
+  } else if (mode === 'transit') {
+    ri = new BMapGL.TransitRoute(mapInstance, {
+      renderOptions: { map: mapInstance, autoViewport: true }
+    })
+  } else {
+    ri = new BMapGL.DrivingRoute(mapInstance, {
+      renderOptions: { map: mapInstance, autoViewport: true }
+    })
+  }
+  ri.search(start, end)
+  routeInstances.push(ri)
+}
+
+const switchRouteMode = (mode) => {
+  if (routeLoading.value || activeRouteMode.value === mode) return
+  activeRouteMode.value = mode
+  drawRouteOnMap(mode)
+}
+
+const openRoutePanel = async (merchant) => {
+  if (
+    !merchant?.latitude || !merchant?.longitude
+  ) {
+    return
+  }
+
+  // ensure location is available
+  if (locationStatus.value !== 'READY' || !currentLocation.value) {
+    if (!navigator.geolocation) {
+      errorMessage.value = '当前浏览器不支持定位，无法规划路线'
+      return
+    }
+    await new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          currentLocation.value = {
+            userLatitude: position.coords.latitude,
+            userLongitude: position.coords.longitude
+          }
+          locationStatus.value = 'READY'
+          updateUserLocationOnMap(
+            position.coords.latitude,
+            position.coords.longitude
+          )
+          resolve()
+        },
+        () => {
+          errorMessage.value = '需要位置权限才能规划路线，请先点击"使用当前位置"'
+          resolve()
+        },
+        { enableHighAccuracy: false, timeout: 8000 }
+      )
+    })
+    if (locationStatus.value !== 'READY') return
+  }
+
+  // ensure map is ready
+  if (!mapReady.value) {
+    mapCollapsed.value = false
+    await nextTick()
+    try { await initMap() } catch (e) { /* ignore */ }
+  } else if (mapCollapsed.value) {
+    mapCollapsed.value = false
+    await nextTick()
+    if (mapInstance) {
+      setTimeout(() => mapInstance.resize(), 300)
+    }
+  }
+
+  routeTargetMerchant.value = merchant
+  routeDurations.value = {}
+  activeRouteMode.value = 'driving'
+  routeLoading.value = true
+  routePanelOpen.value = true
+
+  // 并行：REST API 获取时间 + BMapGL 绘制路线
+  fetchAllDurations()
+  drawRouteOnMap(activeRouteMode.value)
+}
+
+const closeRoutePanel = () => {
+  routePanelOpen.value = false
+  routeTargetMerchant.value = null
+  clearRouteLines()
+  routeDurations.value = {}
+  routeLoading.value = false
+}
+
 onMounted(async () => {
   await initialize();
 
@@ -1579,6 +1910,8 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  // 清理路线资源
+  clearRouteLines()
   // 清理地图资源
   clearMerchantMarkers();
   if (userMarkerInstance && mapInstance) {
@@ -2377,6 +2710,184 @@ onUnmounted(() => {
 .evidence-button:hover {
   border-color: #8b5cf6;
   background: #faf8ff;
+}
+
+.merchant-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.route-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 38px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid #fdba74;
+  border-radius: 9px;
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #fffaf5;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.route-button:hover:not(:disabled) {
+  border-color: #f97316;
+  background: #fff7ed;
+}
+
+.route-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.route-button span {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.route-info-panel {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid #eee8e1;
+  background: #faf8f5;
+}
+
+.route-panel-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-panel-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #312a25;
+}
+
+.route-panel-title strong {
+  color: #6d28d9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.route-panel-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.route-panel-close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border: 1px solid #e7e0d8;
+  border-radius: 7px;
+  color: #7d746c;
+  font-size: 18px;
+  line-height: 1;
+  background: #fff;
+  cursor: pointer;
+}
+
+.route-panel-close:hover {
+  border-color: #fdba74;
+  color: #c2410c;
+  background: #fff8f1;
+}
+
+.route-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.route-mode-tab {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e8e1da;
+  border-radius: 9px;
+  text-align: left;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.route-mode-tab:hover:not(:disabled):not(.active) {
+  border-color: #c4b5fd;
+  background: #faf8ff;
+}
+
+.route-mode-tab.active {
+  border-color: #8b5cf6;
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.route-mode-tab:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.mode-icon {
+  font-size: 18px;
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
+.mode-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: #4d453e;
+}
+
+.route-mode-tab.active .mode-label {
+  color: #5b21b6;
+}
+
+.mode-duration {
+  margin-left: auto;
+  font-weight: 700;
+  color: #c2410c;
+  white-space: nowrap;
+}
+
+.mode-duration.pending {
+  color: #9a9087;
+  font-weight: 400;
+}
+
+.route-loading-tip {
+  text-align: center;
+  color: #80766e;
+  font-size: 12px;
+  padding: 4px 0;
 }
 
 .suggestion-panel,
@@ -3210,7 +3721,8 @@ onUnmounted(() => {
   background: #faf8f5;
 }
 
-.map-panel.collapsed .map-legend {
+.map-panel.collapsed .map-legend,
+.map-panel.collapsed .route-info-panel {
   display: none;
 }
 
@@ -3453,6 +3965,16 @@ onUnmounted(() => {
   .merchant-card-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .merchant-card-actions {
+    width: 100%;
+    flex-direction: row;
+  }
+
+  .route-button {
+    flex: 1;
+    justify-content: center;
   }
 
   .evidence-button {

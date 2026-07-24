@@ -23,6 +23,11 @@ export default defineConfig(({ mode }) => {
       port: 5173,
 
       proxy: {
+        '/api/baidu-map': {
+          target: 'https://api.map.baidu.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/baidu-map/, ''),
+        },
         '/api': {
           target: backendTarget,
           changeOrigin: true,
