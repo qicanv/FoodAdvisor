@@ -48,12 +48,6 @@ DIMENSION_MAP = {
         "environment_space",
         "environment_cleaness",
     ],
-    # 以下两维暂不启用 — 数据有标签，但覆盖率较低，可根据后续需求打开
-    # "location": [
-    #     "location_traffic_convenience",
-    #     "location_distance_from_business_district",
-    #     "location_easy_to_find",
-    # ],
 }
 
 # ==================== 标签映射 ====================

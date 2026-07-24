@@ -104,4 +104,14 @@ public class RecommendationItemVO {
      * 仅引用数据库和规则计算结果生成的推荐理由。
      */
     private String reason;
+
+    /**
+     * 商家经度（BD-09 坐标系）。
+     */
+    private BigDecimal longitude;
+
+    /**
+     * 商家纬度（BD-09 坐标系）。
+     */
+    private BigDecimal latitude;
 }
