@@ -26,16 +26,6 @@
         </div>
       </nav>
       
-      <div class="sidebar-footer">
-        <button class="logout-btn" @click="handleLogout">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M17 16l4-4-4-4"></path>
-          </svg>
-          <span>{{ sidebarCollapsed ? '' : '退出登录' }}</span>
-        </button>
-      </div>
     </aside>
 
     <main class="main-content">
@@ -53,13 +43,7 @@
           </div>
         </div>
         <div class="header-user">
-          <div class="user-avatar">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-              <circle cx="12" cy="7" r="4"></circle>
-            </svg>
-          </div>
-          <span>{{ userInfo.nickname || userInfo.username || '管理员' }}</span>
+          <UserAccountMenu role="admin" />
         </div>
       </header>
 
@@ -77,9 +61,9 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
+import UserAccountMenu from './UserAccountMenu.vue'
 
-const router = useRouter()
 const route = useRoute()
 
 defineProps({
@@ -157,12 +141,6 @@ const navItems = computed(() => {
   return allNavItems.filter(item => !item.allowedRoles || item.allowedRoles.includes(role))
 })
 
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userRole')
-  router.push('/admin')
-}
 </script>
 
 <style scoped>
@@ -285,31 +263,6 @@ const handleLogout = () => {
   background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
 }
 
-.sidebar-footer {
-  padding: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.logout-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.7);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.logout-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
 .main-content {
   flex: 1;
   margin-left: 260px;
@@ -374,16 +327,6 @@ const handleLogout = () => {
   gap: 12px;
   font-size: 14px;
   color: #1f2d3d;
-}
-
-.user-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .content-wrapper {

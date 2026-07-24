@@ -10,8 +10,11 @@
           <div class="nav-links">
             <a href="/" class="nav-link">返回首页</a>
             <div v-if="isLoggedIn" class="user-info">
-              <span class="user-name">{{ userInfo.username }}</span>
-              <button class="logout-btn" @click="handleLogout">退出</button>
+              <UserAccountMenu
+                role="diner"
+                profile-path="/diner/profile"
+                @logged-out="onLoggedOut"
+              />
             </div>
           </div>
         </div>
@@ -100,6 +103,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '../../api/request'
+import UserAccountMenu from '../../components/UserAccountMenu.vue'
 
 const router = useRouter()
 const isLoggedIn = ref(false)
@@ -316,14 +320,9 @@ const handleRegister = async () => {
   }
 }
 
-const handleLogout = () => {
+const onLoggedOut = () => {
   isLoggedIn.value = false
   userInfo.value = { username: '' }
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userRole')
-  localStorage.removeItem('savedUsername')
-  router.push('/diner')
 }
 </script>
 
@@ -384,25 +383,6 @@ const handleLogout = () => {
   display: flex;
   align-items: center;
   gap: 16px;
-}
-
-.user-name {
-  font-size: 14px;
-  color: #333333;
-}
-
-.logout-btn {
-  padding: 6px 16px;
-  background: #f5f5f5;
-  color: #666666;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.logout-btn:hover {
-  background: #e8e8e8;
 }
 
 .diner-main {

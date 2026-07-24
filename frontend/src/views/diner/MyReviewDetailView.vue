@@ -30,13 +30,10 @@
             ← 返回我的评价
           </button>
 
-          <button
-            type="button"
-            class="logout-btn"
-            @click="handleLogout"
-          >
-            退出登录
-          </button>
+          <UserAccountMenu
+            role="diner"
+            profile-path="/diner/profile"
+          />
         </div>
       </div>
     </nav>
@@ -542,6 +539,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '../../api/request'
+import UserAccountMenu from '../../components/UserAccountMenu.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -968,16 +966,6 @@ const goBack = () => {
   router.push('/diner/my-reviews')
 }
 
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('accessToken')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userInfo')
-  localStorage.removeItem('userRole')
-  localStorage.removeItem('userId')
-  router.push('/diner')
-}
-
 const goToEdit = () => {
   router.push(`/diner/review/edit/${route.params.id}`)
 }
@@ -1168,8 +1156,7 @@ onMounted(() => {
   gap: 10px;
 }
 
-.back-btn,
-.logout-btn {
+.back-btn {
   min-height: 39px;
   padding: 0 13px;
   border-radius: 10px;
@@ -1187,16 +1174,6 @@ onMounted(() => {
 .back-btn:hover {
   border-color: #fb923c;
   background: #fff1e6;
-}
-
-.logout-btn {
-  border: 1px solid #fecaca;
-  color: #dc2626;
-  background: #fff;
-}
-
-.logout-btn:hover {
-  background: #fef2f2;
 }
 
 .detail-main {
@@ -1995,10 +1972,6 @@ onMounted(() => {
   .nav-container,
   .container {
     width: calc(100% - 32px);
-  }
-
-  .logout-btn {
-    display: none;
   }
 
   .rating-section {

@@ -18,28 +18,10 @@
         </button>
 
         <div class="nav-actions">
-          <button
-            type="button"
-            class="profile-btn"
-            aria-label="进入我的个人中心，查看评价、消息和账户设置"
-            title="进入我的个人中心"
-            @click="goToProfile"
-          >
-            <span class="profile-avatar">👤</span>
-
-            <span class="profile-copy">
-              <strong>我的</strong>
-              <small>
-                {{ userInfo.username || '食客用户' }} · 评价/消息
-              </small>
-            </span>
-
-            <span class="profile-arrow">→</span>
-          </button>
-
-          <button type="button" class="logout-btn" @click="handleLogout">
-            退出
-          </button>
+          <UserAccountMenu
+            role="diner"
+            profile-path="/diner/profile"
+          />
         </div>
       </div>
     </nav>
@@ -308,6 +290,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getMerchants } from '../../api/restaurant'
 import { logSceneEntry, logSearch, logMerchantClick } from '../../api/behavior'
+import UserAccountMenu from '../../components/UserAccountMenu.vue'
 
 const router = useRouter()
 const userInfo = ref({ username: '' })
@@ -718,17 +701,6 @@ const searchRestaurants = () => {
   restaurants.value = result
 }
 
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userRole')
-  router.push('/diner')
-}
-
-const goToProfile = () => {
-  router.push('/diner/profile')
-}
-
 const goToRanking = () => {
   router.push('/diner/ranking')
 }
@@ -890,112 +862,6 @@ const handleMerchantClick = (restaurant) => {
   flex: 0 0 auto;
   align-items: center;
   gap: 10px;
-}
-
-.profile-btn {
-  display: flex;
-  min-width: 218px;
-  max-width: 280px;
-  min-height: 48px;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 11px 6px 8px;
-  border: 1px solid #f0d7c2;
-  border-radius: 14px;
-  color: #39332e;
-  font: inherit;
-  text-align: left;
-  background:
-    linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.98),
-      rgba(255, 248, 241, 0.98)
-    );
-  box-shadow: 0 4px 13px rgba(124, 89, 54, 0.05);
-  cursor: pointer;
-  transition:
-    transform 0.2s,
-    border-color 0.2s,
-    box-shadow 0.2s;
-}
-
-.profile-btn:hover {
-  transform: translateY(-1px);
-  border-color: #fb923c;
-  box-shadow: 0 8px 20px rgba(124, 89, 54, 0.1);
-}
-
-.profile-avatar {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
-  place-items: center;
-  border-radius: 11px;
-  font-size: 17px;
-  background: #fff0e3;
-}
-
-.profile-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.profile-copy strong {
-  overflow: hidden;
-  color: #322c27;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.profile-copy small {
-  overflow: hidden;
-  color: #9a8f85;
-  font-size: 11px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.profile-arrow {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  flex: 0 0 27px;
-  place-items: center;
-  border-radius: 8px;
-  color: #c2410c;
-  font-size: 16px;
-  background: #fff0e3;
-  transition: transform 0.2s;
-}
-
-.profile-btn:hover .profile-arrow {
-  transform: translateX(2px);
-}
-
-.logout-btn {
-  flex: 0 0 auto;
-  padding: 10px 14px;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  color: #82786f;
-  font: inherit;
-  font-size: 14px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.logout-btn:hover {
-  color: #c2410c;
-  border-color: #fed7aa;
-  background: #fff7ed;
 }
 
 .home-main {
@@ -1937,44 +1803,6 @@ const handleMerchantClick = (restaurant) => {
   .nav-container,
   .container {
     width: calc(100% - 32px);
-  }
-
-  .profile-btn {
-    min-width: 112px;
-    max-width: 150px;
-    min-height: 42px;
-    gap: 7px;
-    padding: 5px 8px 5px 6px;
-  }
-
-  .profile-avatar {
-    width: 32px;
-    height: 32px;
-    flex-basis: 32px;
-    font-size: 15px;
-  }
-
-  .profile-copy {
-    display: flex;
-  }
-
-  .profile-copy strong {
-    font-size: 14px;
-  }
-
-  .profile-copy small {
-    display: none;
-  }
-
-  .profile-arrow {
-    width: 24px;
-    height: 24px;
-    flex-basis: 24px;
-    font-size: 14px;
-  }
-
-  .logout-btn {
-    display: none;
   }
 
   .feature-grid {

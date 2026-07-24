@@ -31,26 +31,10 @@
             返回首页
           </button>
 
-          <button
-            type="button"
-            class="profile-btn"
-            @click="goToProfile"
-          >
-            <span class="profile-avatar">👤</span>
-
-            <span class="profile-copy">
-              <small>当前用户</small>
-              <strong>{{ userInfo.username || '食客用户' }}</strong>
-            </span>
-          </button>
-
-          <button
-            type="button"
-            class="logout-btn"
-            @click="handleLogout"
-          >
-            退出登录
-          </button>
+          <UserAccountMenu
+            role="diner"
+            profile-path="/diner/profile"
+          />
         </div>
       </div>
     </nav>
@@ -262,6 +246,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '../../api/request'
+import UserAccountMenu from '../../components/UserAccountMenu.vue'
 
 const router = useRouter()
 const activeTab = ref('weekly')
@@ -269,30 +254,6 @@ const updateTime = ref('')
 const merchants = ref([])
 const refreshing = ref(false)
 const loadError = ref('')
-
-const readUserInfo = () => {
-  const raw = localStorage.getItem('user')
-
-  if (!raw) {
-    return { username: '' }
-  }
-
-  try {
-    const parsed = JSON.parse(raw)
-
-    return {
-      username:
-        parsed?.username ||
-        parsed?.nickname ||
-        parsed?.name ||
-        ''
-    }
-  } catch {
-    return { username: '' }
-  }
-}
-
-const userInfo = ref(readUserInfo())
 
 const tabs = [
   {
@@ -482,17 +443,6 @@ const goBack = () => {
   router.push('/diner/home')
 }
 
-const goToProfile = () => {
-  router.push('/diner/profile')
-}
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userRole')
-  router.push('/diner')
-}
-
 const goToMerchantDetail = id => {
   if (!id) return
   router.push(`/diner/merchant/${id}`)
@@ -630,8 +580,7 @@ onMounted(refreshRankings)
   gap: 10px;
 }
 
-.back-btn,
-.logout-btn {
+.back-btn {
   min-height: 40px;
   padding: 0 13px;
   border-radius: 11px;
@@ -657,66 +606,6 @@ onMounted(refreshRankings)
 .back-btn:hover {
   border-color: #fb923c;
   background: #fff1e6;
-}
-
-.profile-btn {
-  display: flex;
-  min-width: 150px;
-  max-width: 220px;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 12px 6px 7px;
-  border: 1px solid #ebe5de;
-  border-radius: 12px;
-  color: #39332e;
-  text-align: left;
-  background: #fff;
-  cursor: pointer;
-}
-
-.profile-btn:hover {
-  border-color: #fdba74;
-}
-
-.profile-avatar {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  place-items: center;
-  border-radius: 10px;
-  background: #fff3e8;
-}
-
-.profile-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.profile-copy small {
-  color: #a0978e;
-  font-size: 10px;
-}
-
-.profile-copy strong {
-  overflow: hidden;
-  max-width: 125px;
-  color: #39332e;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.logout-btn {
-  border: 1px solid #fecaca;
-  color: #dc2626;
-  background: #fff;
-}
-
-.logout-btn:hover {
-  background: #fef2f2;
 }
 
 .ranking-main {
@@ -1481,15 +1370,6 @@ onMounted(refreshRankings)
   .container,
   .nav-container {
     width: calc(100% - 32px);
-  }
-
-  .profile-btn {
-    min-width: auto;
-  }
-
-  .profile-copy,
-  .logout-btn {
-    display: none;
   }
 
   .hero-section {

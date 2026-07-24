@@ -26,16 +26,6 @@
         </div>
       </nav>
       
-      <div class="sidebar-footer">
-        <button class="logout-btn" @click="handleLogout">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M17 16l4-4-4-4"></path>
-          </svg>
-          <span>{{ sidebarCollapsed ? '' : '退出登录' }}</span>
-        </button>
-      </div>
     </aside>
 
     <main class="main-content">
@@ -53,13 +43,7 @@
           </div>
         </div>
         <div class="header-user">
-          <div class="user-avatar">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-              <circle cx="12" cy="7" r="4"></circle>
-            </svg>
-          </div>
-          <span>{{ userInfo.nickname || userInfo.username || '商户' }}</span>
+          <UserAccountMenu role="merchant" />
         </div>
       </header>
 
@@ -74,10 +58,10 @@
 
 <script setup>
 import { ref, computed, onMounted, provide } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { getMyMerchants } from '../api/merchantConsole'
+import UserAccountMenu from './UserAccountMenu.vue'
 
-const router = useRouter()
 const route = useRoute()
 
 defineProps({
@@ -98,11 +82,6 @@ const toggleSidebar = () => {
 }
 
 const currentPath = computed(() => route.path)
-
-const userInfo = computed(() => {
-  const user = localStorage.getItem('user')
-  return user ? JSON.parse(user) : {}
-})
 
 // 店铺选择器
 const myStores = ref([])
@@ -148,14 +127,6 @@ const navItems = [
   { path: '/merchant/competitor-comparison', label: '周边竞品对比', iconViewBox: '0 0 24 24', iconPath: 'M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z' },
   { path: '/merchant/business-suggestions', label: '经营改进建议', iconViewBox: '0 0 24 24', iconPath: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z' },
 ]
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userRole')
-  localStorage.removeItem('activeMerchantId')
-  router.push('/merchant')
-}
 
 onMounted(() => {
   loadStores()
@@ -282,31 +253,6 @@ onMounted(() => {
   background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
 }
 
-.sidebar-footer {
-  padding: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.logout-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.7);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.logout-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
 .main-content {
   flex: 1;
   margin-left: 260px;
@@ -371,16 +317,6 @@ onMounted(() => {
   gap: 12px;
   font-size: 14px;
   color: #1f2d3d;
-}
-
-.user-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .content-wrapper {
