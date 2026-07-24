@@ -340,6 +340,56 @@
                 </div>
               </div>
               <p class="review-content">{{ review.content }}</p>
+
+              <div
+                v-if="review.followUp"
+                class="public-follow-up"
+              >
+                <div class="public-follow-up-header">
+                  <span class="public-follow-up-label">追加评价</span>
+
+                  <div
+                    v-if="review.followUp.rating"
+                    class="public-follow-up-rating"
+                  >
+                    <span
+                      v-for="i in 5"
+                      :key="i"
+                    >
+                      {{ i <= Math.round(review.followUp.rating) ? '⭐' : '☆' }}
+                    </span>
+                  </div>
+                </div>
+
+                <p class="public-follow-up-content">
+                  {{ review.followUp.content }}
+                </p>
+
+                <div class="public-follow-up-meta">
+                  <span>
+                    发布于：
+                    {{
+                      formatDate(
+                        review.followUp.publishedAt ||
+                        review.followUp.createdAt
+                      )
+                    }}
+                  </span>
+
+                  <span v-if="review.followUp.consumptionDate">
+                    再次到店：{{ formatDate(review.followUp.consumptionDate) }}
+                  </span>
+
+                  <span
+                    v-if="
+                      review.followUp.averageSpend !== null &&
+                      review.followUp.averageSpend !== undefined
+                    "
+                  >
+                    人均：￥{{ review.followUp.averageSpend }}
+                  </span>
+                </div>
+              </div>
               <div v-if="review.merchantReply" class="review-reply">
                 <span class="reply-label">🏪 商家回复：</span>{{ review.merchantReply.replyContent }}
               </div>
@@ -814,6 +864,7 @@ const loadMerchant = async () => {
         rating: review.rating,
         content: review.content,
         merchantReply: review.merchantReply,
+        followUp: review.followUp || null,
       })) : []
     }
     
@@ -1885,6 +1936,51 @@ onBeforeUnmount(() => {
   font-size: 16px;
   color: #666;
   line-height: 1.6;
+}
+
+.public-follow-up {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: #fafafa;
+  border-left: 4px solid #ff9f43;
+  border-radius: 6px;
+}
+
+.public-follow-up-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.public-follow-up-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e67e22;
+}
+
+.public-follow-up-rating {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.public-follow-up-content {
+  margin: 0;
+  color: #555;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.public-follow-up-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+  color: #999;
+  font-size: 12px;
 }
 
 .review-actions {
