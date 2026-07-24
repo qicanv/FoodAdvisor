@@ -97,4 +97,48 @@ public interface ReviewMapper extends BaseMapper<Review> {
 
     @Select("SELECT COUNT(*) FROM reviews WHERE risk_level = 'MEDIUM' AND deleted_at IS NULL")
     Long countMediumRiskReviews();
+
+    @Select("SELECT merchant_id, COUNT(*) as cnt FROM reviews WHERE created_at >= #{since} AND deleted_at IS NULL " +
+            "<if test='merchantId != null'>AND merchant_id = #{merchantId}</if> " +
+            "GROUP BY merchant_id HAVING COUNT(*) >= #{threshold}")
+    List<Map<String, Object>> countReviewsByMerchantSince(
+            @Param("since") OffsetDateTime since,
+            @Param("threshold") int threshold,
+            @Param("merchantId") Long merchantId);
+
+    @Select("SELECT id FROM reviews WHERE merchant_id = #{merchantId} AND created_at >= #{since} AND deleted_at IS NULL")
+    List<Long> getReviewIdsByMerchantSince(
+            @Param("merchantId") Long merchantId,
+            @Param("since") OffsetDateTime since);
+
+    @Select("SELECT user_id, COUNT(*) as cnt FROM reviews WHERE created_at >= #{since} AND deleted_at IS NULL " +
+            "GROUP BY user_id HAVING COUNT(*) >= #{threshold}")
+    List<Map<String, Object>> countReviewsByUserSince(
+            @Param("since") OffsetDateTime since,
+            @Param("threshold") int threshold);
+
+    @Select("SELECT id FROM reviews WHERE user_id = #{userId} AND created_at >= #{since} AND deleted_at IS NULL")
+    List<Long> getReviewIdsByUserSince(
+            @Param("userId") Long userId,
+            @Param("since") OffsetDateTime since);
+
+    @Select("SELECT rating, COUNT(*) as cnt FROM reviews WHERE merchant_id = #{merchantId} AND created_at >= #{since} AND deleted_at IS NULL GROUP BY rating")
+    List<Map<String, Object>> getRatingDistribution(
+            @Param("merchantId") Long merchantId,
+            @Param("since") OffsetDateTime since);
+
+    @Select("SELECT id, content, created_at FROM reviews WHERE merchant_id = #{merchantId} AND created_at >= #{since} AND deleted_at IS NULL LIMIT #{limit}")
+    List<Map<String, Object>> getRecentReviewContents(
+            @Param("merchantId") Long merchantId,
+            @Param("since") OffsetDateTime since,
+            @Param("limit") int limit);
+
+    @Update("UPDATE reviews SET risk_level = #{riskLevel}, updated_at = CURRENT_TIMESTAMP WHERE id = #{id}")
+    int updateReviewRiskLevel(@Param("id") Long id, @Param("riskLevel") String riskLevel);
+
+    @Update("<script>" +
+            "UPDATE reviews SET status = #{status}, updated_at = CURRENT_TIMESTAMP WHERE id IN " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>" +
+            "</script>")
+    int batchUpdateReviewStatus(@Param("ids") List<Long> ids, @Param("status") String status);
 }

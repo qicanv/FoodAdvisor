@@ -23,11 +23,9 @@
         </div>
         <div class="filter-item">
           <label>处理状态</label>
-          <select v-model="filters.moderationStatus" class="filter-select" @change="loadReviewList">
           <select v-model="filters.moderationStatus" class="filter-select" @change="handleFilterChange">
             <option value="">全部</option>
             <option value="PENDING">待审核</option>
-            <option value="">全部</option>
             <option value="APPROVED">已通过</option>
             <option value="REJECTED">已驳回</option>
           </select>
@@ -317,6 +315,8 @@
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
                 <div v-if="currentDetail.matchedRules && currentDetail.matchedRules.length > 0" class="rules-container">
                   <div v-for="(rule, index) in currentDetail.matchedRules" :key="index" class="rule-item">
                     <span :class="['rule-icon', getRiskLevelClass(rule.riskLevel)]">{{ getRiskLevelIcon(rule.riskLevel) }}</span>
@@ -386,9 +386,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
-import { getReviewList, getReviewDetail, getActiveMerchants, getPendingCount, moderateReview } from '../../api/moderation'
-import { getRiskRecords, getViolationStats } from '../../api/violationText'
 import { getReviewList, getReviewDetail, getActiveMerchants, getPendingCount, moderateReview, getStats } from '../../api/moderation'
+import { getRiskRecords, getViolationStats } from '../../api/violationText'
 
 const reviewList = ref([])
 const merchants = ref([])
@@ -505,7 +504,14 @@ const modStatus = (item) => {
 const isPending = (item) => modStatus(item) === 'PENDING'
 
 const getActionTitle = (type) => {
-  const map = { APPROVE: '确认通过', REJECT: '确认驳回', DELETE: '确认删除', RETURN_FOR_MODIFICATION: '确认退回修改', UNDO_APPROVE: '确认撤销通过' }
+  const map = { 
+    APPROVE: '确认通过', 
+    REJECT: '确认驳回', 
+    DELETE: '确认删除', 
+    RETURN_FOR_MODIFICATION: '确认退回修改', 
+    UNDO_APPROVE: '确认撤销通过',
+    UNDO_REJECT: '确认撤销驳回'
+  }
   return map[type] || '确认操作'
 }
 
@@ -515,13 +521,21 @@ const getActionDesc = (type) => {
     REJECT: '驳回后该评价将被隐藏，用户不可查看。',
     DELETE: '删除后该评价将被永久移除，请谨慎操作。',
     RETURN_FOR_MODIFICATION: '退回后用户可修改评价内容后重新提交。',
-    UNDO_APPROVE: '撤销通过后该评价将回到待审核状态，需重新审核。'
+    UNDO_APPROVE: '撤销通过后该评价将回到待审核状态，需重新审核。',
+    UNDO_REJECT: '撤销驳回后该评价将回到待审核状态，需重新审核。'
   }
   return map[type] || ''
 }
 
 const getActionText = (type) => {
-  const map = { APPROVE: '通过', REJECT: '驳回', DELETE: '删除', RETURN_FOR_MODIFICATION: '退回修改', UNDO_APPROVE: '撤销通过' }
+  const map = { 
+    APPROVE: '通过', 
+    REJECT: '驳回', 
+    DELETE: '删除', 
+    RETURN_FOR_MODIFICATION: '退回修改', 
+    UNDO_APPROVE: '撤销通过',
+    UNDO_REJECT: '撤销驳回'
+  }
   return map[type] || '操作'
 }
 
@@ -606,6 +620,8 @@ const loadViolationStats = async () => {
   } catch (e) {
     console.error('加载违规统计失败:', e)
   }
+}
+
 const handleFilterChange = () => {
   pagination.pageNum = 1
   loadReviewList()
@@ -646,11 +662,6 @@ const loadReviewList = async () => {
   }
 }
 
-const calculateStats = () => {
-  stats.pending = reviewList.value.filter(item => modStatus(item) === 'PENDING').length
-  stats.highRisk = reviewList.value.filter(item => item.riskLevel === 'HIGH').length
-  stats.mediumRisk = reviewList.value.filter(item => item.riskLevel === 'MEDIUM').length
-  stats.lowRisk = reviewList.value.filter(item => item.riskLevel === 'LOW').length
 const calculateStats = async () => {
   try {
     const response = await getStats()
@@ -729,31 +740,32 @@ const closeDetail = () => {
 }
 
 const handleAction = (item, action) => {
-  if (modStatus(item) !== 'PENDING') {
-    showToast('该评价已处理，无法重复操作', 'error')
-  if (item.moderationStatus === 'APPROVED') {
-    if (['UNDO_APPROVE'].includes(action)) {
-      actionType.value = action
-      actionTarget.value = item
-      actionRemark.value = ''
-      showActionModal.value = true
-      return
-    }
-  } else if (item.moderationStatus === 'REJECTED') {
-    if (['UNDO_REJECT'].includes(action)) {
-      actionType.value = action
-      actionTarget.value = item
-      actionRemark.value = ''
-      showActionModal.value = true
-      return
-    }
-  } else if (item.moderationStatus === 'PENDING') {
+  const status = item.moderationStatus
+  
+  if (status === 'APPROVED' && action === 'UNDO_APPROVE') {
     actionType.value = action
     actionTarget.value = item
     actionRemark.value = ''
     showActionModal.value = true
     return
   }
+  
+  if (status === 'REJECTED' && action === 'UNDO_REJECT') {
+    actionType.value = action
+    actionTarget.value = item
+    actionRemark.value = ''
+    showActionModal.value = true
+    return
+  }
+  
+  if (status === 'PENDING') {
+    actionType.value = action
+    actionTarget.value = item
+    actionRemark.value = ''
+    showActionModal.value = true
+    return
+  }
+  
   showToast('该评价已处理，无法重复操作', 'error')
 }
 

@@ -13,7 +13,7 @@ import java.time.OffsetDateTime;
  * <p>记录每次违规文本检测的完整结果，
  * 包括风险类型、等级、分值、命中规则和检测状态。</p>
  *
- * @see docs/数据库设计.md 6.19 节
+ * @see <a href="docs/数据库设计.md">数据库设计文档 6.19 节</a>
  */
 @Data
 @TableName(value = "content_risk_records", autoResultMap = true)

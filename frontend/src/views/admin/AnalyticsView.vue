@@ -418,16 +418,28 @@ const buildTimeParams = () => {
 }
 
 const formatDateTime = (date) => {
-  return date.toISOString().slice(0, 19)
+  const pad = (num) => String(num).padStart(2, '0')
+  const year = date.getUTCFullYear()
+  const month = pad(date.getUTCMonth() + 1)
+  const day = pad(date.getUTCDate())
+  const hours = pad(date.getUTCHours())
+  const minutes = pad(date.getUTCMinutes())
+  const seconds = pad(date.getUTCSeconds())
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
 }
 
 const loadStats = async () => {
   loading.value = true
   try {
     const params = buildTimeParams()
+    console.log('请求参数:', params)
     const response = await getBehaviorStats(params)
+    console.log('API响应:', response)
     if (response.success && response.data) {
       stats.value = response.data
+      console.log('统计数据:', stats.value)
+    } else {
+      console.warn('API响应不成功:', response)
     }
   } catch (error) {
     console.error('加载统计数据失败:', error)
