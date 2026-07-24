@@ -74,13 +74,13 @@ AGGREGATION_STRATEGY = "pessimistic"
 # ==================== 训练数据量控制 ====================
 # 设为 None 使用全量数据（105K），设整数则随机采样指定条数
 # 建议：开发调试用 5000~10000，正式训练用 30000~50000
-TRAIN_SUBSET = 30000
+TRAIN_SUBSET = None  # 使用全量 105K 数据训练
 
 # ==================== 训练超参数 ====================
-BATCH_SIZE = 16
-MAX_LENGTH = 128  # 餐饮评价大多 50-150 字，128 足够覆盖 95%+ 样本
-EPOCHS = 5
-LEARNING_RATE = 2e-5
+BATCH_SIZE = 32
+MAX_LENGTH = 256
+EPOCHS = 3
+LEARNING_RATE = 3e-5
 WARMUP_RATIO = 0.1
 WEIGHT_DECAY = 0.01
 

@@ -42,12 +42,12 @@ class MultiHeadSentimentClassifier(nn.Module):
         """
         参数:
             base_model_name: HuggingFace 预训练模型名
-            dimensions:      维度名列表，默认 ["overall", "service", "dish"]
+            dimensions:      维度名列表
             num_labels:      每个维度的类别数（默认 4）
             dropout:         分类头中 dropout 的比例
         """
         super().__init__()
-        self.dimensions = dimensions or ["overall", "service", "dish"]
+        self.dimensions = dimensions
         self.num_labels = num_labels
 
         # ---- 共享 transformer 编码器 ----
