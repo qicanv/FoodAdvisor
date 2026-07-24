@@ -8,7 +8,10 @@
         </div>
         <div class="nav-links">
           <button class="back-btn" @click="goBack">← 返回个人中心</button>
-          <button class="logout-btn" @click="handleLogout">退出登录</button>
+          <UserAccountMenu
+            role="diner"
+            profile-path="/diner/profile"
+          />
         </div>
       </div>
     </nav>
@@ -108,6 +111,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '../../api/request'
+import UserAccountMenu from '../../components/UserAccountMenu.vue'
 
 const router = useRouter()
 const reports = ref([])
@@ -151,13 +155,6 @@ const loadReports = async () => {
 
 const goBack = () => {
   router.push('/diner/profile')
-}
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userRole')
-  router.push('/diner')
 }
 
 const formatDate = (dateStr) => {
@@ -233,6 +230,7 @@ onMounted(() => {
 
 .nav-links {
   display: flex;
+  align-items: center;
   gap: 16px;
 }
 
@@ -241,16 +239,6 @@ onMounted(() => {
   background: #fff5f0;
   color: #ff6700;
   border: 1px solid #ffccb3;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.logout-btn {
-  padding: 8px 16px;
-  background: #fff;
-  color: #ff4d4f;
-  border: 1px solid #ffccc7;
   border-radius: 6px;
   font-size: 14px;
   cursor: pointer;

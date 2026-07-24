@@ -10,11 +10,10 @@
           <span class="brand-name">食尚参谋</span>
         </div>
         <div class="user-info">
-          <button class="profile-btn" @click="goToProfile">
-            <span class="profile-icon">👤</span>
-            <span class="user-name">{{ userInfo.username }}</span>
-          </button>
-          <button class="logout-btn" @click="handleLogout">退出登录</button>
+          <UserAccountMenu
+            role="diner"
+            profile-path="/diner/profile"
+          />
         </div>
       </div>
     </nav>
@@ -516,6 +515,7 @@ import {
   refreshMerchantReviewSummary
 } from '../../api/restaurant'
 import { getMerchantReviews, getMerchantReviewTags, getReviewAnalysis } from '../../api/reviewAnalysis'
+import UserAccountMenu from '../../components/UserAccountMenu.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -644,10 +644,6 @@ const isLoggedIn = computed(() => Boolean(
 ))
 const canReview = computed(() => merchant.value?.isOpen && merchant.value?.platformStatus === 'ACTIVE')
 const formEnabled = computed(() => isLoggedIn.value && canReview.value && !submitting.value)
-
-const userInfo = ref({
-  username: localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')).username : ''
-})
 
 const cuisineEmojis = {
   '川菜': '🌶️',
@@ -1172,17 +1168,6 @@ const goBack = () => {
   })
 }
 
-const goToProfile = () => {
-  router.push('/diner/profile')
-}
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userRole')
-  router.push('/diner')
-}
-
 onMounted(() => {
   loadMerchant()
   loadReviewsWithTags()
@@ -1259,40 +1244,6 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 16px;
-}
-
-.profile-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: #f5f5f5;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.profile-icon {
-  font-size: 16px;
-}
-
-.user-name {
-  color: #333;
-}
-
-.logout-btn {
-  padding: 8px 16px;
-  background: #fff;
-  color: #ff4d4f;
-  border: 1px solid #ffccc7;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.logout-btn:hover {
-  background: #fff2f0;
 }
 
 .detail-main {

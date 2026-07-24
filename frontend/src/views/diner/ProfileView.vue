@@ -30,13 +30,10 @@
             ← 返回首页
           </button>
 
-          <button
-            type="button"
-            class="logout-btn"
-            @click="handleLogout"
-          >
-            退出登录
-          </button>
+          <UserAccountMenu
+            role="diner"
+            profile-path="/diner/profile"
+          />
         </div>
       </div>
     </nav>
@@ -181,6 +178,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import request from '../../api/request'
+import UserAccountMenu from '../../components/UserAccountMenu.vue'
 
 const router = useRouter()
 
@@ -233,13 +231,6 @@ const goToNotifications = () => {
 
 const goToMyReports = () => {
   router.push('/diner/my-reports')
-}
-
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('userRole')
-  router.push('/diner')
 }
 
 const formatDate = date => {
@@ -381,8 +372,7 @@ onMounted(() => {
   gap: 10px;
 }
 
-.back-btn,
-.logout-btn {
+.back-btn {
   min-height: 39px;
   padding: 0 13px;
   border-radius: 10px;
@@ -400,16 +390,6 @@ onMounted(() => {
 .back-btn:hover {
   border-color: #fb923c;
   background: #fff1e6;
-}
-
-.logout-btn {
-  border: 1px solid #fecaca;
-  color: #dc2626;
-  background: #fff;
-}
-
-.logout-btn:hover {
-  background: #fef2f2;
 }
 
 .profile-main {
@@ -722,10 +702,6 @@ onMounted(() => {
   .nav-container,
   .container {
     width: calc(100% - 32px);
-  }
-
-  .logout-btn {
-    display: none;
   }
 
   .profile-main {
