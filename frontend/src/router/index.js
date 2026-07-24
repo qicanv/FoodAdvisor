@@ -258,6 +258,12 @@ const routes = [
     },
   },
   {
+    path: '/admin/sensitive-alerts',
+    name: 'admin-sensitive-alerts',
+    component: () => import('../views/admin/SensitiveAlertView.vue'),
+    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
+  },
+  {
     path: '/admin/fraud-cases',
     name: 'admin-fraud-cases',
     component: () => import('../views/admin/fraud/FraudCaseList.vue'),
