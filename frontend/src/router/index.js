@@ -220,12 +220,6 @@ const routes = [
     meta: { requiresAuth: true, role: 'admin' },
   },
   {
-    path: '/admin/violation-text',
-    name: 'admin-violation-text',
-    component: () => import('../views/admin/ViolationTextView.vue'),
-    meta: { requiresAuth: true, role: 'admin', allowedRoles: ['ADMIN', 'OPERATOR'] },
-  },
-  {
     path: '/admin/behavior-analysis',
     name: 'admin-behavior-analysis',
     component: () => import('../views/admin/BehaviorAnalysisView.vue'),

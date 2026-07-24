@@ -35,7 +35,15 @@ public interface ContentRiskRecordMapper extends BaseMapper<ContentRiskRecord> {
             @Param("contentId") Long contentId);
 
     /**
-     * 按风险等级统计检测记录数
+     * 按风险等级统计检测记录数（全量，不限时间）
+     */
+    @Select("SELECT risk_level as key, COUNT(*) as cnt " +
+            "FROM content_risk_records " +
+            "GROUP BY risk_level")
+    List<java.util.Map<String, Object>> countByRiskLevelAll();
+
+    /**
+     * 按风险等级统计检测记录数（限时间段）
      */
     @Select("SELECT risk_level as key, COUNT(*) as cnt " +
             "FROM content_risk_records " +
@@ -45,7 +53,16 @@ public interface ContentRiskRecordMapper extends BaseMapper<ContentRiskRecord> {
             @Param("since") java.time.OffsetDateTime since);
 
     /**
-     * 按风险类型统计检测记录数
+     * 按风险类型统计检测记录数（全量，不限时间）
+     */
+    @Select("SELECT risk_type as key, COUNT(*) as cnt " +
+            "FROM content_risk_records " +
+            "WHERE risk_type IS NOT NULL " +
+            "GROUP BY risk_type")
+    List<java.util.Map<String, Object>> countByRiskTypeAll();
+
+    /**
+     * 按风险类型统计检测记录数（限时间段）
      */
     @Select("SELECT risk_type as key, COUNT(*) as cnt " +
             "FROM content_risk_records " +
@@ -55,7 +72,15 @@ public interface ContentRiskRecordMapper extends BaseMapper<ContentRiskRecord> {
             @Param("since") java.time.OffsetDateTime since);
 
     /**
-     * 按检测状态统计检测记录数
+     * 按检测状态统计检测记录数（全量，不限时间）
+     */
+    @Select("SELECT detection_status as key, COUNT(*) as cnt " +
+            "FROM content_risk_records " +
+            "GROUP BY detection_status")
+    List<java.util.Map<String, Object>> countByDetectionStatusAll();
+
+    /**
+     * 按检测状态统计检测记录数（限时间段）
      */
     @Select("SELECT detection_status as key, COUNT(*) as cnt " +
             "FROM content_risk_records " +

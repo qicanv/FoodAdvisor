@@ -23,3 +23,7 @@ export const getStats = () => {
 export const moderateReview = (id, action, remark) => {
   return request.post(`/api/moderation/reviews/${id}/action`, { action, remark })
 }
+
+export const backfillRiskTypes = () => {
+  return request.post('/api/moderation/reviews/backfill-risk-types')
+}

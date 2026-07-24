@@ -25,20 +25,21 @@ public class ModerationService {
     private final ModerationRuleMapper moderationRuleMapper;
     private final ModerationKeywordMapper moderationKeywordMapper;
     private final ReviewRuleMatchMapper reviewRuleMatchMapper;
+    private final ViolationTextService violationTextService;
 
     private final Map<String, List<String>> keywordCache = new ConcurrentHashMap<>();
     private final Map<String, ModerationRule> ruleCache = new ConcurrentHashMap<>();
 
-    public Map<String, Object> getReviewList(String riskLevel, String moderationStatus,
+    public Map<String, Object> getReviewList(String riskType, String riskLevel, String moderationStatus,
                                              Long merchantId, OffsetDateTime startTime,
                                              OffsetDateTime endTime, Integer pageNum, Integer pageSize) {
         int offset = (pageNum - 1) * pageSize;
 
         List<Map<String, Object>> records = reviewMapper.getModerationList(
-                riskLevel, moderationStatus, merchantId, startTime, endTime, pageSize, offset);
+                riskType, riskLevel, moderationStatus, merchantId, startTime, endTime, pageSize, offset);
 
         Long total = reviewMapper.countModerationList(
-                riskLevel, moderationStatus, merchantId, startTime, endTime);
+                riskType, riskLevel, moderationStatus, merchantId, startTime, endTime);
 
         Map<String, Object> result = new HashMap<>();
         result.put("records", records);
@@ -53,18 +54,26 @@ public class ModerationService {
     public Map<String, Object> getReviewDetail(Long id) {
         Map<String, Object> detail = reviewMapper.getReviewDetailWithRelations(id);
         if (detail != null) {
-            List<Map<String, Object>> ruleMatches = reviewRuleMatchMapper.findByReviewIdWithRuleInfo(id);
-            detail.put("ruleMatches", ruleMatches);
+            List<Map<String, Object>> ruleMatches = Collections.emptyList();
+            try {
+                ruleMatches = reviewRuleMatchMapper.findByReviewIdWithRuleInfo(id);
+            } catch (Exception e) {
+                // review_rule_matches 表可能尚未创建，忽略错误
+                log.warn("Failed to load rule matches for review {}: {}", id, e.getMessage());
+            }
+            detail.put("ruleMatches", ruleMatches != null ? ruleMatches : Collections.emptyList());
 
             List<Map<String, Object>> matchedRules = new ArrayList<>();
-            for (Map<String, Object> match : ruleMatches) {
-                Map<String, Object> ruleInfo = new HashMap<>();
-                ruleInfo.put("ruleCode", match.get("rule_code"));
-                ruleInfo.put("ruleName", match.get("rule_name"));
-                ruleInfo.put("description", match.get("description"));
-                ruleInfo.put("riskLevel", match.get("risk_level"));
-                ruleInfo.put("keyword", match.get("keyword"));
-                matchedRules.add(ruleInfo);
+            if (ruleMatches != null) {
+                for (Map<String, Object> match : ruleMatches) {
+                    Map<String, Object> ruleInfo = new HashMap<>();
+                    ruleInfo.put("ruleCode", match.get("rule_code"));
+                    ruleInfo.put("ruleName", match.get("rule_name"));
+                    ruleInfo.put("description", match.get("description"));
+                    ruleInfo.put("riskLevel", match.get("risk_level"));
+                    ruleInfo.put("keyword", match.get("keyword"));
+                    matchedRules.add(ruleInfo);
+                }
             }
             detail.put("matchedRules", matchedRules);
         }
@@ -84,6 +93,18 @@ public class ModerationService {
         stats.put("pending", reviewMapper.countPendingReviews());
         stats.put("highRisk", reviewMapper.countHighRiskReviews());
         stats.put("mediumRisk", reviewMapper.countMediumRiskReviews());
+        stats.put("totalReviewed", reviewMapper.countTotalReviews());
+
+        // 按 moderation_status 统计的评价数
+        stats.put("pendingCount", reviewMapper.countByModerationStatus("PENDING"));
+        stats.put("approvedCount", reviewMapper.countByModerationStatus("APPROVED"));
+        stats.put("rejectedCount", reviewMapper.countByModerationStatus("REJECTED"));
+
+        // 按 risk_level 统计的评价数
+        stats.put("highRiskCount", reviewMapper.countByRiskLevel("HIGH"));
+        stats.put("mediumRiskCount", reviewMapper.countByRiskLevel("MEDIUM"));
+        stats.put("lowRiskCount", reviewMapper.countByRiskLevel("LOW"));
+
         return stats;
     }
 
@@ -170,7 +191,12 @@ public class ModerationService {
             return;
         }
 
-        reviewRuleMatchMapper.deleteByReviewId(reviewId);
+        // review_rule_matches 表可能尚未创建，忽略错误
+        try {
+            reviewRuleMatchMapper.deleteByReviewId(reviewId);
+        } catch (Exception e) {
+            log.warn("Cannot delete rule matches for review {}: {}", reviewId, e.getMessage());
+        }
 
         List<ModerationRule> rules = moderationRuleMapper.findAllEnabled();
         String highestRiskLevel = "LOW";
@@ -194,8 +220,15 @@ public class ModerationService {
             }
         }
 
-        for (ReviewRuleMatch match : matches) {
-            reviewRuleMatchMapper.insert(match);
+        // review_rule_matches 表可能尚未创建，忽略错误
+        if (!matches.isEmpty()) {
+            try {
+                for (ReviewRuleMatch match : matches) {
+                    reviewRuleMatchMapper.insert(match);
+                }
+            } catch (Exception e) {
+                log.warn("Cannot insert rule matches for review {}: {}", reviewId, e.getMessage());
+            }
         }
 
         reviewMapper.updateModerationStatus(reviewId, "PENDING", "PENDING", null);
@@ -205,7 +238,7 @@ public class ModerationService {
     @Transactional
     public void refreshAllRiskDetection() {
         List<Map<String, Object>> pendingReviews = reviewMapper.getModerationList(
-                null, "PENDING", null, null, null, Integer.MAX_VALUE, 0);
+                null, null, "PENDING", null, null, null, Integer.MAX_VALUE, 0);
 
         for (Map<String, Object> review : pendingReviews) {
             Long reviewId = ((Number) review.get("id")).longValue();
@@ -215,6 +248,56 @@ public class ModerationService {
                 log.error("Failed to refresh risk detection for review {}", reviewId, e);
             }
         }
+    }
+
+    /**
+     * 为所有缺失违规检测记录的评价补充 content_risk_records。
+     *
+     * <p>对每一篇还没有 content_risk_records 的评价，执行关键词降级检测，
+     * 将检测结果存入 content_risk_records 表，使内容审核工作台可以
+     * 按风险类型筛选和展示统计数据。</p>
+     *
+     * <p>使用 ViolationTextService.fallbackKeywordCheck() 进行检测，
+     * 不调用 AI 服务，速度快且结果稳定。</p>
+     *
+     * @return 已创建检测记录的评价数量
+     */
+    @Transactional
+    public int backfillRiskTypes() {
+        // 找到所有没有记录 或 最新记录 risk_type 为 NULL 的评价
+        List<Map<String, Object>> reviews = reviewMapper.findReviewsWithoutRiskRecord();
+        int created = 0;
+
+        for (Map<String, Object> review : reviews) {
+            Long reviewId = ((Number) review.get("id")).longValue();
+            String content = (String) review.get("content");
+
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+
+            try {
+                com.foodadvisor.dto.violation.ViolationTextResult result =
+                        violationTextService.fallbackKeywordCheck(content);
+
+                // 始终保存检测记录（即使没有违规，也需要记录让筛选和统计生效）
+                violationTextService.saveRecord(
+                        content,
+                        "REVIEW",
+                        reviewId,
+                        1,
+                        "backfill:v1",
+                        result
+                );
+                created++;
+
+            } catch (Exception e) {
+                log.error("Failed to backfill risk record for review {}", reviewId, e);
+            }
+        }
+
+        log.info("Risk record backfill complete: {} of {} reviews updated", created, reviews.size());
+        return created;
     }
 
     private List<String> getKeywordsForRule(String ruleCode) {
