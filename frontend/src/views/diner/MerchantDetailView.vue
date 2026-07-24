@@ -50,7 +50,11 @@
           <!-- 状态：正在生成中 -->
           <div v-if="reviewSummary.status === 'GENERATING'" class="summary-top-card summary-generating">
             <div class="summary-top-header">
-              <span class="summary-top-icon">🤖</span>
+              <img
+                src="../../assets/images/greedy-cat.png"
+                alt="食尚参谋"
+                class="summary-top-ai-img"
+              />
               <h2>AI 评价摘要</h2>
               <div class="summary-generating-spinner"></div>
             </div>
@@ -64,10 +68,17 @@
           <!-- 状态：正常摘要 -->
           <div v-else-if="reviewSummary.status === 'SUCCESS'" class="summary-top-card">
             <div class="summary-top-header">
-              <span class="summary-top-icon">🤖</span>
+              <img
+                src="../../assets/images/greedy-cat.png"
+                alt="食尚参谋"
+                class="summary-top-ai-img"
+              />
               <h2>AI 评价摘要</h2>
               <span class="summary-top-badge">AI 生成</span>
               <button type="button" class="summary-evidence-btn" @click="openSummaryEvidence">查看依据</button>
+              <button type="button" class="summary-refresh-btn" @click="refreshSummary" :disabled="summaryRefreshing">
+                {{ summaryRefreshing ? '刷新中...' : '刷新' }}
+              </button>
             </div>
             <p class="summary-top-text">{{ reviewSummary.summaryText }}</p>
             <div class="summary-top-details" v-if="reviewSummary.advantages?.length || reviewSummary.disadvantages?.length">
@@ -84,7 +95,11 @@
           <!-- 状态：评论数量不足 -->
           <div v-else-if="reviewSummary.status === 'INSUFFICIENT_DATA'" class="summary-top-card summary-insufficient">
             <div class="summary-top-header">
-              <span class="summary-top-icon">🤖</span>
+              <img
+                src="../../assets/images/greedy-cat.png"
+                alt="食尚参谋"
+                class="summary-top-ai-img"
+              />
               <h2>AI 评价摘要</h2>
             </div>
             <p class="summary-placeholder-text">
@@ -97,7 +112,11 @@
           <!-- 状态：从未生成 -->
           <div v-else class="summary-top-card summary-none">
             <div class="summary-top-header">
-              <span class="summary-top-icon">🤖</span>
+              <img
+                src="../../assets/images/greedy-cat.png"
+                alt="食尚参谋"
+                class="summary-top-ai-img"
+              />
               <h2>AI 评价摘要</h2>
             </div>
             <template v-if="reviewSummary.reviewCount >= reviewSummary.minimumReviewCount">
@@ -321,6 +340,56 @@
                 </div>
               </div>
               <p class="review-content">{{ review.content }}</p>
+
+              <div
+                v-if="review.followUp"
+                class="public-follow-up"
+              >
+                <div class="public-follow-up-header">
+                  <span class="public-follow-up-label">追加评价</span>
+
+                  <div
+                    v-if="review.followUp.rating"
+                    class="public-follow-up-rating"
+                  >
+                    <span
+                      v-for="i in 5"
+                      :key="i"
+                    >
+                      {{ i <= Math.round(review.followUp.rating) ? '⭐' : '☆' }}
+                    </span>
+                  </div>
+                </div>
+
+                <p class="public-follow-up-content">
+                  {{ review.followUp.content }}
+                </p>
+
+                <div class="public-follow-up-meta">
+                  <span>
+                    发布于：
+                    {{
+                      formatDate(
+                        review.followUp.publishedAt ||
+                        review.followUp.createdAt
+                      )
+                    }}
+                  </span>
+
+                  <span v-if="review.followUp.consumptionDate">
+                    再次到店：{{ formatDate(review.followUp.consumptionDate) }}
+                  </span>
+
+                  <span
+                    v-if="
+                      review.followUp.averageSpend !== null &&
+                      review.followUp.averageSpend !== undefined
+                    "
+                  >
+                    人均：￥{{ review.followUp.averageSpend }}
+                  </span>
+                </div>
+              </div>
               <div v-if="review.merchantReply" class="review-reply">
                 <span class="reply-label">🏪 商家回复：</span>{{ review.merchantReply.replyContent }}
               </div>
@@ -362,18 +431,6 @@
           </div>
         </div>
       </div>
-
-      <section class="recommend-section">
-        <div class="container">
-          <h2 class="section-title">📌 AI推荐理由</h2>
-          <div class="recommend-card">
-            <img src="../../assets/images/greedy-cat.png" alt="食尚参谋" class="recommend-ai-img" />
-            <div class="recommend-content">
-              <p>{{ merchant.recommendReason }}</p>
-            </div>
-          </div>
-        </div>
-      </section>
 
       <section class="action-section">
         <div class="container">
@@ -455,7 +512,8 @@ import request from '../../api/request'
 import { submitMerchantReview } from '../../api/review'
 import {
   getMerchantReviewSummary,
-  getMerchantReviewSummaryEvidences
+  getMerchantReviewSummaryEvidences,
+  refreshMerchantReviewSummary
 } from '../../api/restaurant'
 import { getMerchantReviews, getMerchantReviewTags, getReviewAnalysis } from '../../api/reviewAnalysis'
 
@@ -556,6 +614,7 @@ const submitSuccess = ref('')
 const imageInput = ref(null)
 const selectedImages = ref([])
 const reviewSummary = ref(null)
+const summaryRefreshing = ref(false)
 const summaryEvidenceOpen = ref(false)
 const summaryEvidenceLoading = ref(false)
 const summaryEvidenceError = ref('')
@@ -654,9 +713,9 @@ const evidenceTypeText = type => ({
 
 const formatBusinessHours = (hoursList) => {
   if (!hoursList || hoursList.length === 0) return '暂无信息'
-  
+
   const weekDays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-  const formattedHours = []
+  const schedulesByDay = new Map()
 
   const sortedHours = [...hoursList].sort((left, right) => {
     const dayDifference = (left.dayOfWeek || 0) - (right.dayOfWeek || 0)
@@ -665,17 +724,78 @@ const formatBusinessHours = (hoursList) => {
   })
 
   for (const hour of sortedHours) {
-    if (hour.isClosed) {
-      continue
-    }
-    const dayName = weekDays[hour.dayOfWeek - 1] || `周${hour.dayOfWeek}`
-    const openTime = hour.openTime ? hour.openTime.substring(0, 5) : ''
-    const closeTime = hour.closeTime ? hour.closeTime.substring(0, 5) : ''
-    const displayedCloseTime = hour.crossesMidnight ? `次日${closeTime}` : closeTime
-    formattedHours.push(`${dayName}: ${openTime}-${displayedCloseTime}`)
+    if (hour.isClosed) continue
+
+    const dayOfWeek = Number(hour.dayOfWeek)
+    if (dayOfWeek < 1 || dayOfWeek > 7) continue
+
+    const openTime = hour.openTime
+      ? String(hour.openTime).substring(0, 5)
+      : ''
+    const closeTime = hour.closeTime
+      ? String(hour.closeTime).substring(0, 5)
+      : ''
+    const displayedCloseTime = hour.crossesMidnight
+      ? `次日${closeTime}`
+      : closeTime
+    const timeRange = `${openTime}-${displayedCloseTime}`
+
+    const daySchedules = schedulesByDay.get(dayOfWeek) || []
+    daySchedules.push(timeRange)
+    schedulesByDay.set(dayOfWeek, daySchedules)
   }
-  
-  return formattedHours.join('，') || '暂无信息'
+
+  const dailySchedules = Array.from({ length: 7 }, (_, index) => {
+    const dayOfWeek = index + 1
+    const schedules = schedulesByDay.get(dayOfWeek)
+
+    return schedules?.length
+      ? {
+          dayOfWeek,
+          schedule: schedules.join(' / ')
+        }
+      : null
+  }).filter(Boolean)
+
+  if (dailySchedules.length === 0) return '暂无信息'
+
+  const groups = []
+
+  for (const current of dailySchedules) {
+    const previous = groups[groups.length - 1]
+
+    if (
+      previous &&
+      previous.schedule === current.schedule &&
+      previous.endDay + 1 === current.dayOfWeek
+    ) {
+      previous.endDay = current.dayOfWeek
+    } else {
+      groups.push({
+        startDay: current.dayOfWeek,
+        endDay: current.dayOfWeek,
+        schedule: current.schedule
+      })
+    }
+  }
+
+  const formatDayRange = (startDay, endDay) => {
+    if (startDay === endDay) {
+      return weekDays[startDay - 1]
+    }
+
+    if (endDay === startDay + 1) {
+      return `${weekDays[startDay - 1]}、${weekDays[endDay - 1]}`
+    }
+
+    return `${weekDays[startDay - 1]}至${weekDays[endDay - 1]}`
+  }
+
+  return groups
+    .map(group => (
+      `${formatDayRange(group.startDay, group.endDay)} ${group.schedule}`
+    ))
+    .join('；')
 }
 
 const parseTags = (tags) => {
@@ -744,6 +864,7 @@ const loadMerchant = async () => {
         rating: review.rating,
         content: review.content,
         merchantReply: review.merchantReply,
+        followUp: review.followUp || null,
       })) : []
     }
     
@@ -800,6 +921,25 @@ function clearSummaryPolling() {
   if (summaryPollTimer) {
     clearInterval(summaryPollTimer)
     summaryPollTimer = null
+  }
+}
+
+const refreshSummary = async () => {
+  const merchantId = merchant.value?.id
+  if (!merchantId || summaryRefreshing.value) return
+  summaryRefreshing.value = true
+  try {
+    const res = await refreshMerchantReviewSummary(merchantId)
+    if (res.success && res.data) {
+      reviewSummary.value = res.data
+      if (res.data.status === 'GENERATING') {
+        startSummaryPolling(merchantId)
+      }
+    }
+  } catch (_) {
+    // 失败时保持当前展示
+  } finally {
+    summaryRefreshing.value = false
   }
 }
 
@@ -1258,43 +1398,63 @@ onBeforeUnmount(() => {
 }
 
 .info-section {
-  padding: 30px 0;
+  padding: 26px 0;
 }
 
 .info-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 18px;
 }
 
 .info-card {
   display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 150px;
   align-items: flex-start;
-  gap: 12px;
-  background: #fff;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid #eee7df;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 22px rgba(80, 61, 43, 0.06);
 }
 
 .info-icon {
-  font-size: 28px;
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  place-items: center;
+  border-radius: 14px;
+  font-size: 25px;
+  line-height: 1;
+  background: #fff5ec;
 }
 
 .info-content {
-  flex: 1;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .info-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #999;
-  margin-bottom: 4px;
+  margin: 2px 0 10px;
+  color: #8c8279;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .info-text {
+  margin: 0;
+  color: #332d28;
   font-size: 16px;
-  color: #333;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
 }
 
 .highlights-section {
@@ -1592,6 +1752,15 @@ onBeforeUnmount(() => {
 }
 .summary-top-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .summary-top-icon { font-size: 22px; }
+.summary-top-ai-img {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 107, 53, 0.16);
+  border-radius: 10px;
+  background: #fff;
+}
 .summary-top-header h2 { font-size: 17px; font-weight: 700; color: #1f2d3d; margin: 0; }
 .summary-top-badge {
   font-size: 11px; color: #52c41a; background: #f6ffed;
@@ -1602,6 +1771,12 @@ onBeforeUnmount(() => {
   background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; cursor: pointer; transition: all 0.2s;
 }
 .summary-evidence-btn:hover { background: #bae7ff; }
+.summary-refresh-btn {
+  padding: 6px 12px; font-size: 13px; color: #52c41a;
+  background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; cursor: pointer; transition: all 0.2s;
+}
+.summary-refresh-btn:hover:not(:disabled) { background: #d9f7be; }
+.summary-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .summary-top-text { font-size: 15px; color: #444; line-height: 1.8; margin: 0 0 12px; }
 .summary-top-details { display: flex; gap: 24px; flex-wrap: wrap; }
 .summary-top-col { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -1761,6 +1936,51 @@ onBeforeUnmount(() => {
   font-size: 16px;
   color: #666;
   line-height: 1.6;
+}
+
+.public-follow-up {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: #fafafa;
+  border-left: 4px solid #ff9f43;
+  border-radius: 6px;
+}
+
+.public-follow-up-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.public-follow-up-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e67e22;
+}
+
+.public-follow-up-rating {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.public-follow-up-content {
+  margin: 0;
+  color: #555;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.public-follow-up-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+  color: #999;
+  font-size: 12px;
 }
 
 .review-actions {
@@ -2009,6 +2229,16 @@ onBeforeUnmount(() => {
 .loading-card p {
   font-size: 16px;
   color: #666;
+}
+
+@media (max-width: 960px) {
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .info-card {
+    min-height: 0;
+  }
 }
 
 @media (max-width: 768px) {

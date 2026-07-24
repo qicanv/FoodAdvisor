@@ -135,29 +135,26 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
     }
 
     /**
-     * 按商家分页查询公开评价。
+     * 按商家分页查询公开的原评价。
      */
     public Page<Review> listByMerchant(
             Long merchantId,
             int pageNum,
             int pageSize
     ) {
+        Page<Review> page = Page.of(pageNum, pageSize);
+
         LambdaQueryWrapper<Review> wrapper =
                 new LambdaQueryWrapper<>();
 
         wrapper.eq(Review::getMerchantId, merchantId)
+                .eq(Review::getReviewType, "ORIGINAL")
                 .eq(Review::getStatus, "PUBLISHED")
+                .eq(Review::getModerationStatus, "APPROVED")
+                .orderByDesc(Review::getPublishedAt)
                 .orderByDesc(Review::getCreatedAt);
 
-        List<Review> records = this.list(wrapper);
-
-        Page<Review> page = new Page<>();
-        page.setRecords(records);
-        page.setTotal((long) records.size());
-        page.setCurrent(pageNum);
-        page.setSize(pageSize);
-
-        return page;
+        return this.page(page, wrapper);
     }
 
     /**
@@ -210,7 +207,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             // 仅对原评价查询其追评（追评本身不显示追评入口）
             if ("ORIGINAL".equals(review.getReviewType())
                     && !"DELETED".equals(review.getStatus())) {
-                ReviewFollowUpVO followUpVO = getFollowUpByParentId(review.getId());
+                ReviewFollowUpVO followUpVO =
+                        getPublicFollowUpByParentId(review.getId());
                 vo.setFollowUp(followUpVO);
             }
 
@@ -446,7 +444,10 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
 
         review.setEditedAt(OffsetDateTime.now());
 
-        applyReviewFields(review, request);
+        review.setContent(request.getContent().trim());
+        review.setRating(BigDecimal.valueOf(request.getRating()));
+        review.setUpdatedAt(OffsetDateTime.now());
+
         ViolationTextResult violationResult = performViolationCheck(
                 review, "REVIEW");
 
@@ -616,6 +617,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         LambdaQueryWrapper<Review> wrapper = new LambdaQueryWrapper<>();
 
         wrapper.eq(Review::getUserId, userId);
+        wrapper.eq(Review::getReviewType, "ORIGINAL");
 
         if (status != null && !status.isBlank()) {
             wrapper.eq(Review::getStatus, status);
@@ -636,6 +638,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             MyReviewListVO vo = new MyReviewListVO();
             vo.setId(review.getId());
             vo.setMerchantId(review.getMerchantId());
+            vo.setReviewType(review.getReviewType());
+            vo.setParentReviewId(review.getParentReviewId());
             vo.setRating(review.getRating());
             vo.setContent(review.getContent());
 
@@ -663,6 +667,7 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
                             .eq(ReviewReply::getStatus, "VISIBLE")
             );
             vo.setHasReply(reply != null);
+            vo.setFollowUp(getFollowUpByParentId(review.getId()));
 
             voList.add(vo);
         }
@@ -689,6 +694,8 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
         MyReviewDetailVO vo = new MyReviewDetailVO();
         vo.setId(review.getId());
         vo.setMerchantId(review.getMerchantId());
+        vo.setReviewType(review.getReviewType());
+        vo.setParentReviewId(review.getParentReviewId());
         vo.setRating(review.getRating());
         vo.setTasteRating(review.getTasteRating());
         vo.setEnvironmentRating(review.getEnvironmentRating());
@@ -774,6 +781,13 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
             }
         } catch (Exception e) {
             vo.setMerchantReply(null);
+        }
+
+        if ("ORIGINAL".equals(review.getReviewType())
+                && !"DELETED".equals(review.getStatus())) {
+            vo.setFollowUp(getFollowUpByParentId(review.getId()));
+        } else {
+            vo.setFollowUp(null);
         }
 
         return vo;
@@ -1061,6 +1075,26 @@ public class ReviewService extends ServiceImpl<ReviewMapper, Review> {
      */
     public ReviewFollowUpVO getFollowUpByParentId(Long parentReviewId) {
         Review followUp = findActiveFollowUp(parentReviewId);
+        return ReviewFollowUpVO.from(followUp);
+    }
+
+    /**
+     * 查询公开展示的追评。
+     * 仅返回已发布且审核通过的追评。
+     */
+    private ReviewFollowUpVO getPublicFollowUpByParentId(
+            Long parentReviewId
+    ) {
+        Review followUp = this.getOne(
+                new LambdaQueryWrapper<Review>()
+                        .eq(Review::getParentReviewId, parentReviewId)
+                        .eq(Review::getReviewType, "FOLLOW_UP")
+                        .eq(Review::getStatus, "PUBLISHED")
+                        .eq(Review::getModerationStatus, "APPROVED")
+                        .isNull(Review::getDeletedAt)
+                        .last("LIMIT 1")
+        );
+
         return ReviewFollowUpVO.from(followUp);
     }
 
@@ -2644,6 +2678,7 @@ public Page<Review> listByMerchant(
     LambdaQueryWrapper<Review> reviewWrapper = new LambdaQueryWrapper<>();
     reviewWrapper.in(Review::getId, filteredReviewIds)
             .eq(Review::getMerchantId, merchantId)
+            .eq(Review::getReviewType, "ORIGINAL")
             .eq(Review::getStatus, "PUBLISHED")
             .eq(Review::getModerationStatus, "APPROVED")
             .orderByDesc(Review::getPublishedAt);
