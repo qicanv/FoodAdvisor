@@ -411,21 +411,42 @@ public class ViolationTextService {
     }
 
     /**
-     * 按风险类型统计（用于管理后台统计图表）。
+     * 按风险类型统计（全量，不限时间 — 用于管理后台统计图表）。
+     */
+    public List<Map<String, Object>> getRiskTypeStatsAll() {
+        return riskRecordMapper.countByRiskTypeAll();
+    }
+
+    /**
+     * 按风险类型统计（限时间段 — 用于管理后台统计图表）。
      */
     public List<Map<String, Object>> getRiskTypeStats(java.time.OffsetDateTime since) {
         return riskRecordMapper.countByRiskType(since);
     }
 
     /**
-     * 按风险等级统计（用于管理后台统计图表）。
+     * 按风险等级统计（全量，不限时间 — 用于管理后台统计图表）。
+     */
+    public List<Map<String, Object>> getRiskLevelStatsAll() {
+        return riskRecordMapper.countByRiskLevelAll();
+    }
+
+    /**
+     * 按风险等级统计（限时间段 — 用于管理后台统计图表）。
      */
     public List<Map<String, Object>> getRiskLevelStats(java.time.OffsetDateTime since) {
         return riskRecordMapper.countByRiskLevel(since);
     }
 
     /**
-     * 按检测状态统计（用于管理后台统计图表）。
+     * 按检测状态统计（全量，不限时间 — 用于管理后台统计图表）。
+     */
+    public List<Map<String, Object>> getDetectionStatusStatsAll() {
+        return riskRecordMapper.countByDetectionStatusAll();
+    }
+
+    /**
+     * 按检测状态统计（限时间段 — 用于管理后台统计图表）。
      */
     public List<Map<String, Object>> getDetectionStatusStats(java.time.OffsetDateTime since) {
         return riskRecordMapper.countByDetectionStatus(since);

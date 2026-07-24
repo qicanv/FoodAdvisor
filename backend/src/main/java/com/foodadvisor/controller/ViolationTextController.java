@@ -106,11 +106,9 @@ public class ViolationTextController {
         String[] types = {"AD_SPAM", "ABUSE", "FALSE_AD", "SPAM", "OTHER"};
         String[] names = {"广告引流", "恶意谩骂", "虚假宣传", "无关灌水", "其他违规"};
 
-        // 从数据库获取最近30天的统计
-        java.time.OffsetDateTime since =
-                java.time.OffsetDateTime.now().minusDays(30);
+        // 全量统计（不限时间范围）
         List<Map<String, Object>> dbStats =
-                violationTextService.getRiskTypeStats(since);
+                violationTextService.getRiskTypeStatsAll();
 
         for (int i = 0; i < types.length; i++) {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -126,10 +124,9 @@ public class ViolationTextController {
         List<Map<String, Object>> list = new ArrayList<>();
         String[] levels = {"HIGH", "MEDIUM", "LOW"};
 
-        java.time.OffsetDateTime since =
-                java.time.OffsetDateTime.now().minusDays(30);
+        // 全量统计（不限时间范围）
         List<Map<String, Object>> dbStats =
-                violationTextService.getRiskLevelStats(since);
+                violationTextService.getRiskLevelStatsAll();
 
         for (String level : levels) {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -145,10 +142,9 @@ public class ViolationTextController {
         String[] statuses = {"SUCCESS", "FALLBACK", "ERROR", "TIMEOUT"};
         String[] names = {"AI 检测成功", "降级关键词", "检测失败", "超时"};
 
-        java.time.OffsetDateTime since =
-                java.time.OffsetDateTime.now().minusDays(30);
+        // 全量统计（不限时间范围）
         List<Map<String, Object>> dbStats =
-                violationTextService.getDetectionStatusStats(since);
+                violationTextService.getDetectionStatusStatsAll();
 
         for (int i = 0; i < statuses.length; i++) {
             Map<String, Object> item = new LinkedHashMap<>();

@@ -27,6 +27,7 @@ public class ModerationController {
 
     @GetMapping("/reviews")
     public ApiResponse<Map<String, Object>> getReviewList(
+            @RequestParam(required = false) String riskType,
             @RequestParam(required = false) String riskLevel,
             @RequestParam(required = false) String moderationStatus,
             @RequestParam(required = false) Long merchantId,
@@ -42,7 +43,7 @@ public class ModerationController {
         OffsetDateTime endOffset = endTime != null ? endTime.atOffset(java.time.ZoneOffset.UTC) : null;
 
         Map<String, Object> result = moderationService.getReviewList(
-                riskLevel, moderationStatus, merchantId, startOffset, endOffset, pageNum, pageSize);
+                riskType, riskLevel, moderationStatus, merchantId, startOffset, endOffset, pageNum, pageSize);
 
         return ApiResponse.success(result);
     }
@@ -95,6 +96,23 @@ public class ModerationController {
         adminAccessGuard.requireAdmin(request);
         moderationService.refreshAllRiskDetection();
         return ApiResponse.success("所有待审核评价的风险检测已刷新");
+    }
+
+    /**
+     * 为所有缺失风险类型的评价补充 risk_type。
+     *
+     * <p>使用关键词降级检测（不调用 AI），为每篇 review 确定
+     * 风险类型（AD_SPAM / ABUSE / SPAM / OTHER），
+     * 使内容审核工作台可以按风险类型筛选。</p>
+     */
+    @PostMapping("/reviews/backfill-risk-types")
+    public ApiResponse<Map<String, Object>> backfillRiskTypes(HttpServletRequest request) {
+        adminAccessGuard.requireAdmin(request);
+        int updated = moderationService.backfillRiskTypes();
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("updated", updated);
+        result.put("message", "已为 " + updated + " 篇评价补充风险类型");
+        return ApiResponse.success(result);
     }
 
     @PostMapping("/reviews/{id}/action")

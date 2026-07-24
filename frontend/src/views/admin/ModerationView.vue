@@ -1,10 +1,103 @@
 <template>
   <AdminLayout title="内容审核工作台" subtitle="集中查看和处理待审核内容 — 含违规文本识别与审核操作">
+    <!-- ==================== 审核统计概览 ==================== -->
+    <div class="violation-stats-dashboard">
+      <div class="stats-cards">
+        <div class="stat-card stat-card-total">
+          <div class="stat-icon">⏳</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ reviewStats.pendingCount || 0 }}</div>
+            <div class="stat-label">待审核评价</div>
+          </div>
+        </div>
+        <div class="stat-card stat-card-high-detail">
+          <div class="stat-icon">🔴</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ reviewStats.highRiskCount || 0 }}</div>
+            <div class="stat-label">高风险评价</div>
+          </div>
+        </div>
+        <div class="stat-card stat-card-fallback-detail">
+          <div class="stat-icon">🟡</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ reviewStats.mediumRiskCount || 0 }}</div>
+            <div class="stat-label">中风险评价</div>
+          </div>
+        </div>
+        <div class="stat-card stat-card-ai">
+          <div class="stat-icon">✅</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ reviewStats.lowRiskCount || 0 }}</div>
+            <div class="stat-label">低风险评价</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-grid">
+        <div class="panel">
+          <div class="panel-header"><h3>📌 审核状态分布</h3></div>
+          <div class="panel-body">
+            <div class="type-list">
+              <div class="type-item">
+                <div class="type-header">
+                  <span class="type-badge type-pending">待审核</span>
+                  <span class="type-count">{{ reviewStats.pendingCount || 0 }} 条</span>
+                </div>
+                <div class="type-bar-wrapper">
+                  <div class="type-bar bar-pending" :style="{ width: reviewBarWidth(reviewStats.pendingCount) + '%' }"></div>
+                </div>
+              </div>
+              <div class="type-item">
+                <div class="type-header">
+                  <span class="type-badge type-approved">已通过</span>
+                  <span class="type-count">{{ reviewStats.approvedCount || 0 }} 条</span>
+                </div>
+                <div class="type-bar-wrapper">
+                  <div class="type-bar bar-approved" :style="{ width: reviewBarWidth(reviewStats.approvedCount) + '%' }"></div>
+                </div>
+              </div>
+              <div class="type-item">
+                <div class="type-header">
+                  <span class="type-badge type-rejected">已驳回</span>
+                  <span class="type-count">{{ reviewStats.rejectedCount || 0 }} 条</span>
+                </div>
+                <div class="type-bar-wrapper">
+                  <div class="type-bar bar-rejected" :style="{ width: reviewBarWidth(reviewStats.rejectedCount) + '%' }"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h3>📊 风险等级分布</h3></div>
+          <div class="panel-body">
+            <div class="level-cards">
+              <div class="level-card level-high">
+                <span class="level-icon">🔴</span>
+                <span class="level-name">高风险</span>
+                <span class="level-count">{{ reviewStats.highRiskCount || 0 }}</span>
+              </div>
+              <div class="level-card level-medium">
+                <span class="level-icon">🟡</span>
+                <span class="level-name">中风险</span>
+                <span class="level-count">{{ reviewStats.mediumRiskCount || 0 }}</span>
+              </div>
+              <div class="level-card level-low">
+                <span class="level-icon">🟢</span>
+                <span class="level-name">低风险</span>
+                <span class="level-count">{{ reviewStats.lowRiskCount || 0 }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="filter-section">
       <div class="filter-row">
         <div class="filter-item">
           <label>风险类型</label>
-          <select v-model="filters.riskType" class="filter-select" @change="loadReviewList">
+          <select v-model="filters.riskType" class="filter-select" @change="handleFilterChange">
             <option value="">全部</option>
             <option value="AD_SPAM">广告引流</option>
             <option value="ABUSE">恶意谩骂</option>
@@ -50,11 +143,14 @@
         <div class="filter-item filter-actions">
           <button class="btn-reset" @click="resetFilters">重置</button>
           <button class="btn-search" @click="loadReviewList">查询</button>
+          <button class="btn-backfill" @click="handleBackfillRiskTypes" :disabled="backfilling">
+            {{ backfilling ? '检测中...' : '🔍 补充风险类型' }}
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- 统计卡片：内容审核 + 违规检测 -->
+    <!-- 待审核统计 -->
     <div class="stat-cards">
       <div class="stat-card stat-card-pending">
         <div class="stat-icon">⏳</div>
@@ -63,36 +159,6 @@
           <div class="stat-label">待审核</div>
         </div>
       </div>
-      <div class="stat-card stat-card-blocked">
-        <div class="stat-icon">🚫</div>
-        <div class="stat-info">
-          <div class="stat-value">{{ vStats.highBlocked }}</div>
-          <div class="stat-label">已拦截（30天）</div>
-        </div>
-      </div>
-      <div class="stat-card stat-card-ai">
-        <div class="stat-icon">🤖</div>
-        <div class="stat-info">
-          <div class="stat-value">{{ vStats.aiSuccess }}</div>
-          <div class="stat-label">AI 检测（30天）</div>
-        </div>
-      </div>
-      <div class="stat-card stat-card-fallback-warn">
-        <div class="stat-icon">⚠️</div>
-        <div class="stat-info">
-          <div class="stat-value">{{ vStats.fallback }}</div>
-          <div class="stat-label">降级检测（30天）</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 违规类型分布 -->
-    <div class="violation-summary" v-if="vStats.totalDetections > 0">
-      <span class="violation-summary-title">近30天违规类型：</span>
-      <span v-for="t in vStats.riskTypes" :key="t.riskType"
-        :class="['violation-tag', 'tag-' + t.riskType.toLowerCase()]">
-        {{ t.name }} {{ t.count }}
-      </span>
     </div>
 
     <div class="table-section">
@@ -170,6 +236,10 @@
         </div>
         <div class="modal-body">
           <div v-if="detailLoading" class="loading-state">加载中...</div>
+          <div v-else-if="detailError" class="error-state">
+            <p>❌ {{ detailError }}</p>
+            <button class="footer-btn btn-cancel" @click="closeDetail">关闭</button>
+          </div>
           <div v-else-if="currentDetail" class="detail-content">
             <!-- PENDING 状态：操作栏放在最显眼的位置 -->
             <div v-if="modStatus(currentDetail) === 'PENDING'" class="detail-action-bar">
@@ -288,7 +358,7 @@
                       </div>
                       <div class="risk-record-row">
                         <span class="risk-record-label">检测方式</span>
-                        <span>{{ record.detectionStatus === 'FALLBACK' ? '关键词匹配（AI 服务不可用）' : 'AI 大模型检测' }}</span>
+                        <span>{{ record.detectionStatus === 'FALLBACK' ? '关键词匹配' : record.detectionStatus === 'SUCCESS' ? 'AI 大模型检测' : (record.detectionStatus || '未知') }}</span>
                       </div>
                       <div class="risk-record-row" v-if="record.modelName">
                         <span class="risk-record-label">模型</span>
@@ -383,13 +453,14 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
-import { getReviewList, getReviewDetail, getActiveMerchants, getPendingCount, moderateReview, getStats } from '../../api/moderation'
-import { getRiskRecords, getViolationStats } from '../../api/violationText'
+import { getReviewList, getReviewDetail, getActiveMerchants, getPendingCount, moderateReview, getStats, backfillRiskTypes } from '../../api/moderation'
+import { getRiskRecords } from '../../api/violationText'
 
 const reviewList = ref([])
 const merchants = ref([])
 const loading = ref(false)
 const detailLoading = ref(false)
+const detailError = ref('')
 const currentDetail = ref(null)
 const riskRecords = ref([])
 const showDetailModal = ref(false)
@@ -402,21 +473,16 @@ const actionRemark = ref('')
 const actionType = ref('')
 const actionTarget = ref(null)
 
-const violationRaw = ref({})
+const backfilling = ref(false)
 
-const vStats = computed(() => {
-  const raw = violationRaw.value
-  const byLevel = raw.byRiskLevel || []
-  const byStatus = raw.byDetectionStatus || []
-  const byType = (raw.byRiskType || []).filter(t => t.count > 0)
-
-  return {
-    totalDetections: raw.totalDetections || 0,
-    highBlocked: byLevel.find(l => l.riskLevel === 'HIGH')?.count || 0,
-    aiSuccess: byStatus.find(s => s.status === 'SUCCESS')?.count || 0,
-    fallback: byStatus.find(s => s.status === 'FALLBACK')?.count || 0,
-    riskTypes: byType
-  }
+// 基于 reviews 表的统计数据（与列表数据同源）
+const reviewStats = reactive({
+  pendingCount: 0,
+  approvedCount: 0,
+  rejectedCount: 0,
+  highRiskCount: 0,
+  mediumRiskCount: 0,
+  lowRiskCount: 0
 })
 
 const filters = reactive({
@@ -491,6 +557,18 @@ const getReviewTypeText = (type) => {
 const getSourceText = (source) => {
   const map = { SYSTEM: '系统录入', IMPORT: '外部导入' }
   return map[source] || '未知'
+}
+
+// ==================== 审核统计辅助方法 ====================
+
+const reviewBarWidth = (count) => {
+  const max = Math.max(
+    reviewStats.pendingCount || 0,
+    reviewStats.approvedCount || 0,
+    reviewStats.rejectedCount || 0,
+    1
+  )
+  return Math.round((count || 0) / max * 100)
 }
 
 // moderationStatus 可能以 moderationStatus 或 moderation_status 返回
@@ -608,14 +686,40 @@ const resetFilters = () => {
   loadReviewList()
 }
 
-const loadViolationStats = async () => {
+const handleBackfillRiskTypes = async () => {
+  if (backfilling.value) return
+  backfilling.value = true
   try {
-    const res = await getViolationStats()
-    if (res.data) {
-      violationRaw.value = res.data
+    const res = await backfillRiskTypes()
+    if (res.success) {
+      showToast(res.data?.message || '风险类型补充完成')
+      await loadReviewList()
+      await loadReviewStats()
+    } else {
+      showToast(res.message || '操作失败', 'error')
     }
   } catch (e) {
-    console.error('加载违规统计失败:', e)
+    console.error('补充风险类型失败:', e)
+    showToast('操作失败，请重试', 'error')
+  } finally {
+    backfilling.value = false
+  }
+}
+
+const loadReviewStats = async () => {
+  try {
+    const response = await getStats()
+    if (response.success && response.data) {
+      // pendingCount 用 countPendingReviews()（只统计 MEDIUM/HIGH 的待审核）
+      reviewStats.pendingCount = response.data.pending || 0
+      reviewStats.approvedCount = response.data.approvedCount || 0
+      reviewStats.rejectedCount = response.data.rejectedCount || 0
+      reviewStats.highRiskCount = response.data.highRiskCount || 0
+      reviewStats.mediumRiskCount = response.data.mediumRiskCount || 0
+      reviewStats.lowRiskCount = response.data.lowRiskCount || 0
+    }
+  } catch (e) {
+    console.error('加载统计失败:', e)
   }
 }
 
@@ -636,6 +740,7 @@ const loadReviewList = async () => {
     if (filters.riskLevel) params.riskLevel = filters.riskLevel
     if (filters.moderationStatus) params.moderationStatus = filters.moderationStatus
     if (filters.merchantId) params.merchantId = Number(filters.merchantId)
+    if (filters.riskType) params.riskType = filters.riskType
     if (filters.startTime) params.startTime = formatDateTime(filters.startTime)
     if (filters.endTime) params.endTime = formatDateTime(filters.endTime)
     params.pageNum = pagination.pageNum
@@ -649,8 +754,8 @@ const loadReviewList = async () => {
       reviewList.value = response.data.records || []
       pagination.total = response.data.total || 0
       pagination.totalPages = response.data.totalPages || 0
-      await calculateStats()
     }
+    await calculateStats()
   } catch (error) {
     console.error('加载审核列表失败:', error)
     showToast('加载失败，请重试', 'error')
@@ -660,19 +765,8 @@ const loadReviewList = async () => {
 }
 
 const calculateStats = async () => {
-  try {
-    const response = await getStats()
-    if (response.success && response.data) {
-      stats.pending = response.data.pending || 0
-      stats.highRisk = response.data.highRisk || 0
-      stats.mediumRisk = response.data.mediumRisk || 0
-    }
-  } catch (error) {
-    console.error('获取统计数据失败:', error)
-    stats.pending = reviewList.value.filter(item => item.moderationStatus === 'PENDING').length
-    stats.highRisk = reviewList.value.filter(item => item.riskLevel === 'HIGH').length
-    stats.mediumRisk = reviewList.value.filter(item => item.riskLevel === 'MEDIUM').length
-  }
+  await loadReviewStats()
+  stats.pending = reviewStats.pendingCount
 }
 
 const loadMerchants = async () => {
@@ -705,26 +799,31 @@ const changePage = (pageNum) => {
 
 const showDetail = async (item) => {
   detailLoading.value = true
+  detailError.value = ''
   showDetailModal.value = true
+  currentDetail.value = null
   riskRecords.value = []
   try {
     const response = await getReviewDetail(item.id)
     if (response.success && response.data) {
       currentDetail.value = response.data
+    } else {
+      detailError.value = response.message || '加载评价详情失败，请重试'
     }
     // 同时加载违规检测记录
-    try {
-      const riskRes = await getRiskRecords('REVIEW', item.id)
-      if (riskRes.success && riskRes.data) {
-        riskRecords.value = riskRes.data
+    if (currentDetail.value) {
+      try {
+        const riskRes = await getRiskRecords('REVIEW', item.id)
+        if (riskRes.success && riskRes.data) {
+          riskRecords.value = riskRes.data
+        }
+      } catch (e) {
+        console.error('加载违规检测记录失败:', e)
       }
-    } catch (e) {
-      console.error('加载违规检测记录失败:', e)
     }
   } catch (error) {
     console.error('加载详情失败:', error)
-    showToast('加载详情失败', 'error')
-    closeDetail()
+    detailError.value = '网络错误，无法加载评价详情'
   } finally {
     detailLoading.value = false
   }
@@ -733,6 +832,7 @@ const showDetail = async (item) => {
 const closeDetail = () => {
   showDetailModal.value = false
   currentDetail.value = null
+  detailError.value = ''
   reviewRemark.value = ''
 }
 
@@ -799,8 +899,8 @@ const confirmAction = async () => {
 onMounted(() => {
   loadMerchants()
   loadPendingCount()
+  loadReviewStats()
   loadReviewList()
-  loadViolationStats()
 })
 </script>
 
@@ -895,9 +995,31 @@ onMounted(() => {
   background: #40a9ff;
 }
 
+.btn-backfill {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px dashed #fa8c16;
+  background: #fffbe6;
+  color: #d46b08;
+  white-space: nowrap;
+}
+
+.btn-backfill:hover:not(:disabled) {
+  background: #fff1cc;
+  border-color: #d46b08;
+}
+
+.btn-backfill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .stat-cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -1287,6 +1409,17 @@ onMounted(() => {
   text-align: center;
   padding: 40px;
   color: #8f959e;
+}
+
+.error-state {
+  text-align: center;
+  padding: 40px;
+}
+
+.error-state p {
+  font-size: 14px;
+  color: #f5222d;
+  margin-bottom: 16px;
 }
 
 .detail-content {
@@ -1757,5 +1890,261 @@ onMounted(() => {
 .evidence-text {
   color: #d48806;
   font-style: italic;
+}
+
+/* ==================== 违规检测统计仪表盘样式 ==================== */
+
+.violation-stats-dashboard {
+  margin-bottom: 24px;
+}
+
+.violation-stats-dashboard .stats-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.violation-stats-dashboard .stat-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.violation-stats-dashboard .stat-card .stat-icon {
+  font-size: 32px;
+}
+
+.violation-stats-dashboard .stat-card .stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.violation-stats-dashboard .stat-card .stat-label {
+  font-size: 13px;
+  color: #666;
+}
+
+.violation-stats-dashboard .stat-card-total {
+  border-left: 4px solid #667eea;
+}
+
+.violation-stats-dashboard .stat-card-ai {
+  border-left: 4px solid #52c41a;
+}
+
+.violation-stats-dashboard .stat-card-fallback-detail {
+  border-left: 4px solid #fa8c16;
+}
+
+.violation-stats-dashboard .stat-card-high-detail {
+  border-left: 4px solid #f5222d;
+}
+
+.violation-stats-dashboard .main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.violation-stats-dashboard .panel {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.violation-stats-dashboard .panel-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.violation-stats-dashboard .panel-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #1a1a2e;
+}
+
+.violation-stats-dashboard .panel-body {
+  padding: 16px 20px;
+}
+
+.violation-stats-dashboard .type-item {
+  margin-bottom: 14px;
+}
+
+.violation-stats-dashboard .type-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.violation-stats-dashboard .type-badge {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 12px;
+}
+
+.violation-stats-dashboard .type-ad {
+  background: #fff1f0;
+  color: #cf1322;
+}
+
+.violation-stats-dashboard .type-abuse {
+  background: #fff7e6;
+  color: #d46b08;
+}
+
+.violation-stats-dashboard .type-false {
+  background: #fff0f6;
+  color: #c41d7f;
+}
+
+.violation-stats-dashboard .type-spam {
+  background: #f6ffed;
+  color: #389e0d;
+}
+
+.violation-stats-dashboard .type-other {
+  background: #f5f5f5;
+  color: #595959;
+}
+
+.violation-stats-dashboard .type-pending {
+  background: #fff7e6;
+  color: #d46b08;
+}
+
+.violation-stats-dashboard .type-approved {
+  background: #f6ffed;
+  color: #389e0d;
+}
+
+.violation-stats-dashboard .type-rejected {
+  background: #fff1f0;
+  color: #cf1322;
+}
+
+.violation-stats-dashboard .type-count {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+.violation-stats-dashboard .type-bar-wrapper {
+  height: 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.violation-stats-dashboard .type-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s;
+}
+
+.violation-stats-dashboard .bar-ad {
+  background: linear-gradient(90deg, #ff4d4f, #ff7875);
+}
+
+.violation-stats-dashboard .bar-abuse {
+  background: linear-gradient(90deg, #fa8c16, #ffc069);
+}
+
+.violation-stats-dashboard .bar-false {
+  background: linear-gradient(90deg, #eb2f96, #ff85c0);
+}
+
+.violation-stats-dashboard .bar-spam {
+  background: linear-gradient(90deg, #52c41a, #95de64);
+}
+
+.violation-stats-dashboard .bar-other {
+  background: linear-gradient(90deg, #8c8c8c, #bfbfbf);
+}
+
+.violation-stats-dashboard .bar-pending {
+  background: linear-gradient(90deg, #fa8c16, #ffc069);
+}
+
+.violation-stats-dashboard .bar-approved {
+  background: linear-gradient(90deg, #52c41a, #95de64);
+}
+
+.violation-stats-dashboard .bar-rejected {
+  background: linear-gradient(90deg, #f5222d, #ff7875);
+}
+
+.violation-stats-dashboard .level-cards {
+  display: flex;
+  gap: 12px;
+}
+
+.violation-stats-dashboard .level-card {
+  flex: 1;
+  text-align: center;
+  padding: 20px 12px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+}
+
+.violation-stats-dashboard .level-high {
+  background: #fff1f0;
+  border-color: #ffa39e;
+}
+
+.violation-stats-dashboard .level-medium {
+  background: #fff7e6;
+  border-color: #ffd591;
+}
+
+.violation-stats-dashboard .level-low {
+  background: #f6ffed;
+  border-color: #b7eb8f;
+}
+
+.violation-stats-dashboard .level-icon {
+  font-size: 28px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.violation-stats-dashboard .level-name {
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+}
+
+.violation-stats-dashboard .level-count {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.violation-stats-dashboard .empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #bbb;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .violation-stats-dashboard .stats-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .violation-stats-dashboard .main-grid {
+    grid-template-columns: 1fr;
+  }
+  .violation-stats-dashboard .level-cards {
+    flex-direction: column;
+  }
 }
 </style>
