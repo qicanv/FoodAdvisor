@@ -222,7 +222,7 @@
         <!-- 好评关键词云 -->
         <div class="chart-card">
           <div class="chart-header">
-            <h3>🏆 好评关键词 TOP10</h3>
+            <h3>🏆 好评关键词 </h3>
           </div>
           <div class="chart-body">
             <div class="keyword-cloud">
@@ -1555,18 +1555,174 @@ watch([selectedStoreId, timeRange], () => {
 .dim-legend-pos { font-size: 12px; color: #52c41a; }
 .dim-legend-neg { font-size: 12px; color: #ff4d4f; }
 
-/* 关键词云 */
+/* 好评关键词云 */
 .keyword-cloud {
-  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-  justify-content: center; padding: 12px 0; min-height: 120px;
+  position: relative;
+  min-height: 240px;
+  padding: 16px 20px;
+  overflow: hidden;
 }
+
 .keyword-tag.positive {
-  display: inline-flex; align-items: baseline; gap: 2px;
-  color: #52c41a; font-weight: 600; cursor: default;
-  transition: transform 0.2s;
+  --rotate: 0deg;
+
+  position: absolute;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+
+  color: var(--keyword-color, #52a832);
+  font-weight: 600;
+  cursor: pointer;
+
+  transform: translate(-50%, -50%) rotate(var(--rotate));
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease,
+    color 0.2s ease;
 }
-.keyword-tag.positive:hover { transform: scale(1.15); }
-.keyword-tag.positive small { font-size: 11px; opacity: 0.7; }
+
+.keyword-tag.positive:hover {
+  color: var(--keyword-hover-color, var(--keyword-color));
+  z-index: 2;
+  transform:
+    translate(-50%, -50%)
+    rotate(var(--rotate))
+    scale(1.12);
+}
+
+.keyword-tag.positive small {
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+/* 高频关键词放在中央，其余关键词向四周错落分布 */
+.keyword-tag.positive:nth-child(1) {
+  left: 50%;
+  top: 50%;
+  --rotate: -2deg;
+}
+
+.keyword-tag.positive:nth-child(2) {
+  left: 27%;
+  top: 29%;
+  --rotate: 3deg;
+}
+
+.keyword-tag.positive:nth-child(3) {
+  left: 72%;
+  top: 28%;
+  --rotate: -4deg;
+}
+
+.keyword-tag.positive:nth-child(4) {
+  left: 24%;
+  top: 68%;
+  --rotate: -2deg;
+}
+
+.keyword-tag.positive:nth-child(5) {
+  left: 75%;
+  top: 68%;
+  --rotate: 4deg;
+}
+
+.keyword-tag.positive:nth-child(6) {
+  left: 49%;
+  top: 20%;
+  --rotate: 2deg;
+}
+
+.keyword-tag.positive:nth-child(7) {
+  left: 16%;
+  top: 48%;
+  --rotate: -5deg;
+}
+
+.keyword-tag.positive:nth-child(8) {
+  left: 84%;
+  top: 48%;
+  --rotate: 3deg;
+}
+
+.keyword-tag.positive:nth-child(9) {
+  left: 40%;
+  top: 82%;
+  --rotate: 4deg;
+}
+
+.keyword-tag.positive:nth-child(10) {
+  left: 62%;
+  top: 82%;
+  --rotate: -3deg;
+}
+
+@media (max-width: 768px) {
+  .keyword-cloud {
+    min-height: 280px;
+    padding: 16px 8px;
+  }
+
+  .keyword-tag.positive:nth-child(7) {
+    left: 20%;
+  }
+
+  .keyword-tag.positive:nth-child(8) {
+    left: 80%;
+  }
+}
+
+/* 好评关键词配色：固定分配，刷新后不会变色 */
+.keyword-tag.positive:nth-child(1) {
+  --keyword-color: #e67e22;
+  --keyword-hover-color: #c85f09;
+}
+
+.keyword-tag.positive:nth-child(2) {
+  --keyword-color: #2e9d68;
+  --keyword-hover-color: #18794e;
+}
+
+.keyword-tag.positive:nth-child(3) {
+  --keyword-color: #4c7bd9;
+  --keyword-hover-color: #315fbd;
+}
+
+.keyword-tag.positive:nth-child(4) {
+  --keyword-color: #d45572;
+  --keyword-hover-color: #b83b5b;
+}
+
+.keyword-tag.positive:nth-child(5) {
+  --keyword-color: #8b67c7;
+  --keyword-hover-color: #6f49ae;
+}
+
+.keyword-tag.positive:nth-child(6) {
+  --keyword-color: #c58b18;
+  --keyword-hover-color: #9f6c08;
+}
+
+.keyword-tag.positive:nth-child(7) {
+  --keyword-color: #2698a8;
+  --keyword-hover-color: #147785;
+}
+
+.keyword-tag.positive:nth-child(8) {
+  --keyword-color: #d2673a;
+  --keyword-hover-color: #b34d24;
+}
+
+.keyword-tag.positive:nth-child(9) {
+  --keyword-color: #5b8f3c;
+  --keyword-hover-color: #407229;
+}
+
+.keyword-tag.positive:nth-child(10) {
+  --keyword-color: #b05b9e;
+  --keyword-hover-color: #914481;
+}
 
 /* 差评问题归类 */
 .issue-list { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
