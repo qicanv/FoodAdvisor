@@ -11,13 +11,24 @@ const api = vi.hoisted(() => ({
   adjustDiningRecommendation: vi.fn(),
 }))
 
+const routerMock = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(() => Promise.resolve()),
+}))
+
+const routeMock = vi.hoisted(() => ({
+  path: '/diner/ai-dining',
+  query: {},
+}))
+
 vi.mock('../../api/aiDining', () => api)
 vi.mock('../../api/behavior', () => ({
   logMerchantClick: vi.fn(() => Promise.resolve()),
   logSearch: vi.fn(() => Promise.resolve()),
 }))
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => routerMock,
+  useRoute: () => routeMock,
 }))
 
 const success = overrides => ({
@@ -53,6 +64,10 @@ async function mounted(history = []) {
 beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
+
+  routeMock.path = '/diner/ai-dining'
+  routeMock.query = {}
+
   api.getRecommendationEvidences.mockResolvedValue({
     success: true,
     data: [],
@@ -181,5 +196,61 @@ describe('AiDiningView', () => {
     }])
     expect(wrapper.text()).toContain('历史店铺')
     expect(wrapper.text()).toContain('规则安全降级')
+  })
+
+  it('creates a new session and clears the current conversation', async () => {
+    api.createDiningSession.mockResolvedValue({
+      success: true,
+      data: {
+        sessionId: 2,
+      },
+    })
+
+    const wrapper = await mounted([{
+      id: 1,
+      role: 'ASSISTANT',
+      content: '旧会话消息',
+      recommendations: [],
+    }])
+
+    expect(wrapper.text()).toContain('旧会话消息')
+    expect(
+      localStorage.getItem('foodadvisor.aiDining.session.anonymous')
+    ).toBe('1')
+
+    await wrapper.find('.new-session-button').trigger('click')
+    await flushPromises()
+
+    expect(api.createDiningSession).toHaveBeenCalledWith('AI探店对话')
+    expect(
+      localStorage.getItem('foodadvisor.aiDining.session.anonymous')
+    ).toBe('2')
+    expect(wrapper.text()).not.toContain('旧会话消息')
+    expect(wrapper.text()).toContain('想吃什么，直接告诉我')
+  })
+
+  it('restores the session from the URL and clears the temporary query', async () => {
+    routeMock.query = {
+      from: 'ai-dining',
+      sessionId: '9',
+    }
+
+    const wrapper = await mounted([{
+      id: 91,
+      role: 'ASSISTANT',
+      content: '从商家详情返回的原会话',
+      recommendations: [],
+    }])
+
+    expect(api.getDiningMessages).toHaveBeenCalledWith(9)
+    expect(wrapper.text()).toContain('从商家详情返回的原会话')
+    expect(
+      localStorage.getItem('foodadvisor.aiDining.session.anonymous')
+    ).toBe('9')
+
+    expect(routerMock.replace).toHaveBeenCalledWith({
+      path: '/diner/ai-dining',
+      query: {},
+    })
   })
 })
