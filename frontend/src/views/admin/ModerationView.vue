@@ -85,7 +85,7 @@
           <div class="stat-label">降级检测（30天）</div>
         </div>
       </div>
-      
+    </div>
     </div>
 
     <!-- 违规类型分布 -->
@@ -345,7 +345,6 @@
             </div>
           </div>
         </div>
-        <div v-if="currentDetail && modStatus(currentDetail) === 'PENDING'" class="modal-footer">
         <div v-if="currentDetail && (currentDetail.moderationStatus === 'PENDING' || currentDetail.moderationStatus === 'APPROVED')" class="modal-footer">
           <textarea v-model="reviewRemark" class="remark-input" placeholder="请输入审核备注（可选）" rows="3"></textarea>
           <div class="footer-actions">

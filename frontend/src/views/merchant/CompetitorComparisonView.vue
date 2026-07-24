@@ -445,6 +445,13 @@
           <p>请在上方选择竞品商家后点击"开始对比分析"</p>
         </div>
       </div>
+
+      <!-- 分析结果反馈 -->
+      <AnalysisFeedbackPanel
+        v-if="activeMerchantId && result"
+        :merchantId="activeMerchantId"
+        analysisType="COMPETITOR"
+      />
     </div>
   </MerchantLayout>
 </template>
@@ -453,6 +460,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import MerchantLayout from '../../components/MerchantLayout.vue'
+import AnalysisFeedbackPanel from '../../components/AnalysisFeedbackPanel.vue'
 import { getCompetitorCandidates, performCompetitorComparison } from '../../api/competitorComparison'
 import { getMyMerchants } from '../../api/merchantConsole'
 

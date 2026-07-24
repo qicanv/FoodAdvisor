@@ -227,6 +227,13 @@
         <h3>{{ errorMsg }}</h3>
         <button class="retry-btn" @click="loadSuggestions()">重试</button>
       </div>
+
+      <!-- 分析结果反馈 -->
+      <AnalysisFeedbackPanel
+        v-if="selectedStoreId && hasSuggestions"
+        :merchantId="selectedStoreId"
+        analysisType="BUSINESS_SUGGESTION"
+      />
     </div>
   </MerchantLayout>
 </template>
@@ -234,6 +241,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import MerchantLayout from '../../components/MerchantLayout.vue'
+import AnalysisFeedbackPanel from '../../components/AnalysisFeedbackPanel.vue'
 import { getMyMerchants } from '../../api/merchantConsole'
 import {
   getBusinessSuggestions,
