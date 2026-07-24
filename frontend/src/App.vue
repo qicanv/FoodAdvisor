@@ -1,5 +1,4 @@
 <template>
-  <router-view />
   <el-container class="app-container">
     <el-header class="app-header">
       <div class="brand">FoodAdvisor</div>

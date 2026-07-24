@@ -4,7 +4,9 @@ import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.dto.competitor.CompetitorComparisonRequest;
 import com.foodadvisor.dto.competitor.CompetitorComparisonResponse;
 import com.foodadvisor.dto.competitor.CompetitorMerchantVO;
+import com.foodadvisor.entity.AiCallLog;
 import com.foodadvisor.exception.ApiException;
+import com.foodadvisor.service.AiCallLogService;
 import com.foodadvisor.service.CompetitorComparisonService;
 import com.foodadvisor.service.AiRequestTraceService;
 import com.foodadvisor.trace.AiTraceContext;
@@ -18,8 +20,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 周边竞品对比接口（EPIC-02 Story 6）
@@ -50,23 +54,26 @@ public class CompetitorComparisonController {
     private final CompetitorComparisonService comparisonService;
     private final JdbcTemplate jdbcTemplate;
     private final AiRequestTraceService traceService;
+    private final AiCallLogService aiCallLogService;
 
     public CompetitorComparisonController(
             CompetitorComparisonService comparisonService,
             JdbcTemplate jdbcTemplate
     ) {
-        this(comparisonService, jdbcTemplate, null);
+        this(comparisonService, jdbcTemplate, null, null);
     }
 
     @Autowired
     public CompetitorComparisonController(
             CompetitorComparisonService comparisonService,
             JdbcTemplate jdbcTemplate,
-            AiRequestTraceService traceService
+            AiRequestTraceService traceService,
+            AiCallLogService aiCallLogService
     ) {
         this.comparisonService = comparisonService;
         this.jdbcTemplate = jdbcTemplate;
         this.traceService = traceService;
+        this.aiCallLogService = aiCallLogService;
     }
 
     /**
@@ -139,6 +146,8 @@ public class CompetitorComparisonController {
                 : traceService.startTrace(null, null, userId, "COMPETITOR_ANALYSIS");
 
         CompetitorComparisonResponse result;
+        String callTraceId = UUID.randomUUID().toString();
+        long startTime = System.currentTimeMillis();
         try {
             result = traceService == null
                     ? comparisonService.performComparison(merchantId, request)
@@ -151,6 +160,9 @@ public class CompetitorComparisonController {
             if (context != null) {
                 servletResponse.setHeader("X-Trace-Id", context.traceId());
             }
+
+            recordCompetitorAnalysisCall(callTraceId, userId, context,
+                    "COMPETITOR_ANALYSIS", "SUCCESS", System.currentTimeMillis() - startTime);
         } catch (RuntimeException exception) {
             if (context != null) {
                 traceService.failTraceSafely(context,
@@ -159,15 +171,47 @@ public class CompetitorComparisonController {
             if (context != null) {
                 servletResponse.setHeader("X-Trace-Id", context.traceId());
             }
+
+            recordCompetitorAnalysisCall(callTraceId, userId, context,
+                    "COMPETITOR_ANALYSIS", "FAILED", System.currentTimeMillis() - startTime);
             throw exception;
         }
 
-        // 根据状态返回不同消息
         if ("FAILED".equals(result.getComparisonStatus())) {
             return ApiResponse.success("对比数据已生成，但 AI 分析失败", result);
         }
 
         return ApiResponse.success("竞品对比分析完成", result);
+    }
+
+    // ============================================
+    // 调用记录方法
+    // ============================================
+
+    /**
+     * 记录竞品对比分析调用日志。
+     * 此日志用于商家统计页面展示竞品对比使用趋势。
+     */
+    private void recordCompetitorAnalysisCall(String traceId, Long userId, 
+            AiTraceContext context, String functionType, String status, long latencyMs) {
+        if (aiCallLogService == null) {
+            return;
+        }
+        try {
+            AiCallLog callLog = new AiCallLog();
+            callLog.setTraceId(traceId);
+            callLog.setRootTraceId(context != null ? context.traceId() : null);
+            callLog.setStageName("COMPETITOR_COMPARISON");
+            callLog.setUserId(userId);
+            callLog.setFunctionType(functionType);
+            callLog.setStatus(status);
+            callLog.setLatencyMs((int) latencyMs);
+            callLog.setCreatedAt(OffsetDateTime.now());
+            aiCallLogService.recordSafely(callLog);
+            log.info("记录竞品对比调用日志 traceId={}, status={}", traceId, status);
+        } catch (Exception e) {
+            log.warn("记录竞品对比调用日志失败 traceId={}, error={}", traceId, e.getMessage());
+        }
     }
 
     // ============================================

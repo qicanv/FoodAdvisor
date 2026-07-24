@@ -77,6 +77,10 @@
               {{ item.trend >= 0 ? '↑' : '↓' }} {{ Math.abs(item.trend) }}%
             </span>
           </div>
+          <div v-if="hotKeywords.length === 0" class="empty-state">
+            <span class="empty-icon">🔍</span>
+            <span class="empty-text">暂无搜索数据</span>
+          </div>
         </div>
       </div>
 
@@ -95,6 +99,10 @@
               <div class="scenario-fill" :style="{ width: item.percentage + '%' }"></div>
             </div>
           </div>
+          <div v-if="hotScenarios.length === 0" class="empty-state">
+            <span class="empty-icon">🎯</span>
+            <span class="empty-text">暂无场景数据</span>
+          </div>
         </div>
       </div>
     </div>
@@ -106,7 +114,7 @@
           <span class="section-count">共 {{ merchantTotalClicks }} 次点击</span>
         </div>
         <div class="table-container">
-          <table class="data-table">
+          <table v-if="hotMerchants.length > 0" class="data-table">
             <thead>
               <tr>
                 <th>排名</th>
@@ -136,6 +144,10 @@
               </tr>
             </tbody>
           </table>
+          <div v-else class="empty-state">
+            <span class="empty-icon">🏪</span>
+            <span class="empty-text">暂无商家点击数据</span>
+          </div>
         </div>
       </div>
     </div>
@@ -455,6 +467,8 @@ const loadData = async () => {
       endTime: filters.endTime || undefined
     }
 
+    console.log('开始加载行为分析数据，参数:', params)
+
     const [overviewRes, keywordsRes, scenariosRes, merchantsRes, recStatsRes] = await Promise.all([
       getBehaviorOverview(params),
       getHotSearchKeywords(params),
@@ -463,28 +477,52 @@ const loadData = async () => {
       getRecommendationStats(params)
     ])
 
+    console.log('行为概览响应:', overviewRes)
+    console.log('热门关键词响应:', keywordsRes)
+    console.log('热门场景响应:', scenariosRes)
+    console.log('热门商家响应:', merchantsRes)
+    console.log('推荐统计响应:', recStatsRes)
+
     if (overviewRes.success && overviewRes.data) {
       Object.assign(overview, overviewRes.data)
+      console.log('成功加载行为概览数据')
+    } else {
+      console.warn('行为概览加载失败:', overviewRes)
     }
 
     if (keywordsRes.success && keywordsRes.data) {
       hotKeywords.value = keywordsRes.data.keywords || []
+      console.log('成功加载热门关键词数据，共', hotKeywords.value.length, '条')
+    } else {
+      console.warn('热门关键词加载失败:', keywordsRes)
+      hotKeywords.value = []
     }
 
     if (scenariosRes.success && scenariosRes.data) {
       hotScenarios.value = scenariosRes.data.scenarios || []
+      console.log('成功加载热门场景数据，共', hotScenarios.value.length, '条')
+    } else {
+      console.warn('热门场景加载失败:', scenariosRes)
+      hotScenarios.value = []
     }
 
     if (merchantsRes.success && merchantsRes.data) {
       hotMerchants.value = merchantsRes.data.merchants || []
+      console.log('成功加载热门商家数据，共', hotMerchants.value.length, '条')
+    } else {
+      console.warn('热门商家加载失败:', merchantsRes)
+      hotMerchants.value = []
     }
 
     if (recStatsRes.success && recStatsRes.data) {
       Object.assign(recStats, recStatsRes.data)
+      console.log('成功加载推荐统计数据')
+    } else {
+      console.warn('推荐统计加载失败:', recStatsRes)
     }
   } catch (error) {
     console.error('加载行为分析数据失败:', error)
-    showToast('加载失败，请重试', 'error')
+    showToast('加载失败，请检查网络连接或登录状态', 'error')
   }
 }
 

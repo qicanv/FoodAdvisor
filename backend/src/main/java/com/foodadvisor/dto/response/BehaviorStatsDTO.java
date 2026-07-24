@@ -18,6 +18,12 @@ public class BehaviorStatsDTO {
 
     private Long activeUsers;
 
+    private Long searchCount;
+
+    private Long clickCount;
+
+    private Long feedbackCount;
+
     private List<Map<String, Object>> hotKeywords;
 
     private List<Map<String, Object>> hotScenes;

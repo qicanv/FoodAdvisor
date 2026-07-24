@@ -23,6 +23,9 @@ public class MerchantStatisticsController {
     @GetMapping("/overview")
     public ApiResponse<Object> getOverview(
             @RequestParam(defaultValue = "week") String timeRange,
+            @RequestParam(required = false) String date,
+            @RequestParam(required = false) String week,
+            @RequestParam(required = false) String month,
             @RequestParam(required = false) Long merchantId,
             HttpServletRequest request
     ) {
@@ -30,10 +33,10 @@ public class MerchantStatisticsController {
         Long userId = (Long) request.getAttribute("userId");
 
         if ("ADMIN".equalsIgnoreCase(role)) {
-            return ApiResponse.success(statisticsService.getOverview(timeRange, role, null));
+            return ApiResponse.success(statisticsService.getOverview(timeRange, date, week, month, role, null));
         } else if ("MERCHANT".equalsIgnoreCase(role)) {
             Long effectiveMerchantId = merchantId != null ? merchantId : userId;
-            return ApiResponse.success(statisticsService.getOverview(timeRange, role, effectiveMerchantId));
+            return ApiResponse.success(statisticsService.getOverview(timeRange, date, week, month, role, effectiveMerchantId));
         } else {
             throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Only administrators and merchants can access merchant statistics");
         }
@@ -42,6 +45,9 @@ public class MerchantStatisticsController {
     @GetMapping("/trends")
     public ApiResponse<Object> getTrends(
             @RequestParam(defaultValue = "week") String timeRange,
+            @RequestParam(required = false) String date,
+            @RequestParam(required = false) String week,
+            @RequestParam(required = false) String month,
             @RequestParam(required = false) Long merchantId,
             HttpServletRequest request
     ) {
@@ -49,10 +55,10 @@ public class MerchantStatisticsController {
         Long userId = (Long) request.getAttribute("userId");
 
         if ("ADMIN".equalsIgnoreCase(role)) {
-            return ApiResponse.success(statisticsService.getTrends(timeRange, role, null));
+            return ApiResponse.success(statisticsService.getTrends(timeRange, date, week, month, role, null));
         } else if ("MERCHANT".equalsIgnoreCase(role)) {
             Long effectiveMerchantId = merchantId != null ? merchantId : userId;
-            return ApiResponse.success(statisticsService.getTrends(timeRange, role, effectiveMerchantId));
+            return ApiResponse.success(statisticsService.getTrends(timeRange, date, week, month, role, effectiveMerchantId));
         } else {
             throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Only administrators and merchants can access merchant statistics");
         }

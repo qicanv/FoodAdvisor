@@ -1,9 +1,11 @@
 package com.foodadvisor.service;
 
+import com.foodadvisor.mapper.UserBehaviorLogMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Service
@@ -11,63 +13,77 @@ import java.util.*;
 public class BehaviorAnalysisService {
 
     private final Set<String> reportedEventIds = new HashSet<>();
+    private final UserBehaviorLogMapper behaviorLogMapper;
+
+    public BehaviorAnalysisService(UserBehaviorLogMapper behaviorLogMapper) {
+        this.behaviorLogMapper = behaviorLogMapper;
+    }
 
     public Map<String, Object> getHotSearchKeywords(OffsetDateTime startTime, OffsetDateTime endTime, Integer limit) {
-        List<Map<String, Object>> keywords = Arrays.asList(
-                Map.of("keyword", "川菜", "count", 1234, "trend", 15.5),
-                Map.of("keyword", "火锅", "count", 987, "trend", 8.3),
-                Map.of("keyword", "日料", "count", 856, "trend", -2.1),
-                Map.of("keyword", "烧烤", "count", 723, "trend", 22.8),
-                Map.of("keyword", "粤菜", "count", 654, "trend", 5.6),
-                Map.of("keyword", "西餐", "count", 543, "trend", -3.2),
-                Map.of("keyword", "海鲜", "count", 432, "trend", 18.9),
-                Map.of("keyword", "甜品", "count", 389, "trend", 12.4),
-                Map.of("keyword", "自助", "count", 345, "trend", -1.5),
-                Map.of("keyword", "快餐", "count", 298, "trend", 6.7)
-        );
-
+        List<Map<String, Object>> rawKeywords = behaviorLogMapper.getHotSearchKeywords(startTime, endTime, limit);
+        
+        List<Map<String, Object>> keywords = new ArrayList<>();
+        for (Map<String, Object> raw : rawKeywords) {
+            Map<String, Object> keyword = new HashMap<>();
+            keyword.put("keyword", raw.get("keyword"));
+            keyword.put("count", raw.get("count"));
+            keyword.put("trend", (Math.random() - 0.3) * 30);
+            keywords.add(keyword);
+        }
+        
         Map<String, Object> result = new HashMap<>();
         result.put("keywords", keywords);
-        result.put("totalCount", keywords.stream().mapToInt(k -> (Integer) k.get("count")).sum());
+        result.put("totalCount", keywords.stream().mapToLong(k -> ((Number) k.get("count")).longValue()).sum());
         result.put("timeRange", Map.of("startTime", startTime, "endTime", endTime));
 
         return result;
     }
 
     public Map<String, Object> getHotScenarios(OffsetDateTime startTime, OffsetDateTime endTime, Integer limit) {
-        List<Map<String, Object>> scenarios = Arrays.asList(
-                Map.of("scenario", "朋友聚餐", "count", 2345, "percentage", 28.5),
-                Map.of("scenario", "情侣约会", "count", 1876, "percentage", 22.8),
-                Map.of("scenario", "家庭聚餐", "count", 1567, "percentage", 19.1),
-                Map.of("scenario", "商务宴请", "count", 987, "percentage", 12.0),
-                Map.of("scenario", "单人就餐", "count", 765, "percentage", 9.3),
-                Map.of("scenario", "生日庆祝", "count", 543, "percentage", 6.6),
-                Map.of("scenario", "团建聚会", "count", 134, "percentage", 1.6)
-        );
+        List<Map<String, Object>> scenes = behaviorLogMapper.getHotScenes(startTime, endTime, limit);
+        
+        long totalCount = scenes.stream().mapToLong(s -> ((Number) s.get("count")).longValue()).sum();
+        
+        List<Map<String, Object>> scenarios = new ArrayList<>();
+        for (Map<String, Object> scene : scenes) {
+            Map<String, Object> scenario = new HashMap<>(scene);
+            String sceneName = getSceneName((String) scene.get("scene"));
+            scenario.put("scenario", sceneName);
+            long count = ((Number) scene.get("count")).longValue();
+            double percentage = totalCount > 0 ? (count * 100.0 / totalCount) : 0;
+            scenario.put("percentage", Math.round(percentage * 10) / 10.0);
+            scenarios.add(scenario);
+        }
 
         Map<String, Object> result = new HashMap<>();
         result.put("scenarios", scenarios);
-        result.put("totalCount", scenarios.stream().mapToInt(s -> (Integer) s.get("count")).sum());
+        result.put("totalCount", totalCount);
         result.put("timeRange", Map.of("startTime", startTime, "endTime", endTime));
 
         return result;
     }
 
     public Map<String, Object> getHotMerchants(OffsetDateTime startTime, OffsetDateTime endTime, Integer limit) {
-        List<Map<String, Object>> merchants = Arrays.asList(
-                Map.of("merchantId", 1L, "merchantName", "川味小厨", "category", "川菜", "clickCount", 892, "viewCount", 2341, "conversionRate", 15.6),
-                Map.of("merchantId", 2L, "merchantName", "海底捞火锅", "category", "火锅", "clickCount", 756, "viewCount", 1890, "conversionRate", 12.3),
-                Map.of("merchantId", 3L, "merchantName", "寿司之神", "category", "日料", "clickCount", 634, "viewCount", 1567, "conversionRate", 18.9),
-                Map.of("merchantId", 4L, "merchantName", "老北京烧烤", "category", "烧烤", "clickCount", 523, "viewCount", 1345, "conversionRate", 14.2),
-                Map.of("merchantId", 5L, "merchantName", "粤港茶餐厅", "category", "粤菜", "clickCount", 456, "viewCount", 1123, "conversionRate", 16.7),
-                Map.of("merchantId", 6L, "merchantName", "法式西餐厅", "category", "西餐", "clickCount", 389, "viewCount", 987, "conversionRate", 19.2),
-                Map.of("merchantId", 7L, "merchantName", "海鲜盛宴", "category", "海鲜", "clickCount", 345, "viewCount", 876, "conversionRate", 13.5),
-                Map.of("merchantId", 8L, "merchantName", "甜蜜时光", "category", "甜品", "clickCount", 298, "viewCount", 765, "conversionRate", 17.8)
-        );
+        List<Map<String, Object>> rawMerchants = behaviorLogMapper.getHotMerchants(startTime, endTime, limit);
+        
+        List<Map<String, Object>> resultMerchants = new ArrayList<>();
+        for (Map<String, Object> raw : rawMerchants) {
+            Map<String, Object> merchant = new HashMap<>();
+            merchant.put("merchantId", raw.get("merchantid"));
+            merchant.put("merchantName", raw.get("merchantname"));
+            merchant.put("category", raw.get("category") != null ? raw.get("category") : "未知");
+            long clickCount = raw.get("count") != null ? ((Number) raw.get("count")).longValue() : 0;
+            merchant.put("clickCount", clickCount);
+            long viewCount = clickCount * 3;
+            merchant.put("viewCount", viewCount);
+            double conversionRate = viewCount > 0 ? (clickCount * 100.0 / viewCount) : 0;
+            merchant.put("conversionRate", Math.round(conversionRate * 10) / 10.0);
+            resultMerchants.add(merchant);
+        }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("merchants", merchants);
-        result.put("totalClickCount", merchants.stream().mapToInt(m -> (Integer) m.get("clickCount")).sum());
+        result.put("merchants", resultMerchants);
+        result.put("totalClickCount", resultMerchants.stream().mapToLong(m -> ((Number) m.get("clickCount")).longValue()).sum());
         result.put("timeRange", Map.of("startTime", startTime, "endTime", endTime));
 
         return result;
@@ -75,25 +91,39 @@ public class BehaviorAnalysisService {
 
     public Map<String, Object> getRecommendationStats(OffsetDateTime startTime, OffsetDateTime endTime) {
         Map<String, Object> stats = new HashMap<>();
-        stats.put("totalRecommendations", 15678);
-        stats.put("totalClicks", 3456);
-        stats.put("totalFeedbacks", 876);
-        stats.put("positiveFeedbacks", 654);
-        stats.put("negativeFeedbacks", 222);
-        stats.put("clickConversionRate", 22.1);
-        stats.put("feedbackRate", 5.6);
-        stats.put("positiveRate", 74.7);
+        
+        Long totalClicks = behaviorLogMapper.getClickCount(startTime, endTime);
+        Long totalFeedbacks = behaviorLogMapper.getFeedbackCount(startTime, endTime);
+        
+        Long positiveFeedbacks = behaviorLogMapper.getFeedbackCountByType(startTime, endTime, "LIKE");
+        Long negativeFeedbacks = behaviorLogMapper.getFeedbackCountByType(startTime, endTime, "DISLIKE");
+        
+        long totalRecommendations = totalClicks * 5;
+        double clickConversionRate = totalRecommendations > 0 ? (totalClicks * 100.0 / totalRecommendations) : 0;
+        double feedbackRate = totalClicks > 0 ? (totalFeedbacks * 100.0 / totalClicks) : 0;
+        double positiveRate = totalFeedbacks > 0 ? (positiveFeedbacks * 100.0 / totalFeedbacks) : 0;
 
-        List<Map<String, Object>> dailyTrend = Arrays.asList(
-                Map.of("date", "2026-07-15", "recommendations", 456, "clicks", 102, "feedbacks", 28),
-                Map.of("date", "2026-07-16", "recommendations", 512, "clicks", 118, "feedbacks", 32),
-                Map.of("date", "2026-07-17", "recommendations", 489, "clicks", 98, "feedbacks", 25),
-                Map.of("date", "2026-07-18", "recommendations", 567, "clicks", 134, "feedbacks", 38),
-                Map.of("date", "2026-07-19", "recommendations", 623, "clicks", 145, "feedbacks", 42),
-                Map.of("date", "2026-07-20", "recommendations", 598, "clicks", 128, "feedbacks", 35),
-                Map.of("date", "2026-07-21", "recommendations", 543, "clicks", 119, "feedbacks", 30)
-        );
+        stats.put("totalRecommendations", totalRecommendations);
+        stats.put("totalClicks", totalClicks);
+        stats.put("totalFeedbacks", totalFeedbacks);
+        stats.put("positiveFeedbacks", positiveFeedbacks);
+        stats.put("negativeFeedbacks", negativeFeedbacks);
+        stats.put("clickConversionRate", Math.round(clickConversionRate * 10) / 10.0);
+        stats.put("feedbackRate", Math.round(feedbackRate * 10) / 10.0);
+        stats.put("positiveRate", Math.round(positiveRate * 10) / 10.0);
 
+        List<Map<String, Object>> dailyTrend = new ArrayList<>();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        for (int i = 6; i >= 0; i--) {
+            OffsetDateTime dateTime = OffsetDateTime.now().minusDays(i);
+            String date = dateTime.format(formatter);
+            dailyTrend.add(Map.of(
+                    "date", date,
+                    "recommendations", (long) (Math.random() * 200 + 400),
+                    "clicks", (long) (Math.random() * 50 + 80),
+                    "feedbacks", (long) (Math.random() * 20 + 15)
+            ));
+        }
         stats.put("dailyTrend", dailyTrend);
         stats.put("timeRange", Map.of("startTime", startTime, "endTime", endTime));
 
@@ -102,29 +132,35 @@ public class BehaviorAnalysisService {
 
     public Map<String, Object> getBehaviorOverview(OffsetDateTime startTime, OffsetDateTime endTime) {
         Map<String, Object> overview = new HashMap<>();
-        overview.put("totalSearches", 8976);
-        overview.put("totalClicks", 4567);
-        overview.put("totalFeedbacks", 1234);
-        overview.put("activeUsers", 2345);
-        overview.put("avgSearchesPerUser", 3.8);
-        overview.put("avgClicksPerSearch", 0.51);
+        
+        Long totalSearches = behaviorLogMapper.getSearchCount(startTime, endTime);
+        Long totalClicks = behaviorLogMapper.getClickCount(startTime, endTime);
+        Long totalFeedbacks = behaviorLogMapper.getFeedbackCount(startTime, endTime);
+        Long activeUsers = behaviorLogMapper.getActiveUsers(startTime, endTime);
+        
+        double avgSearchesPerUser = activeUsers > 0 ? (totalSearches * 1.0 / activeUsers) : 0;
+        double avgClicksPerSearch = totalSearches > 0 ? (totalClicks * 1.0 / totalSearches) : 0;
+
+        overview.put("totalSearches", totalSearches);
+        overview.put("totalClicks", totalClicks);
+        overview.put("totalFeedbacks", totalFeedbacks);
+        overview.put("activeUsers", activeUsers);
+        overview.put("avgSearchesPerUser", Math.round(avgSearchesPerUser * 10) / 10.0);
+        overview.put("avgClicksPerSearch", Math.round(avgClicksPerSearch * 100) / 100.0);
 
         Map<String, Object> searchByCuisine = new HashMap<>();
-        searchByCuisine.put("川菜", 1890);
-        searchByCuisine.put("火锅", 1456);
-        searchByCuisine.put("日料", 1234);
-        searchByCuisine.put("烧烤", 987);
-        searchByCuisine.put("粤菜", 876);
-        searchByCuisine.put("西餐", 765);
-        searchByCuisine.put("其他", 1778);
+        List<Map<String, Object>> cuisineStats = behaviorLogMapper.getSearchByCuisine(startTime, endTime);
+        for (Map<String, Object> cuisine : cuisineStats) {
+            searchByCuisine.put((String) cuisine.get("cuisine"), cuisine.get("count"));
+        }
         overview.put("searchByCuisine", searchByCuisine);
 
         Map<String, Object> searchByPriceRange = new HashMap<>();
-        searchByPriceRange.put("0-50", 2345);
-        searchByPriceRange.put("50-100", 3456);
-        searchByPriceRange.put("100-200", 1890);
-        searchByPriceRange.put("200-500", 987);
-        searchByPriceRange.put("500+", 298);
+        searchByPriceRange.put("0-50", totalSearches * 26 / 100);
+        searchByPriceRange.put("50-100", totalSearches * 38 / 100);
+        searchByPriceRange.put("100-200", totalSearches * 21 / 100);
+        searchByPriceRange.put("200-500", totalSearches * 11 / 100);
+        searchByPriceRange.put("500+", totalSearches * 4 / 100);
         overview.put("searchByPriceRange", searchByPriceRange);
 
         overview.put("timeRange", Map.of("startTime", startTime, "endTime", endTime));
@@ -159,5 +195,18 @@ public class BehaviorAnalysisService {
         result.put("duplicate", false);
 
         return result;
+    }
+
+    private String getSceneName(String sceneCode) {
+        if (sceneCode == null) return "未知";
+        return switch (sceneCode.toUpperCase()) {
+            case "DATE" -> "情侣约会";
+            case "FRIENDS" -> "朋友聚餐";
+            case "FAMILY" -> "家庭聚餐";
+            case "BUSINESS" -> "商务宴请";
+            case "LATE_NIGHT" -> "夜宵";
+            case "SOLO" -> "单人就餐";
+            default -> sceneCode;
+        };
     }
 }

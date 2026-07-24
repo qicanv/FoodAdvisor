@@ -101,16 +101,22 @@ public class UserBehaviorService {
     public BehaviorStatsDTO getStats(OffsetDateTime startTime, OffsetDateTime endTime) {
         Long totalEvents = behaviorLogMapper.getTotalEvents(startTime, endTime);
         Long activeUsers = behaviorLogMapper.getActiveUsers(startTime, endTime);
+        Long searchCount = behaviorLogMapper.getSearchCount(startTime, endTime);
+        Long clickCount = behaviorLogMapper.getClickCount(startTime, endTime);
+        Long feedbackCount = behaviorLogMapper.getFeedbackCount(startTime, endTime);
         List<Map<String, Object>> hotKeywords = behaviorLogMapper.getHotSearchKeywords(startTime, endTime, 20);
         List<Map<String, Object>> hotScenes = behaviorLogMapper.getHotScenes(startTime, endTime, 10);
         List<Map<String, Object>> hotMerchants = behaviorLogMapper.getHotMerchants(startTime, endTime, 15);
         List<Map<String, Object>> eventStats = behaviorLogMapper.getEventStats(startTime, endTime);
-        List<Map<String, Object>> hotTags = behaviorLogMapper.getHotTags(startTime, endTime, 15);
+        List<Map<String, Object>> hotTags = behaviorLogMapper.getAllTagsWithClickCount(startTime, endTime);
         List<Map<String, Object>> dailyStats = behaviorLogMapper.getDailyStats(startTime, endTime);
 
         return BehaviorStatsDTO.builder()
                 .totalEvents(totalEvents)
                 .activeUsers(activeUsers)
+                .searchCount(searchCount)
+                .clickCount(clickCount)
+                .feedbackCount(feedbackCount)
                 .hotKeywords(hotKeywords)
                 .hotScenes(hotScenes)
                 .hotMerchants(hotMerchants)

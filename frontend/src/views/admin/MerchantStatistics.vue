@@ -13,6 +13,40 @@
             {{ range.label }}
           </button>
         </div>
+        
+        <div class="date-selector">
+          <div v-if="timeRange === 'day'" class="day-selector">
+            <span class="selector-label">选择日期：</span>
+            <input 
+              type="date" 
+              v-model="selectedDate" 
+              :max="todayStr"
+              class="date-input"
+              @change="handleDateChange"
+            />
+          </div>
+          
+          <div v-else-if="timeRange === 'week'" class="week-selector">
+            <span class="selector-label">选择周：</span>
+            <select v-model="selectedYear" class="week-select" @change="handleWeekChange">
+              <option v-for="year in availableYears" :key="year" :value="year">{{ year }}年</option>
+            </select>
+            <select v-model="selectedWeek" class="week-select" @change="handleWeekChange">
+              <option v-for="week in availableWeeks" :key="week.value" :value="week.value">
+                第{{ week.value }}周 ({{ week.label }})
+              </option>
+            </select>
+          </div>
+          
+          <div v-else class="month-selector">
+            <span class="selector-label">选择月份：</span>
+            <select v-model="selectedMonth" class="month-select" @change="handleMonthChange">
+              <option v-for="month in monthOptions" :key="month.value" :value="month.value">
+                {{ month.label }}
+              </option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div class="metrics-grid">
@@ -36,23 +70,25 @@
             <h3>活跃商家趋势</h3>
           </div>
           <div class="chart-body">
-            <div class="chart-container">
-              <div class="y-axis">
-                <span v-for="(tick, index) in getYAxisTicks(trends.activeMerchants)" :key="index" class="y-tick">{{ tick }}</span>
-              </div>
-              <div class="chart-bars">
-                <div 
-                  v-for="(value, index) in trends.activeMerchants" 
-                  :key="index"
-                  class="bar-wrapper"
-                >
+            <div class="chart-container-wrapper">
+              <div class="chart-container">
+                <div class="y-axis">
+                  <span v-for="(tick, index) in getYAxisTicks(trends.activeMerchants)" :key="index" class="y-tick">{{ tick }}</span>
+                </div>
+                <div class="chart-bars-scroll">
                   <div 
-                    class="bar" 
-                    :style="{ height: getBarHeight(value, trends.activeMerchants) + '%' }"
+                    v-for="(value, index) in trends.activeMerchants" 
+                    :key="index"
+                    class="bar-wrapper"
                   >
-                    <span class="bar-value">{{ value }}</span>
+                    <div 
+                      class="bar" 
+                      :style="{ height: getBarHeight(value, trends.activeMerchants) + '%' }"
+                    >
+                      <span class="bar-value">{{ value }}</span>
+                    </div>
+                    <span class="bar-label">{{ getLabel(index) }}</span>
                   </div>
-                  <span class="bar-label">{{ getLabel(index) }}</span>
                 </div>
               </div>
             </div>
@@ -65,23 +101,25 @@
             <h3>口碑分析使用趋势</h3>
           </div>
           <div class="chart-body">
-            <div class="chart-container">
-              <div class="y-axis">
-                <span v-for="(tick, index) in getYAxisTicks(trends.reputationAnalysis)" :key="index" class="y-tick">{{ tick }}</span>
-              </div>
-              <div class="chart-bars">
-                <div 
-                  v-for="(value, index) in trends.reputationAnalysis" 
-                  :key="index"
-                  class="bar-wrapper"
-                >
+            <div class="chart-container-wrapper">
+              <div class="chart-container">
+                <div class="y-axis">
+                  <span v-for="(tick, index) in getYAxisTicks(trends.reputationAnalysis)" :key="index" class="y-tick">{{ tick }}</span>
+                </div>
+                <div class="chart-bars-scroll">
                   <div 
-                    class="bar bar-orange" 
-                    :style="{ height: getBarHeight(value, trends.reputationAnalysis) + '%' }"
+                    v-for="(value, index) in trends.reputationAnalysis" 
+                    :key="index"
+                    class="bar-wrapper"
                   >
-                    <span class="bar-value">{{ value }}</span>
+                    <div 
+                      class="bar bar-orange" 
+                      :style="{ height: getBarHeight(value, trends.reputationAnalysis) + '%' }"
+                    >
+                      <span class="bar-value">{{ value }}</span>
+                    </div>
+                    <span class="bar-label">{{ getLabel(index) }}</span>
                   </div>
-                  <span class="bar-label">{{ getLabel(index) }}</span>
                 </div>
               </div>
             </div>
@@ -94,23 +132,25 @@
             <h3>竞品对比使用趋势</h3>
           </div>
           <div class="chart-body">
-            <div class="chart-container">
-              <div class="y-axis">
-                <span v-for="(tick, index) in getYAxisTicks(trends.competitorAnalysis)" :key="index" class="y-tick">{{ tick }}</span>
-              </div>
-              <div class="chart-bars">
-                <div 
-                  v-for="(value, index) in trends.competitorAnalysis" 
-                  :key="index"
-                  class="bar-wrapper"
-                >
+            <div class="chart-container-wrapper">
+              <div class="chart-container">
+                <div class="y-axis">
+                  <span v-for="(tick, index) in getYAxisTicks(trends.competitorAnalysis)" :key="index" class="y-tick">{{ tick }}</span>
+                </div>
+                <div class="chart-bars-scroll">
                   <div 
-                    class="bar bar-purple" 
-                    :style="{ height: getBarHeight(value, trends.competitorAnalysis) + '%' }"
+                    v-for="(value, index) in trends.competitorAnalysis" 
+                    :key="index"
+                    class="bar-wrapper"
                   >
-                    <span class="bar-value">{{ value }}</span>
+                    <div 
+                      class="bar bar-purple" 
+                      :style="{ height: getBarHeight(value, trends.competitorAnalysis) + '%' }"
+                    >
+                      <span class="bar-value">{{ value }}</span>
+                    </div>
+                    <span class="bar-label">{{ getLabel(index) }}</span>
                   </div>
-                  <span class="bar-label">{{ getLabel(index) }}</span>
                 </div>
               </div>
             </div>
@@ -123,23 +163,25 @@
             <h3>经营建议查看趋势</h3>
           </div>
           <div class="chart-body">
-            <div class="chart-container">
-              <div class="y-axis">
-                <span v-for="(tick, index) in getYAxisTicks(trends.businessAdvice)" :key="index" class="y-tick">{{ tick }}</span>
-              </div>
-              <div class="chart-bars">
-                <div 
-                  v-for="(value, index) in trends.businessAdvice" 
-                  :key="index"
-                  class="bar-wrapper"
-                >
+            <div class="chart-container-wrapper">
+              <div class="chart-container">
+                <div class="y-axis">
+                  <span v-for="(tick, index) in getYAxisTicks(trends.businessAdvice)" :key="index" class="y-tick">{{ tick }}</span>
+                </div>
+                <div class="chart-bars-scroll">
                   <div 
-                    class="bar bar-green" 
-                    :style="{ height: getBarHeight(value, trends.businessAdvice) + '%' }"
+                    v-for="(value, index) in trends.businessAdvice" 
+                    :key="index"
+                    class="bar-wrapper"
                   >
-                    <span class="bar-value">{{ value }}</span>
+                    <div 
+                      class="bar bar-green" 
+                      :style="{ height: getBarHeight(value, trends.businessAdvice) + '%' }"
+                    >
+                      <span class="bar-value">{{ value }}</span>
+                    </div>
+                    <span class="bar-label">{{ getLabel(index) }}</span>
                   </div>
-                  <span class="bar-label">{{ getLabel(index) }}</span>
                 </div>
               </div>
             </div>
@@ -154,21 +196,36 @@
             <h3>功能使用分布</h3>
           </div>
           <div class="pie-chart-container">
-            <svg viewBox="0 0 200 200" class="pie-chart">
-              <circle
-                v-for="(segment, index) in pieSegments"
-                :key="index"
-                cx="100"
-                cy="100"
-                r="70"
-                :fill="segment.color"
-                :stroke="'#fff'"
-                stroke-width="2"
-                :stroke-dasharray="segment.dashArray"
-                :stroke-dashoffset="segment.dashOffset"
-                :transform="'rotate(-90 100 100)'"
-              />
-            </svg>
+            <div class="pie-wrapper">
+              <svg viewBox="0 0 200 200" class="pie-chart">
+                <circle cx="100" cy="100" r="70" fill="none" stroke="#f5f5f5" stroke-width="30" />
+                <circle
+                  v-for="(segment, index) in pieSegments"
+                  :key="index"
+                  cx="100"
+                  cy="100"
+                  r="70"
+                  fill="none"
+                  :stroke="segment.color"
+                  :stroke-width="hoveredSegment === index ? 46 : 40"
+                  :stroke-dasharray="segment.dashArray"
+                  :stroke-dashoffset="segment.dashOffset"
+                  :transform="'rotate(-90 100 100)'"
+                  class="pie-segment"
+                  @mouseenter="handlePieHover(index, $event)"
+                  @mouseleave="handlePieLeave"
+                />
+              </svg>
+              <div 
+                v-if="hoveredSegment !== null" 
+                class="pie-tooltip"
+                :style="{ left: tooltipX + 'px', top: tooltipY + 'px' }"
+              >
+                <div class="tooltip-label">{{ pieLegendItems[hoveredSegment].label }}</div>
+                <div class="tooltip-value">数量：{{ pieLegendItems[hoveredSegment].value }}</div>
+                <div class="tooltip-percent">占比：{{ pieLegendItems[hoveredSegment].percent }}%</div>
+              </div>
+            </div>
             <div class="pie-legend">
               <div v-for="(item, index) in pieLegendItems" :key="index" class="legend-item">
                 <span class="legend-color" :style="{ background: item.color }"></span>
@@ -224,16 +281,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import AdminLayout from '../../components/AdminLayout.vue'
 import { getMerchantStatisticsOverview, getMerchantStatisticsTrends } from '../../api/merchantStatistics'
 
 const timeRange = ref('week')
 const timeRanges = [
-  { label: '今日', value: 'day' },
-  { label: '本周', value: 'week' },
-  { label: '本月', value: 'month' },
+  { label: '按日', value: 'day' },
+  { label: '按周', value: 'week' },
+  { label: '按月', value: 'month' },
 ]
+
+const today = new Date()
+const todayStr = today.toISOString().split('T')[0]
+
+const selectedDate = ref(todayStr)
+const selectedYear = ref(today.getFullYear())
+const selectedWeek = ref(getCurrentWeekNumber())
+const selectedMonth = ref(todayStr.substring(0, 7))
 
 const overview = ref(null)
 const trends = ref({
@@ -244,6 +309,58 @@ const trends = ref({
 })
 
 const labels = ref([])
+
+function getCurrentWeekNumber() {
+  const now = new Date()
+  const startOfYear = new Date(now.getFullYear(), 0, 1)
+  const diff = now - startOfYear
+  const oneWeek = 1000 * 60 * 60 * 24 * 7
+  return Math.ceil(diff / oneWeek)
+}
+
+const availableYears = computed(() => {
+  const currentYear = today.getFullYear()
+  return [currentYear - 1, currentYear, currentYear + 1]
+})
+
+const availableWeeks = computed(() => {
+  const options = []
+  const year = selectedYear.value
+  for (let i = 1; i <= 52; i++) {
+    const firstDay = getFirstDayOfWeek(year, i)
+    const lastDay = new Date(firstDay)
+    lastDay.setDate(lastDay.getDate() + 6)
+    const firstMonth = firstDay.getMonth() + 1
+    const firstDayNum = firstDay.getDate()
+    const lastMonth = lastDay.getMonth() + 1
+    const lastDayNum = lastDay.getDate()
+    options.push({
+      value: i,
+      label: `${firstMonth}月${firstDayNum}日-${lastMonth}月${lastDayNum}日`
+    })
+  }
+  return options
+})
+
+function getFirstDayOfWeek(year, weekNum) {
+  const date = new Date(year, 0, 1)
+  const dayOfWeek = date.getDay() || 7
+  const diff = (weekNum - 1) * 7 - (dayOfWeek - 1)
+  date.setDate(date.getDate() + diff)
+  return date
+}
+
+const monthOptions = computed(() => {
+  const options = []
+  const year = today.getFullYear()
+  for (let i = 1; i <= 12; i++) {
+    options.push({
+      value: `${year}-${String(i).padStart(2, '0')}`,
+      label: `${year}年${i}月`
+    })
+  }
+  return options
+})
 
 const metricList = computed(() => {
   if (!overview.value?.metrics) {
@@ -287,7 +404,7 @@ const totalFunctionUsage = computed(() => {
 
 const isFunctionUsageEmpty = computed(() => totalFunctionUsage.value === 0)
 
-const pieColors = ['#722ed1', '#1890ff', '#52c41a']
+const pieColors = ['#8b5cf6', '#3b82f6', '#10b981']
 
 const pieLegendItems = computed(() => {
   const m = overview.value?.metrics || {}
@@ -309,16 +426,31 @@ const pieSegments = computed(() => {
   let offset = 0
   return items.map(item => {
     const percent = totalFunctionUsage.value > 0 ? (item.value / totalFunctionUsage.value) : 0
-    const length = percent * circumference
     const segment = {
       color: item.color,
-      dashArray: `${length} ${circumference - length}`,
+      dashArray: `${percent * circumference} ${circumference}`,
       dashOffset: -offset
     }
-    offset += length
+    offset += percent * circumference
     return segment
   })
 })
+
+const hoveredSegment = ref(null)
+const tooltipX = ref(0)
+const tooltipY = ref(0)
+
+const handlePieHover = (index, event) => {
+  hoveredSegment.value = index
+  const rect = event.currentTarget.getBoundingClientRect()
+  const wrapperRect = event.currentTarget.closest('.pie-wrapper').getBoundingClientRect()
+  tooltipX.value = event.clientX - wrapperRect.left + 15
+  tooltipY.value = event.clientY - wrapperRect.top - 60
+}
+
+const handlePieLeave = () => {
+  hoveredSegment.value = null
+}
 
 const formatValue = (value) => {
   if (!value) return '0'
@@ -364,11 +496,41 @@ const setTimeRange = async (range) => {
   await loadData()
 }
 
+watch(selectedYear, () => {
+  if (selectedWeek.value > 52) {
+    selectedWeek.value = 52
+  }
+})
+
+const handleDateChange = async () => {
+  await loadData()
+}
+
+const handleWeekChange = async () => {
+  await loadData()
+}
+
+const handleMonthChange = async () => {
+  await loadData()
+}
+
 const loadData = async () => {
   try {
+    const params = {
+      timeRange: timeRange.value
+    }
+    
+    if (timeRange.value === 'day') {
+      params.date = selectedDate.value
+    } else if (timeRange.value === 'week') {
+      params.week = `${selectedYear.value}-W${String(selectedWeek.value).padStart(2, '0')}`
+    } else {
+      params.month = selectedMonth.value
+    }
+
     const [overviewRes, trendsRes] = await Promise.all([
-      getMerchantStatisticsOverview({ timeRange: timeRange.value }),
-      getMerchantStatisticsTrends({ timeRange: timeRange.value }),
+      getMerchantStatisticsOverview(params),
+      getMerchantStatisticsTrends(params),
     ])
 
     if (overviewRes.success) {
@@ -399,6 +561,7 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   margin-bottom: 24px;
+  flex-wrap: wrap;
 }
 
 .filter-label {
@@ -433,6 +596,33 @@ onMounted(() => {
   border-color: #1890ff;
   background: #1890ff;
   color: #fff;
+}
+
+.date-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selector-label {
+  font-size: 14px;
+  color: #5a6a7a;
+}
+
+.date-input, .week-select, .month-select {
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1f2d3d;
+  background: #fff;
+  cursor: pointer;
+}
+
+.date-input:focus, .week-select:focus, .month-select:focus {
+  outline: none;
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
 }
 
 .metrics-grid {
@@ -534,10 +724,36 @@ onMounted(() => {
   position: relative;
 }
 
+.chart-container-wrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #d9d9d9 transparent;
+}
+
+.chart-container-wrapper::-webkit-scrollbar {
+  height: 6px;
+}
+
+.chart-container-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chart-container-wrapper::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+.chart-container-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}
+
 .chart-container {
-  height: 220px;
   display: flex;
   position: relative;
+  min-width: max-content;
+  height: 220px;
 }
 
 .y-axis {
@@ -547,6 +763,7 @@ onMounted(() => {
   width: 40px;
   padding-right: 12px;
   border-right: 1px solid #f0f0f0;
+  flex-shrink: 0;
 }
 
 .y-tick {
@@ -555,18 +772,18 @@ onMounted(() => {
   text-align: right;
 }
 
-.chart-bars {
-  flex: 1;
+.chart-bars-scroll {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
-  height: 100%;
   gap: 8px;
+  height: 100%;
   padding-left: 12px;
+  padding-bottom: 4px;
 }
 
 .bar-wrapper {
-  flex: 1;
+  flex-shrink: 0;
+  width: 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -577,7 +794,7 @@ onMounted(() => {
 
 .bar {
   width: 100%;
-  max-width: 40px;
+  max-width: 36px;
   background: linear-gradient(180deg, #1890ff 0%, #40a9ff 100%);
   border-radius: 6px 6px 0 0;
   min-height: 4px;
@@ -660,9 +877,24 @@ onMounted(() => {
   padding: 24px;
 }
 
-.pie-chart {
+.pie-wrapper {
+  position: relative;
   width: 200px;
   height: 200px;
+}
+
+.pie-chart {
+  width: 100%;
+  height: 100%;
+}
+
+.pie-segment {
+  cursor: pointer;
+  transition: opacity 0.3s ease;
+}
+
+.pie-segment:hover {
+  opacity: 0.7;
 }
 
 .pie-legend {
@@ -701,6 +933,29 @@ onMounted(() => {
   color: #909399;
   min-width: 40px;
   text-align: right;
+}
+
+.pie-tooltip {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.pie-tooltip .tooltip-label {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.pie-tooltip .tooltip-value,
+.pie-tooltip .tooltip-percent {
+  opacity: 0.9;
+  margin-top: 4px;
 }
 
 .reply-rate-card {
@@ -792,6 +1047,11 @@ onMounted(() => {
   .reply-rate-content {
     flex-direction: column;
     gap: 20px;
+  }
+
+  .time-filter {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

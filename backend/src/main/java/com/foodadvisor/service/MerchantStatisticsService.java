@@ -3,11 +3,16 @@ package com.foodadvisor.service;
 import com.foodadvisor.mapper.MerchantStatisticsMapper;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.Year;
+import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.WeekFields;
 import java.util.*;
 
 @Service
@@ -19,9 +24,9 @@ public class MerchantStatisticsService {
         this.statisticsMapper = statisticsMapper;
     }
 
-    public Map<String, Object> getOverview(String timeRange, String role, Long merchantId) {
-        OffsetDateTime startTime = getStartTime(timeRange);
-        OffsetDateTime endTime = OffsetDateTime.now(ZoneOffset.UTC);
+    public Map<String, Object> getOverview(String timeRange, String date, String week, String month, String role, Long merchantId) {
+        OffsetDateTime startTime = getStartTime(timeRange, date, week, month);
+        OffsetDateTime endTime = getEndTime(timeRange, date, week, month);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("timeRange", timeRange);
@@ -57,26 +62,26 @@ public class MerchantStatisticsService {
         return result;
     }
 
-    public Map<String, Object> getTrends(String timeRange, String role, Long merchantId) {
-        OffsetDateTime startTime = getStartTime(timeRange);
-        OffsetDateTime endTime = OffsetDateTime.now(ZoneOffset.UTC);
+    public Map<String, Object> getTrends(String timeRange, String date, String week, String month, String role, Long merchantId) {
+        OffsetDateTime startTime = getStartTime(timeRange, date, week, month);
+        OffsetDateTime endTime = getEndTime(timeRange, date, week, month);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("timeRange", timeRange);
-        result.put("labels", generateTimeLabels(timeRange));
+        result.put("labels", generateTimeLabels(timeRange, date, week, month));
 
         Map<String, List<Long>> trends = new LinkedHashMap<>();
 
         if ("ADMIN".equalsIgnoreCase(role)) {
-            trends.put("activeMerchants", getActiveMerchantTrend(timeRange, startTime, endTime));
-            trends.put("reputationAnalysis", getReputationAnalysisTrend(timeRange, startTime, endTime));
-            trends.put("competitorAnalysis", getCompetitorAnalysisTrend(timeRange, startTime, endTime));
-            trends.put("businessAdvice", getBusinessAdviceTrend(timeRange, startTime, endTime));
+            trends.put("activeMerchants", getActiveMerchantTrend(timeRange, date, week, month, startTime, endTime));
+            trends.put("reputationAnalysis", getReputationAnalysisTrend(timeRange, date, week, month, startTime, endTime));
+            trends.put("competitorAnalysis", getCompetitorAnalysisTrend(timeRange, date, week, month, startTime, endTime));
+            trends.put("businessAdvice", getBusinessAdviceTrend(timeRange, date, week, month, startTime, endTime));
         } else {
-            trends.put("activeMerchants", getSingleMerchantActiveTrend(timeRange, merchantId, startTime, endTime));
-            trends.put("reputationAnalysis", getSingleMerchantReputationTrend(timeRange, merchantId, startTime, endTime));
-            trends.put("competitorAnalysis", getSingleMerchantCompetitorTrend(timeRange, merchantId, startTime, endTime));
-            trends.put("businessAdvice", getSingleMerchantBusinessAdviceTrend(timeRange, merchantId, startTime, endTime));
+            trends.put("activeMerchants", getSingleMerchantActiveTrend(timeRange, date, week, month, merchantId, startTime, endTime));
+            trends.put("reputationAnalysis", getSingleMerchantReputationTrend(timeRange, date, week, month, merchantId, startTime, endTime));
+            trends.put("competitorAnalysis", getSingleMerchantCompetitorTrend(timeRange, date, week, month, merchantId, startTime, endTime));
+            trends.put("businessAdvice", getSingleMerchantBusinessAdviceTrend(timeRange, date, week, month, merchantId, startTime, endTime));
         }
 
         result.put("trends", trends);
@@ -84,45 +89,170 @@ public class MerchantStatisticsService {
         return result;
     }
 
-    private OffsetDateTime getStartTime(String timeRange) {
-        LocalDateTime localStart;
-        switch (timeRange) {
-            case "day":
-                localStart = LocalDateTime.now().minusDays(1);
-                break;
-            case "month":
-                localStart = LocalDateTime.now().minusMonths(1);
-                break;
-            case "week":
-            default:
-                localStart = LocalDateTime.now().minusWeeks(1);
-                break;
-        }
-        return localStart.atOffset(ZoneOffset.UTC);
-    }
-
-    private List<String> generateTimeLabels(String timeRange) {
-        List<String> labels = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
+    private OffsetDateTime getStartTime(String timeRange, String date, String week, String month) {
+        OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
         
         switch (timeRange) {
             case "day":
-                for (int i = 23; i >= 0; i--) {
-                    labels.add(String.format("%02d:00", now.minusHours(i).getHour()));
+                if (date != null && !date.isEmpty()) {
+                    try {
+                        LocalDate localDate = LocalDate.parse(date);
+                        return localDate.atStartOfDay().atOffset(ZoneOffset.UTC);
+                    } catch (DateTimeParseException e) {
+                        return nowUtc.toLocalDate().atStartOfDay().atOffset(ZoneOffset.UTC);
+                    }
                 }
-                break;
+                return nowUtc.minusDays(1).toLocalDate().atStartOfDay().atOffset(ZoneOffset.UTC);
+                
             case "month":
-                for (int i = 29; i >= 0; i--) {
-                    LocalDateTime d = now.minusDays(i);
-                    labels.add(String.format("%d/%d", d.getMonthValue(), d.getDayOfMonth()));
+                if (month != null && !month.isEmpty()) {
+                    try {
+                        YearMonth yearMonth = YearMonth.parse(month);
+                        return yearMonth.atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    } catch (DateTimeParseException e) {
+                        return YearMonth.from(nowUtc).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    }
                 }
-                break;
+                return YearMonth.from(nowUtc.minusMonths(1)).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                
             case "week":
             default:
-                for (int i = 6; i >= 0; i--) {
-                    LocalDateTime d = now.minusDays(i);
-                    String[] weekDays = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
-                    labels.add(weekDays[d.getDayOfWeek().getValue() % 7]);
+                if (week != null && !week.isEmpty()) {
+                    try {
+                        String[] parts = week.split("-W");
+                        if (parts.length == 2) {
+                            int year = Integer.parseInt(parts[0]);
+                            int weekNum = Integer.parseInt(parts[1]);
+                            WeekFields weekFields = WeekFields.ISO;
+                            LocalDate monday = LocalDate.of(year, 1, 1)
+                                    .with(weekFields.weekOfYear(), weekNum)
+                                    .with(weekFields.dayOfWeek(), 1);
+                            return monday.atStartOfDay().atOffset(ZoneOffset.UTC);
+                        }
+                    } catch (Exception e) {
+                        // fall through
+                    }
+                }
+                LocalDateTime now = nowUtc.toLocalDateTime();
+                LocalDateTime monday = now.minusDays(now.getDayOfWeek().getValue() - 1);
+                return monday.toLocalDate().atStartOfDay().atOffset(ZoneOffset.UTC);
+        }
+    }
+
+    private OffsetDateTime getEndTime(String timeRange, String date, String week, String month) {
+        OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+        
+        switch (timeRange) {
+            case "day":
+                if (date != null && !date.isEmpty()) {
+                    try {
+                        LocalDate localDate = LocalDate.parse(date);
+                        return localDate.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    } catch (DateTimeParseException e) {
+                        return nowUtc.toLocalDate().plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    }
+                }
+                return nowUtc.toLocalDate().atStartOfDay().atOffset(ZoneOffset.UTC);
+                
+            case "month":
+                if (month != null && !month.isEmpty()) {
+                    try {
+                        YearMonth yearMonth = YearMonth.parse(month);
+                        return yearMonth.plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    } catch (DateTimeParseException e) {
+                        return YearMonth.from(nowUtc).plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    }
+                }
+                return YearMonth.from(nowUtc).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                
+            case "week":
+            default:
+                if (week != null && !week.isEmpty()) {
+                    try {
+                        String[] parts = week.split("-W");
+                        if (parts.length == 2) {
+                            int year = Integer.parseInt(parts[0]);
+                            int weekNum = Integer.parseInt(parts[1]);
+                            WeekFields weekFields = WeekFields.ISO;
+                            LocalDate monday = LocalDate.of(year, 1, 1)
+                                    .with(weekFields.weekOfYear(), weekNum)
+                                    .with(weekFields.dayOfWeek(), 1);
+                            return monday.plusDays(7).atStartOfDay().atOffset(ZoneOffset.UTC);
+                        }
+                    } catch (Exception e) {
+                        // fall through
+                    }
+                }
+                LocalDateTime now = nowUtc.toLocalDateTime();
+                LocalDateTime monday = now.minusDays(now.getDayOfWeek().getValue() - 1);
+                return monday.plusDays(7).toLocalDate().atStartOfDay().atOffset(ZoneOffset.UTC);
+        }
+    }
+
+    private List<String> generateTimeLabels(String timeRange, String date, String week, String month) {
+        List<String> labels = new ArrayList<>();
+        OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+        LocalDateTime now = nowUtc.toLocalDateTime();
+        
+        switch (timeRange) {
+            case "day":
+                LocalDate targetDate;
+                if (date != null && !date.isEmpty()) {
+                    try {
+                        targetDate = LocalDate.parse(date);
+                    } catch (DateTimeParseException e) {
+                        targetDate = nowUtc.toLocalDate().minusDays(1);
+                    }
+                } else {
+                    targetDate = nowUtc.toLocalDate().minusDays(1);
+                }
+                for (int i = 0; i < 24; i++) {
+                    labels.add(String.format("%02d:00", i));
+                }
+                break;
+                
+            case "month":
+                YearMonth targetMonth;
+                if (month != null && !month.isEmpty()) {
+                    try {
+                        targetMonth = YearMonth.parse(month);
+                    } catch (DateTimeParseException e) {
+                        targetMonth = YearMonth.from(nowUtc);
+                    }
+                } else {
+                    targetMonth = YearMonth.from(nowUtc);
+                }
+                int daysInMonth = targetMonth.lengthOfMonth();
+                for (int i = 1; i <= daysInMonth; i++) {
+                    labels.add(String.format("%d/%d", targetMonth.getMonthValue(), i));
+                }
+                break;
+                
+            case "week":
+            default:
+                LocalDate startOfWeek;
+                if (week != null && !week.isEmpty()) {
+                    try {
+                        String[] parts = week.split("-W");
+                        if (parts.length == 2) {
+                            int year = Integer.parseInt(parts[0]);
+                            int weekNum = Integer.parseInt(parts[1]);
+                            WeekFields weekFields = WeekFields.ISO;
+                            startOfWeek = LocalDate.of(year, 1, 1)
+                                    .with(weekFields.weekOfYear(), weekNum)
+                                    .with(weekFields.dayOfWeek(), 1);
+                        } else {
+                            startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                        }
+                    } catch (Exception e) {
+                        startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                    }
+                } else {
+                    startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                }
+                String[] weekDays = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
+                for (int i = 0; i <= 6; i++) {
+                    labels.add(weekDays[i]);
                 }
                 break;
         }
@@ -259,32 +389,80 @@ public class MerchantStatisticsService {
         }
     }
 
-    private List<Long> getActiveMerchantTrend(String timeRange, OffsetDateTime startTime, OffsetDateTime endTime) {
+    private List<Long> getActiveMerchantTrend(String timeRange, String date, String week, String month, 
+            OffsetDateTime startTime, OffsetDateTime endTime) {
         List<Long> trend = new ArrayList<>();
-        int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
         
         try {
             List<Map<String, Object>> rawData = statisticsMapper.getActiveMerchantTrend(startTime, endTime);
             Map<String, Long> dataMap = new HashMap<>();
-            DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
             
             for (Map<String, Object> row : rawData) {
-                String date = row.get("date").toString();
-                dataMap.put(date.substring(0, 10), ((Number) row.get("count")).longValue());
+                String dateStr = row.get("date").toString();
+                dataMap.put(dateStr.substring(0, 10), ((Number) row.get("count")).longValue());
             }
             
-            LocalDateTime now = LocalDateTime.now();
-            for (int i = size - 1; i >= 0; i--) {
-                LocalDateTime d;
-                if (timeRange.equals("day")) {
-                    d = now.minusHours(i);
+            OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+            
+            if ("week".equals(timeRange)) {
+                LocalDate startOfWeek;
+                if (week != null && !week.isEmpty()) {
+                    try {
+                        String[] parts = week.split("-W");
+                        if (parts.length == 2) {
+                            int year = Integer.parseInt(parts[0]);
+                            int weekNum = Integer.parseInt(parts[1]);
+                            WeekFields weekFields = WeekFields.ISO;
+                            startOfWeek = LocalDate.of(year, 1, 1)
+                                    .with(weekFields.weekOfYear(), weekNum)
+                                    .with(weekFields.dayOfWeek(), 1);
+                        } else {
+                            startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                        }
+                    } catch (Exception e) {
+                        startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                    }
                 } else {
-                    d = now.minusDays(i);
+                    startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
                 }
-                String key = d.toLocalDate().toString();
-                trend.add(dataMap.getOrDefault(key, 0L));
+                for (int i = 0; i <= 6; i++) {
+                    String key = startOfWeek.plusDays(i).toString();
+                    trend.add(dataMap.getOrDefault(key, 0L));
+                }
+            } else if ("day".equals(timeRange)) {
+                LocalDate targetDate;
+                if (date != null && !date.isEmpty()) {
+                    try {
+                        targetDate = LocalDate.parse(date);
+                    } catch (DateTimeParseException e) {
+                        targetDate = nowUtc.toLocalDate().minusDays(1);
+                    }
+                } else {
+                    targetDate = nowUtc.toLocalDate().minusDays(1);
+                }
+                for (int i = 0; i < 24; i++) {
+                    String key = targetDate.toString();
+                    trend.add(dataMap.getOrDefault(key, 0L));
+                }
+            } else {
+                YearMonth targetMonth;
+                if (month != null && !month.isEmpty()) {
+                    try {
+                        targetMonth = YearMonth.parse(month);
+                    } catch (DateTimeParseException e) {
+                        targetMonth = YearMonth.from(nowUtc);
+                    }
+                } else {
+                    targetMonth = YearMonth.from(nowUtc);
+                }
+                int daysInMonth = targetMonth.lengthOfMonth();
+                for (int i = 1; i <= daysInMonth; i++) {
+                    String key = targetMonth.atDay(i).toString();
+                    trend.add(dataMap.getOrDefault(key, 0L));
+                }
             }
         } catch (Exception e) {
+            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
             for (int i = 0; i < size; i++) {
                 trend.add(0L);
             }
@@ -292,41 +470,93 @@ public class MerchantStatisticsService {
         return trend;
     }
 
-    private List<Long> getReputationAnalysisTrend(String timeRange, OffsetDateTime startTime, OffsetDateTime endTime) {
-        return getModuleTrend(timeRange, statisticsMapper.getReputationAnalysisTrend(startTime, endTime));
+    private List<Long> getReputationAnalysisTrend(String timeRange, String date, String week, String month,
+            OffsetDateTime startTime, OffsetDateTime endTime) {
+        return getModuleTrend(timeRange, date, week, month, statisticsMapper.getReputationAnalysisTrend(startTime, endTime));
     }
 
-    private List<Long> getCompetitorAnalysisTrend(String timeRange, OffsetDateTime startTime, OffsetDateTime endTime) {
-        return getModuleTrend(timeRange, statisticsMapper.getCompetitorAnalysisTrend(startTime, endTime));
+    private List<Long> getCompetitorAnalysisTrend(String timeRange, String date, String week, String month,
+            OffsetDateTime startTime, OffsetDateTime endTime) {
+        return getModuleTrend(timeRange, date, week, month, statisticsMapper.getCompetitorAnalysisTrend(startTime, endTime));
     }
 
-    private List<Long> getBusinessAdviceTrend(String timeRange, OffsetDateTime startTime, OffsetDateTime endTime) {
-        return getModuleTrend(timeRange, statisticsMapper.getBusinessAdviceTrend(startTime, endTime));
+    private List<Long> getBusinessAdviceTrend(String timeRange, String date, String week, String month,
+            OffsetDateTime startTime, OffsetDateTime endTime) {
+        return getModuleTrend(timeRange, date, week, month, statisticsMapper.getBusinessAdviceTrend(startTime, endTime));
     }
 
-    private List<Long> getModuleTrend(String timeRange, List<Map<String, Object>> rawData) {
+    private List<Long> getModuleTrend(String timeRange, String date, String week, String month, 
+            List<Map<String, Object>> rawData) {
         List<Long> trend = new ArrayList<>();
-        int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
         
         try {
             Map<String, Long> dataMap = new HashMap<>();
             for (Map<String, Object> row : rawData) {
-                String date = row.get("date").toString();
-                dataMap.put(date.substring(0, 10), ((Number) row.get("count")).longValue());
+                String dateStr = row.get("date").toString();
+                dataMap.put(dateStr.substring(0, 10), ((Number) row.get("count")).longValue());
             }
             
-            LocalDateTime now = LocalDateTime.now();
-            for (int i = size - 1; i >= 0; i--) {
-                LocalDateTime d;
-                if (timeRange.equals("day")) {
-                    d = now.minusHours(i);
+            OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+            
+            if ("week".equals(timeRange)) {
+                LocalDate startOfWeek;
+                if (week != null && !week.isEmpty()) {
+                    try {
+                        String[] parts = week.split("-W");
+                        if (parts.length == 2) {
+                            int year = Integer.parseInt(parts[0]);
+                            int weekNum = Integer.parseInt(parts[1]);
+                            WeekFields weekFields = WeekFields.ISO;
+                            startOfWeek = LocalDate.of(year, 1, 1)
+                                    .with(weekFields.weekOfYear(), weekNum)
+                                    .with(weekFields.dayOfWeek(), 1);
+                        } else {
+                            startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                        }
+                    } catch (Exception e) {
+                        startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                    }
                 } else {
-                    d = now.minusDays(i);
+                    startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
                 }
-                String key = d.toLocalDate().toString();
-                trend.add(dataMap.getOrDefault(key, 0L));
+                for (int i = 0; i <= 6; i++) {
+                    String key = startOfWeek.plusDays(i).toString();
+                    trend.add(dataMap.getOrDefault(key, 0L));
+                }
+            } else if ("day".equals(timeRange)) {
+                LocalDate targetDate;
+                if (date != null && !date.isEmpty()) {
+                    try {
+                        targetDate = LocalDate.parse(date);
+                    } catch (DateTimeParseException e) {
+                        targetDate = nowUtc.toLocalDate().minusDays(1);
+                    }
+                } else {
+                    targetDate = nowUtc.toLocalDate().minusDays(1);
+                }
+                for (int i = 0; i < 24; i++) {
+                    String key = targetDate.toString();
+                    trend.add(dataMap.getOrDefault(key, 0L));
+                }
+            } else {
+                YearMonth targetMonth;
+                if (month != null && !month.isEmpty()) {
+                    try {
+                        targetMonth = YearMonth.parse(month);
+                    } catch (DateTimeParseException e) {
+                        targetMonth = YearMonth.from(nowUtc);
+                    }
+                } else {
+                    targetMonth = YearMonth.from(nowUtc);
+                }
+                int daysInMonth = targetMonth.lengthOfMonth();
+                for (int i = 1; i <= daysInMonth; i++) {
+                    String key = targetMonth.atDay(i).toString();
+                    trend.add(dataMap.getOrDefault(key, 0L));
+                }
             }
         } catch (Exception e) {
+            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
             for (int i = 0; i < size; i++) {
                 trend.add(0L);
             }
@@ -334,25 +564,78 @@ public class MerchantStatisticsService {
         return trend;
     }
 
-    private List<Long> getSingleMerchantActiveTrend(String timeRange, Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime) {
+    private List<Long> getSingleMerchantActiveTrend(String timeRange, String date, String week, String month,
+            Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime) {
         List<Long> trend = new ArrayList<>();
-        int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
         
         try {
-            LocalDateTime now = LocalDateTime.now();
-            for (int i = size - 1; i >= 0; i--) {
-                OffsetDateTime start, end;
-                if (timeRange.equals("day")) {
-                    start = now.minusHours(i).atOffset(ZoneOffset.UTC);
-                    end = now.minusHours(i - 1).atOffset(ZoneOffset.UTC);
+            OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+            
+            if ("week".equals(timeRange)) {
+                LocalDate startOfWeek;
+                if (week != null && !week.isEmpty()) {
+                    try {
+                        String[] parts = week.split("-W");
+                        if (parts.length == 2) {
+                            int year = Integer.parseInt(parts[0]);
+                            int weekNum = Integer.parseInt(parts[1]);
+                            WeekFields weekFields = WeekFields.ISO;
+                            startOfWeek = LocalDate.of(year, 1, 1)
+                                    .with(weekFields.weekOfYear(), weekNum)
+                                    .with(weekFields.dayOfWeek(), 1);
+                        } else {
+                            startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                        }
+                    } catch (Exception e) {
+                        startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                    }
                 } else {
-                    start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                    end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
                 }
-                Long count = statisticsMapper.countActiveMerchantById(merchantId, start, end);
-                trend.add(count != null && count > 0 ? 1L : 0L);
+                for (int i = 0; i <= 6; i++) {
+                    OffsetDateTime start = startOfWeek.plusDays(i).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    OffsetDateTime end = startOfWeek.plusDays(i + 1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    Long count = statisticsMapper.countActiveMerchantById(merchantId, start, end);
+                    trend.add(count != null && count > 0 ? 1L : 0L);
+                }
+            } else if ("day".equals(timeRange)) {
+                LocalDate targetDate;
+                if (date != null && !date.isEmpty()) {
+                    try {
+                        targetDate = LocalDate.parse(date);
+                    } catch (DateTimeParseException e) {
+                        targetDate = nowUtc.toLocalDate().minusDays(1);
+                    }
+                } else {
+                    targetDate = nowUtc.toLocalDate().minusDays(1);
+                }
+                for (int i = 0; i < 24; i++) {
+                    OffsetDateTime start = targetDate.atTime(i, 0).atOffset(ZoneOffset.UTC);
+                    OffsetDateTime end = targetDate.atTime(i + 1, 0).atOffset(ZoneOffset.UTC);
+                    Long count = statisticsMapper.countActiveMerchantById(merchantId, start, end);
+                    trend.add(count != null && count > 0 ? 1L : 0L);
+                }
+            } else {
+                YearMonth targetMonth;
+                if (month != null && !month.isEmpty()) {
+                    try {
+                        targetMonth = YearMonth.parse(month);
+                    } catch (DateTimeParseException e) {
+                        targetMonth = YearMonth.from(nowUtc);
+                    }
+                } else {
+                    targetMonth = YearMonth.from(nowUtc);
+                }
+                int daysInMonth = targetMonth.lengthOfMonth();
+                for (int i = 1; i <= daysInMonth; i++) {
+                    OffsetDateTime start = targetMonth.atDay(i).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    OffsetDateTime end = targetMonth.atDay(i + 1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    Long count = statisticsMapper.countActiveMerchantById(merchantId, start, end);
+                    trend.add(count != null && count > 0 ? 1L : 0L);
+                }
             }
         } catch (Exception e) {
+            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
             for (int i = 0; i < size; i++) {
                 trend.add(0L);
             }
@@ -360,42 +643,108 @@ public class MerchantStatisticsService {
         return trend;
     }
 
-    private List<Long> getSingleMerchantReputationTrend(String timeRange, Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime) {
-        return getSingleMerchantModuleTrend(timeRange, merchantId, startTime, endTime, true);
+    private List<Long> getSingleMerchantReputationTrend(String timeRange, String date, String week, String month,
+            Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime) {
+        return getSingleMerchantModuleTrend(timeRange, date, week, month, merchantId, startTime, endTime, true);
     }
 
-    private List<Long> getSingleMerchantCompetitorTrend(String timeRange, Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime) {
-        return getSingleMerchantModuleTrend(timeRange, merchantId, startTime, endTime, false);
+    private List<Long> getSingleMerchantCompetitorTrend(String timeRange, String date, String week, String month,
+            Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime) {
+        return getSingleMerchantModuleTrend(timeRange, date, week, month, merchantId, startTime, endTime, false);
     }
 
-    private List<Long> getSingleMerchantBusinessAdviceTrend(String timeRange, Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime) {
-        return getSingleMerchantModuleTrend(timeRange, merchantId, startTime, endTime, false);
+    private List<Long> getSingleMerchantBusinessAdviceTrend(String timeRange, String date, String week, String month,
+            Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime) {
+        return getSingleMerchantModuleTrend(timeRange, date, week, month, merchantId, startTime, endTime, false);
     }
 
-    private List<Long> getSingleMerchantModuleTrend(String timeRange, Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime, boolean isReputation) {
+    private List<Long> getSingleMerchantModuleTrend(String timeRange, String date, String week, String month,
+            Long merchantId, OffsetDateTime startTime, OffsetDateTime endTime, boolean isReputation) {
         List<Long> trend = new ArrayList<>();
-        int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
         
         try {
-            LocalDateTime now = LocalDateTime.now();
-            for (int i = size - 1; i >= 0; i--) {
-                OffsetDateTime start, end;
-                if (timeRange.equals("day")) {
-                    start = now.minusHours(i).atOffset(ZoneOffset.UTC);
-                    end = now.minusHours(i - 1).atOffset(ZoneOffset.UTC);
+            OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+            
+            if ("week".equals(timeRange)) {
+                LocalDate startOfWeek;
+                if (week != null && !week.isEmpty()) {
+                    try {
+                        String[] parts = week.split("-W");
+                        if (parts.length == 2) {
+                            int year = Integer.parseInt(parts[0]);
+                            int weekNum = Integer.parseInt(parts[1]);
+                            WeekFields weekFields = WeekFields.ISO;
+                            startOfWeek = LocalDate.of(year, 1, 1)
+                                    .with(weekFields.weekOfYear(), weekNum)
+                                    .with(weekFields.dayOfWeek(), 1);
+                        } else {
+                            startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                        }
+                    } catch (Exception e) {
+                        startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
+                    }
                 } else {
-                    start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                    end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    startOfWeek = nowUtc.toLocalDate().minusDays(nowUtc.getDayOfWeek().getValue() - 1);
                 }
-                Long count;
-                if (isReputation) {
-                    count = statisticsMapper.countReputationAnalysisCallsByMerchant(merchantId, start, end);
+                for (int i = 0; i <= 6; i++) {
+                    OffsetDateTime start = startOfWeek.plusDays(i).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    OffsetDateTime end = startOfWeek.plusDays(i + 1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    Long count;
+                    if (isReputation) {
+                        count = statisticsMapper.countReputationAnalysisCallsByMerchant(merchantId, start, end);
+                    } else {
+                        count = statisticsMapper.countCompetitorAnalysisCallsByMerchant(merchantId, start, end);
+                    }
+                    trend.add(count != null ? count : 0L);
+                }
+            } else if ("day".equals(timeRange)) {
+                LocalDate targetDate;
+                if (date != null && !date.isEmpty()) {
+                    try {
+                        targetDate = LocalDate.parse(date);
+                    } catch (DateTimeParseException e) {
+                        targetDate = nowUtc.toLocalDate().minusDays(1);
+                    }
                 } else {
-                    count = statisticsMapper.countCompetitorAnalysisCallsByMerchant(merchantId, start, end);
+                    targetDate = nowUtc.toLocalDate().minusDays(1);
                 }
-                trend.add(count != null ? count : 0L);
+                for (int i = 0; i < 24; i++) {
+                    OffsetDateTime start = targetDate.atTime(i, 0).atOffset(ZoneOffset.UTC);
+                    OffsetDateTime end = targetDate.atTime(i + 1, 0).atOffset(ZoneOffset.UTC);
+                    Long count;
+                    if (isReputation) {
+                        count = statisticsMapper.countReputationAnalysisCallsByMerchant(merchantId, start, end);
+                    } else {
+                        count = statisticsMapper.countCompetitorAnalysisCallsByMerchant(merchantId, start, end);
+                    }
+                    trend.add(count != null ? count : 0L);
+                }
+            } else {
+                YearMonth targetMonth;
+                if (month != null && !month.isEmpty()) {
+                    try {
+                        targetMonth = YearMonth.parse(month);
+                    } catch (DateTimeParseException e) {
+                        targetMonth = YearMonth.from(nowUtc);
+                    }
+                } else {
+                    targetMonth = YearMonth.from(nowUtc);
+                }
+                int daysInMonth = targetMonth.lengthOfMonth();
+                for (int i = 1; i <= daysInMonth; i++) {
+                    OffsetDateTime start = targetMonth.atDay(i).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    OffsetDateTime end = targetMonth.atDay(i + 1).atStartOfDay().atOffset(ZoneOffset.UTC);
+                    Long count;
+                    if (isReputation) {
+                        count = statisticsMapper.countReputationAnalysisCallsByMerchant(merchantId, start, end);
+                    } else {
+                        count = statisticsMapper.countCompetitorAnalysisCallsByMerchant(merchantId, start, end);
+                    }
+                    trend.add(count != null ? count : 0L);
+                }
             }
         } catch (Exception e) {
+            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
             for (int i = 0; i < size; i++) {
                 trend.add(0L);
             }

@@ -67,6 +67,13 @@
               <div class="stat-label">点击次数</div>
             </div>
           </div>
+          <div class="stat-card">
+            <div class="stat-icon">💬</div>
+            <div class="stat-info">
+              <div class="stat-value">{{ formatNumber(stats.feedbackCount || 0) }}</div>
+              <div class="stat-label">反馈次数</div>
+            </div>
+          </div>
         </div>
 
         <div class="charts-row">
@@ -183,7 +190,7 @@
               class="rank-item"
             >
               <span :class="['rank-number', { top: index < 3 }]">{{ index + 1 }}</span>
-              <span class="rank-keyword">{{ item.tag }}</span>
+              <span class="rank-keyword">{{ item.tagname || item.tagName || item.tag }}</span>
               <span class="rank-count">{{ item.count }}次</span>
             </div>
             <div v-if="hotTags.length === 0" class="empty-state">
@@ -279,15 +286,11 @@ const hotTags = computed(() => stats.value.hotTags || [])
 const eventStats = computed(() => stats.value.eventStats || [])
 
 const searchCount = computed(() => {
-  const searchStat = eventStats.value.find(e => e.eventType === 'SEARCH')
-  return searchStat ? searchStat.count : 0
+  return stats.value.searchCount || 0
 })
 
 const clickCount = computed(() => {
-  const clickTypes = ['MERCHANT_CLICK', 'TOPIC_CLICK', 'TAG_CLICK']
-  return eventStats.value
-    .filter(e => clickTypes.includes(e.eventType))
-    .reduce((sum, e) => sum + (e.count || 0), 0)
+  return stats.value.clickCount || 0
 })
 
 const dailyTrendData = computed(() => {

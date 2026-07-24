@@ -3,10 +3,13 @@ package com.foodadvisor.controller;
 import com.foodadvisor.common.ApiResponse;
 import com.foodadvisor.security.AdminAccessGuard;
 import com.foodadvisor.service.BehaviorAnalysisService;
+import com.foodadvisor.service.UserBehaviorService;
+import com.foodadvisor.entity.UserBehaviorLog;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -15,10 +18,14 @@ public class BehaviorAnalysisController {
 
     private final BehaviorAnalysisService behaviorAnalysisService;
     private final AdminAccessGuard adminAccessGuard;
+    private final UserBehaviorService userBehaviorService;
 
-    public BehaviorAnalysisController(BehaviorAnalysisService behaviorAnalysisService, AdminAccessGuard adminAccessGuard) {
+    public BehaviorAnalysisController(BehaviorAnalysisService behaviorAnalysisService, 
+                                     AdminAccessGuard adminAccessGuard,
+                                     UserBehaviorService userBehaviorService) {
         this.behaviorAnalysisService = behaviorAnalysisService;
         this.adminAccessGuard = adminAccessGuard;
+        this.userBehaviorService = userBehaviorService;
     }
 
     @GetMapping("/overview")
@@ -125,5 +132,42 @@ public class BehaviorAnalysisController {
         } else {
             return ApiResponse.failure("EVENT_REPORT_FAILED", (String) result.get("message"));
         }
+    }
+
+    @GetMapping("/stats")
+    public ApiResponse<Object> getStats(
+            @RequestParam(required = false) OffsetDateTime startTime,
+            @RequestParam(required = false) OffsetDateTime endTime,
+            HttpServletRequest request) {
+
+        adminAccessGuard.requireAdmin(request);
+
+        if (startTime == null) {
+            startTime = OffsetDateTime.now().minusDays(7);
+        }
+        if (endTime == null) {
+            endTime = OffsetDateTime.now();
+        }
+
+        return ApiResponse.success(userBehaviorService.getStats(startTime, endTime));
+    }
+
+    @GetMapping("/logs")
+    public ApiResponse<List<UserBehaviorLog>> getLogs(
+            @RequestParam(required = false) OffsetDateTime startTime,
+            @RequestParam(required = false) OffsetDateTime endTime,
+            @RequestParam(required = false) String eventType,
+            HttpServletRequest request) {
+
+        adminAccessGuard.requireAdmin(request);
+
+        if (startTime == null) {
+            startTime = OffsetDateTime.now().minusDays(7);
+        }
+        if (endTime == null) {
+            endTime = OffsetDateTime.now();
+        }
+
+        return ApiResponse.success(userBehaviorService.getEventLogs(startTime, endTime, eventType));
     }
 }

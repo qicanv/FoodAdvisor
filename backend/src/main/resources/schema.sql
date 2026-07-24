@@ -93,6 +93,81 @@ CREATE INDEX IF NOT EXISTS idx_behavior_event_type ON user_behavior_logs (event_
 CREATE INDEX IF NOT EXISTS idx_behavior_user_id ON user_behavior_logs (user_id);
 CREATE INDEX IF NOT EXISTS idx_behavior_created_at ON user_behavior_logs (created_at);
 CREATE INDEX IF NOT EXISTS idx_behavior_merchant_id ON user_behavior_logs (merchant_id);
+CREATE INDEX IF NOT EXISTS idx_behavior_scene_type ON user_behavior_logs (scene_type);
+CREATE INDEX IF NOT EXISTS idx_behavior_search_keyword ON user_behavior_logs (search_keyword);
+
+-- ==================== 用户行为日志测试数据 ====================
+
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_001', 2, 'SEARCH', '火锅', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_002', 2, 'SEARCH', '日料', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_003', 3, 'SEARCH', '火锅', NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_004', 3, 'SEARCH', '西餐', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_005', 4, 'SEARCH', '川菜', NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_006', 4, 'SEARCH', '火锅', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_007', 5, 'SEARCH', '甜品', NOW() - INTERVAL '5 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_008', 5, 'SEARCH', '海鲜', NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_009', 6, 'SEARCH', '粤菜', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_010', 6, 'SEARCH', '火锅', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_011', 7, 'SEARCH', '韩式料理', NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, search_keyword, created_at) VALUES ('ev_012', 7, 'SEARCH', '日料', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_013', 2, 'MERCHANT_CLICK', 1, NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_014', 2, 'MERCHANT_CLICK', 2, NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_015', 3, 'MERCHANT_CLICK', 1, NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_016', 3, 'MERCHANT_CLICK', 3, NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_017', 4, 'MERCHANT_CLICK', 2, NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_018', 4, 'MERCHANT_CLICK', 4, NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_019', 5, 'MERCHANT_CLICK', 3, NOW() - INTERVAL '5 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_020', 5, 'MERCHANT_CLICK', 5, NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_021', 6, 'MERCHANT_CLICK', 1, NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_022', 6, 'MERCHANT_CLICK', 2, NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_023', 7, 'MERCHANT_CLICK', 4, NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_024', 7, 'MERCHANT_CLICK', 5, NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_025', 2, 'MERCHANT_CLICK', 3, NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_026', 3, 'MERCHANT_CLICK', 2, NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, merchant_id, created_at) VALUES ('ev_027', 4, 'MERCHANT_CLICK', 1, NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_028', 2, 'SCENE_ENTRY', 'DATE', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_029', 2, 'SCENE_ENTRY', 'FRIENDS', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_030', 3, 'SCENE_ENTRY', 'FAMILY', NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_031', 3, 'SCENE_ENTRY', 'DATE', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_032', 4, 'SCENE_ENTRY', 'BUSINESS', NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_033', 4, 'SCENE_ENTRY', 'FRIENDS', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_034', 5, 'SCENE_ENTRY', 'LATE_NIGHT', NOW() - INTERVAL '5 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_035', 5, 'SCENE_ENTRY', 'FAMILY', NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_036', 6, 'SCENE_ENTRY', 'DATE', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_037', 6, 'SCENE_ENTRY', 'FRIENDS', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_038', 7, 'SCENE_ENTRY', 'LATE_NIGHT', NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, scene_type, created_at) VALUES ('ev_039', 7, 'SCENE_ENTRY', 'BUSINESS', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_040', 2, 'TAG_CLICK', 'CAT_HOTPOT', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_041', 2, 'TAG_CLICK', 'CAT_JAPANESE', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_042', 3, 'TAG_CLICK', 'CAT_HOTPOT', NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_043', 3, 'TAG_CLICK', 'CAT_WESTERN', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_044', 4, 'TAG_CLICK', 'CAT_SICHUAN', NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_045', 4, 'TAG_CLICK', 'CAT_HOTPOT', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_046', 5, 'TAG_CLICK', 'CAT_DESSERT', NOW() - INTERVAL '5 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_047', 5, 'TAG_CLICK', 'CAT_SEAFOOD', NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_048', 6, 'TAG_CLICK', 'CAT_CANTONESE', NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_049', 6, 'TAG_CLICK', 'CAT_HOTPOT', NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, tag_code, created_at) VALUES ('ev_050', 7, 'TAG_CLICK', 'CAT_KOREAN', NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_051', 2, 'FEEDBACK', 'LIKE', 5, 1, NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_052', 2, 'FEEDBACK', 'DISLIKE', 2, 2, NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_053', 3, 'FEEDBACK', 'LIKE', 4, 1, NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_054', 3, 'FEEDBACK', 'LIKE', 5, 3, NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_055', 4, 'FEEDBACK', 'DISLIKE', 1, 2, NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_056', 4, 'FEEDBACK', 'LIKE', 5, 4, NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_057', 5, 'FEEDBACK', 'LIKE', 4, 3, NOW() - INTERVAL '5 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_058', 5, 'FEEDBACK', 'LIKE', 5, 5, NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_059', 6, 'FEEDBACK', 'DISLIKE', 2, 1, NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, feedback_type, feedback_score, merchant_id, created_at) VALUES ('ev_060', 6, 'FEEDBACK', 'LIKE', 4, 2, NOW() - INTERVAL '1 day') ON CONFLICT DO NOTHING;
+
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, topic_id, created_at) VALUES ('ev_061', 2, 'TOPIC_CLICK', 1, NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, topic_id, created_at) VALUES ('ev_062', 3, 'TOPIC_CLICK', 1, NOW() - INTERVAL '3 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, topic_id, created_at) VALUES ('ev_063', 4, 'TOPIC_CLICK', 2, NOW() - INTERVAL '4 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, topic_id, created_at) VALUES ('ev_064', 5, 'TOPIC_CLICK', 1, NOW() - INTERVAL '5 days') ON CONFLICT DO NOTHING;
+INSERT INTO user_behavior_logs (event_id, user_id, event_type, topic_id, created_at) VALUES ('ev_065', 6, 'TOPIC_CLICK', 2, NOW() - INTERVAL '2 days') ON CONFLICT DO NOTHING;
 
 -- ==================== 评价举报（EPIC-08 故事5） ====================
 
@@ -147,6 +222,11 @@ CREATE TABLE IF NOT EXISTS ai_request_traces (
     CONSTRAINT ck_ai_request_traces_status CHECK (status IN ('RUNNING','SUCCESS','FAILED','FALLBACK')),
     CONSTRAINT ck_ai_request_traces_duration CHECK (total_duration_ms IS NULL OR total_duration_ms >= 0)
 );
+
+CREATE INDEX IF NOT EXISTS idx_ai_request_traces_scene ON ai_request_traces (scene);
+CREATE INDEX IF NOT EXISTS idx_ai_request_traces_status ON ai_request_traces (status);
+CREATE INDEX IF NOT EXISTS idx_ai_request_traces_started_at ON ai_request_traces (started_at);
+CREATE INDEX IF NOT EXISTS idx_ai_request_traces_model_name ON ai_request_traces (model_name);
 
 CREATE TABLE IF NOT EXISTS ai_request_trace_stages (
     id BIGSERIAL PRIMARY KEY,

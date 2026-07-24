@@ -27,18 +27,26 @@ public class OperationsDashboardController {
     @GetMapping("/overview")
     public ApiResponse<Object> getOverview(
             @RequestParam(defaultValue = "week") String timeRange,
+            @RequestParam(required = false) String date,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String month,
             HttpServletRequest request
     ) {
         adminAccessGuard.requireAdmin(request);
-        return ApiResponse.success(operationsDashboardService.getOverview(timeRange));
+        return ApiResponse.success(operationsDashboardService.getOverview(timeRange, date, startDate, endDate, month));
     }
 
     @GetMapping("/trends")
     public ApiResponse<Object> getTrends(
             @RequestParam(defaultValue = "week") String timeRange,
+            @RequestParam(required = false) String date,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String month,
             HttpServletRequest request
     ) {
         adminAccessGuard.requireAdmin(request);
-        return ApiResponse.success(operationsDashboardService.getTrends(timeRange));
+        return ApiResponse.success(operationsDashboardService.getTrends(timeRange, date, startDate, endDate, month));
     }
 }

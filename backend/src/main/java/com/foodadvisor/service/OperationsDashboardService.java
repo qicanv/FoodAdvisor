@@ -3,10 +3,12 @@ package com.foodadvisor.service;
 import com.foodadvisor.mapper.*;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Service
@@ -41,9 +43,9 @@ public class OperationsDashboardService {
         this.merchantMapper = merchantMapper;
     }
 
-    public Map<String, Object> getOverview(String timeRange) {
-        OffsetDateTime startTime = getStartTime(timeRange);
-        OffsetDateTime endTime = OffsetDateTime.now(ZoneOffset.UTC);
+    public Map<String, Object> getOverview(String timeRange, String date, String startDate, String endDate, String month) {
+        OffsetDateTime startTime = getStartTime(timeRange, date, startDate, endDate, month);
+        OffsetDateTime endTime = getEndTime(timeRange, date, startDate, endDate, month);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("timeRange", timeRange);
@@ -68,26 +70,39 @@ public class OperationsDashboardService {
         return result;
     }
 
-    public Map<String, Object> getTrends(String timeRange) {
-        OffsetDateTime startTime = getStartTime(timeRange);
-        OffsetDateTime endTime = OffsetDateTime.now(ZoneOffset.UTC);
+    public Map<String, Object> getTrends(String timeRange, String date, String startDate, String endDate, String month) {
+        OffsetDateTime startTime = getStartTime(timeRange, date, startDate, endDate, month);
+        OffsetDateTime endTime = getEndTime(timeRange, date, startDate, endDate, month);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("timeRange", timeRange);
-        result.put("labels", generateTimeLabels(timeRange));
+        result.put("labels", generateTimeLabels(timeRange, date, startDate, month));
 
         Map<String, List<Long>> trends = new LinkedHashMap<>();
-        trends.put("activeUsers", getActiveUserTrend(timeRange));
-        trends.put("reviews", getReviewTrend(timeRange));
-        trends.put("aiCalls", getAiCallTrend(timeRange));
-        trends.put("recommendations", getRecommendationTrend(timeRange));
+        trends.put("activeUsers", getActiveUserTrend(timeRange, date, startDate, month));
+        trends.put("reviews", getReviewTrend(timeRange, date, startDate, month));
+        trends.put("aiCalls", getAiCallTrend(timeRange, date, startDate, month));
+        trends.put("recommendations", getRecommendationTrend(timeRange, date, startDate, month));
 
         result.put("trends", trends);
 
         return result;
     }
 
-    private OffsetDateTime getStartTime(String timeRange) {
+    private OffsetDateTime getStartTime(String timeRange, String date, String startDate, String endDate, String month) {
+        if ("day".equals(timeRange) && date != null && !date.isBlank()) {
+            LocalDate selected = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
+            return selected.atStartOfDay().atOffset(ZoneOffset.UTC);
+        }
+        if ("week".equals(timeRange) && startDate != null && !startDate.isBlank()) {
+            LocalDate selected = LocalDate.parse(startDate, DateTimeFormatter.ISO_LOCAL_DATE);
+            return selected.atStartOfDay().atOffset(ZoneOffset.UTC);
+        }
+        if ("month".equals(timeRange) && month != null && !month.isBlank()) {
+            LocalDate selected = LocalDate.parse(month + "-01", DateTimeFormatter.ISO_LOCAL_DATE);
+            return selected.atStartOfDay().atOffset(ZoneOffset.UTC);
+        }
+        
         LocalDateTime localStart;
         switch (timeRange) {
             case "day":
@@ -104,26 +119,62 @@ public class OperationsDashboardService {
         return localStart.atOffset(ZoneOffset.UTC);
     }
 
-    private List<String> generateTimeLabels(String timeRange) {
+    private OffsetDateTime getEndTime(String timeRange, String date, String startDate, String endDate, String month) {
+        if ("day".equals(timeRange) && date != null && !date.isBlank()) {
+            LocalDate selected = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
+            return selected.atTime(LocalTime.MAX).atOffset(ZoneOffset.UTC);
+        }
+        if ("week".equals(timeRange)) {
+            if (endDate != null && !endDate.isBlank()) {
+                LocalDate selected = LocalDate.parse(endDate, DateTimeFormatter.ISO_LOCAL_DATE);
+                return selected.atTime(LocalTime.MAX).atOffset(ZoneOffset.UTC);
+            }
+            if (startDate != null && !startDate.isBlank()) {
+                LocalDate selected = LocalDate.parse(startDate, DateTimeFormatter.ISO_LOCAL_DATE);
+                return selected.plusDays(6).atTime(LocalTime.MAX).atOffset(ZoneOffset.UTC);
+            }
+        }
+        if ("month".equals(timeRange) && month != null && !month.isBlank()) {
+            LocalDate selected = LocalDate.parse(month + "-01", DateTimeFormatter.ISO_LOCAL_DATE);
+            return selected.plusMonths(1).minusDays(1).atTime(LocalTime.MAX).atOffset(ZoneOffset.UTC);
+        }
+        
+        return OffsetDateTime.now(ZoneOffset.UTC);
+    }
+
+    private List<String> generateTimeLabels(String timeRange, String date, String startDate, String month) {
         List<String> labels = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime baseTime;
+        
+        if ("day".equals(timeRange) && date != null && !date.isBlank()) {
+            baseTime = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        } else if ("month".equals(timeRange) && month != null && !month.isBlank()) {
+            baseTime = LocalDate.parse(month + "-01", DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        } else if ("week".equals(timeRange) && startDate != null && !startDate.isBlank()) {
+            baseTime = LocalDate.parse(startDate, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        } else if ("week".equals(timeRange) && date != null && !date.isBlank()) {
+            baseTime = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        } else {
+            baseTime = LocalDateTime.now();
+        }
         
         switch (timeRange) {
             case "day":
-                for (int i = 23; i >= 0; i--) {
-                    labels.add(String.format("%02d:00", now.minusHours(i).getHour()));
+                for (int i = 0; i < 24; i++) {
+                    labels.add(String.format("%02d:00", baseTime.plusHours(i).getHour()));
                 }
                 break;
             case "month":
-                for (int i = 29; i >= 0; i--) {
-                    LocalDateTime d = now.minusDays(i);
+                int daysInMonth = baseTime.toLocalDate().lengthOfMonth();
+                for (int i = daysInMonth - 1; i >= 0; i--) {
+                    LocalDateTime d = baseTime.plusDays(i);
                     labels.add(String.format("%d/%d", d.getMonthValue(), d.getDayOfMonth()));
                 }
                 break;
             case "week":
             default:
-                for (int i = 6; i >= 0; i--) {
-                    LocalDateTime d = now.minusDays(i);
+                for (int i = 0; i <= 6; i++) {
+                    LocalDateTime d = baseTime.plusDays(i);
                     String[] weekDays = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
                     labels.add(weekDays[d.getDayOfWeek().getValue() % 7]);
                 }
@@ -220,37 +271,54 @@ public class OperationsDashboardService {
         return actions;
     }
 
-    private List<Long> getActiveUserTrend(String timeRange) {
+    private LocalDateTime getBaseTime(String timeRange, String date, String startDate, String month) {
+        if ("day".equals(timeRange) && date != null && !date.isBlank()) {
+            return LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        }
+        if ("month".equals(timeRange) && month != null && !month.isBlank()) {
+            return LocalDate.parse(month + "-01", DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        }
+        if ("week".equals(timeRange) && startDate != null && !startDate.isBlank()) {
+            return LocalDate.parse(startDate, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        }
+        if ("week".equals(timeRange) && date != null && !date.isBlank()) {
+            return LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        }
+        return LocalDateTime.now();
+    }
+
+    private List<Long> getActiveUserTrend(String timeRange, String date, String startDate, String month) {
         List<Long> trend = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime baseTime = getBaseTime(timeRange, date, startDate, month);
         
         try {
             switch (timeRange) {
                 case "day":
-                    for (int i = 23; i >= 0; i--) {
-                        OffsetDateTime start = now.minusHours(i).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusHours(i - 1).atOffset(ZoneOffset.UTC);
+                    for (int i = 0; i < 24; i++) {
+                        OffsetDateTime start = baseTime.plusHours(i).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusHours(i + 1).atOffset(ZoneOffset.UTC);
                         trend.add(userMapper.countActiveUsers(start, end));
                     }
                     break;
                 case "month":
-                    for (int i = 29; i >= 0; i--) {
-                        OffsetDateTime start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    int daysInMonth = baseTime.toLocalDate().lengthOfMonth();
+                    for (int i = daysInMonth - 1; i >= 0; i--) {
+                        OffsetDateTime start = baseTime.plusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusDays(i + 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
                         trend.add(userMapper.countActiveUsers(start, end));
                     }
                     break;
                 case "week":
                 default:
-                    for (int i = 6; i >= 0; i--) {
-                        OffsetDateTime start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    for (int i = 0; i <= 6; i++) {
+                        OffsetDateTime start = baseTime.plusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusDays(i + 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
                         trend.add(userMapper.countActiveUsers(start, end));
                     }
                     break;
             }
         } catch (Exception e) {
-            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
+            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? baseTime.toLocalDate().lengthOfMonth() : 7;
             for (int i = 0; i < size; i++) {
                 trend.add(0L);
             }
@@ -258,37 +326,38 @@ public class OperationsDashboardService {
         return trend;
     }
 
-    private List<Long> getReviewTrend(String timeRange) {
+    private List<Long> getReviewTrend(String timeRange, String date, String startDate, String month) {
         List<Long> trend = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime baseTime = getBaseTime(timeRange, date, startDate, month);
         
         try {
             switch (timeRange) {
                 case "day":
-                    for (int i = 23; i >= 0; i--) {
-                        OffsetDateTime start = now.minusHours(i).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusHours(i - 1).atOffset(ZoneOffset.UTC);
+                    for (int i = 0; i < 24; i++) {
+                        OffsetDateTime start = baseTime.plusHours(i).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusHours(i + 1).atOffset(ZoneOffset.UTC);
                         trend.add(reviewMapper.countByTimeRange(start, end));
                     }
                     break;
                 case "month":
-                    for (int i = 29; i >= 0; i--) {
-                        OffsetDateTime start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    int daysInMonth = baseTime.toLocalDate().lengthOfMonth();
+                    for (int i = daysInMonth - 1; i >= 0; i--) {
+                        OffsetDateTime start = baseTime.plusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusDays(i + 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
                         trend.add(reviewMapper.countByTimeRange(start, end));
                     }
                     break;
                 case "week":
                 default:
-                    for (int i = 6; i >= 0; i--) {
-                        OffsetDateTime start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    for (int i = 0; i <= 6; i++) {
+                        OffsetDateTime start = baseTime.plusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusDays(i + 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
                         trend.add(reviewMapper.countByTimeRange(start, end));
                     }
                     break;
             }
         } catch (Exception e) {
-            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
+            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? baseTime.toLocalDate().lengthOfMonth() : 7;
             for (int i = 0; i < size; i++) {
                 trend.add(0L);
             }
@@ -296,37 +365,38 @@ public class OperationsDashboardService {
         return trend;
     }
 
-    private List<Long> getAiCallTrend(String timeRange) {
+    private List<Long> getAiCallTrend(String timeRange, String date, String startDate, String month) {
         List<Long> trend = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime baseTime = getBaseTime(timeRange, date, startDate, month);
         
         try {
             switch (timeRange) {
                 case "day":
-                    for (int i = 23; i >= 0; i--) {
-                        OffsetDateTime start = now.minusHours(i).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusHours(i - 1).atOffset(ZoneOffset.UTC);
+                    for (int i = 0; i < 24; i++) {
+                        OffsetDateTime start = baseTime.plusHours(i).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusHours(i + 1).atOffset(ZoneOffset.UTC);
                         trend.add(aiCallLogMapper.countByTimeRange(start, end));
                     }
                     break;
                 case "month":
-                    for (int i = 29; i >= 0; i--) {
-                        OffsetDateTime start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    int daysInMonth = baseTime.toLocalDate().lengthOfMonth();
+                    for (int i = daysInMonth - 1; i >= 0; i--) {
+                        OffsetDateTime start = baseTime.plusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusDays(i + 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
                         trend.add(aiCallLogMapper.countByTimeRange(start, end));
                     }
                     break;
                 case "week":
                 default:
-                    for (int i = 6; i >= 0; i--) {
-                        OffsetDateTime start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    for (int i = 0; i <= 6; i++) {
+                        OffsetDateTime start = baseTime.plusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusDays(i + 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
                         trend.add(aiCallLogMapper.countByTimeRange(start, end));
                     }
                     break;
             }
         } catch (Exception e) {
-            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
+            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? baseTime.toLocalDate().lengthOfMonth() : 7;
             for (int i = 0; i < size; i++) {
                 trend.add(0L);
             }
@@ -334,37 +404,38 @@ public class OperationsDashboardService {
         return trend;
     }
 
-    private List<Long> getRecommendationTrend(String timeRange) {
+    private List<Long> getRecommendationTrend(String timeRange, String date, String startDate, String month) {
         List<Long> trend = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime baseTime = getBaseTime(timeRange, date, startDate, month);
         
         try {
             switch (timeRange) {
                 case "day":
-                    for (int i = 23; i >= 0; i--) {
-                        OffsetDateTime start = now.minusHours(i).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusHours(i - 1).atOffset(ZoneOffset.UTC);
+                    for (int i = 0; i < 24; i++) {
+                        OffsetDateTime start = baseTime.plusHours(i).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusHours(i + 1).atOffset(ZoneOffset.UTC);
                         trend.add(recommendationMapper.countByTimeRange(start, end));
                     }
                     break;
                 case "month":
-                    for (int i = 29; i >= 0; i--) {
-                        OffsetDateTime start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    int daysInMonth = baseTime.toLocalDate().lengthOfMonth();
+                    for (int i = daysInMonth - 1; i >= 0; i--) {
+                        OffsetDateTime start = baseTime.plusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusDays(i + 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
                         trend.add(recommendationMapper.countByTimeRange(start, end));
                     }
                     break;
                 case "week":
                 default:
-                    for (int i = 6; i >= 0; i--) {
-                        OffsetDateTime start = now.minusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
-                        OffsetDateTime end = now.minusDays(i - 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                    for (int i = 0; i <= 6; i++) {
+                        OffsetDateTime start = baseTime.plusDays(i).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
+                        OffsetDateTime end = baseTime.plusDays(i + 1).with(LocalTime.MIN).atOffset(ZoneOffset.UTC);
                         trend.add(recommendationMapper.countByTimeRange(start, end));
                     }
                     break;
             }
         } catch (Exception e) {
-            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? 30 : 7;
+            int size = timeRange.equals("day") ? 24 : timeRange.equals("month") ? baseTime.toLocalDate().lengthOfMonth() : 7;
             for (int i = 0; i < size; i++) {
                 trend.add(0L);
             }
